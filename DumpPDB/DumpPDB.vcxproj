@@ -143,6 +143,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Application\Application.hpp" />
+    <ClInclude Include="Source\Application\Command\CommandHelp.hpp" />
+    <ClInclude Include="Source\Application\Command\CommandManager.hpp" />
+    <ClInclude Include="Source\Application\Command\CommandType.hpp" />
+    <ClInclude Include="Source\Application\Command\ICommand.hpp" />
     <ClInclude Include="Source\Application\Console\ConsoleManager.hpp" />
     <ClInclude Include="Source\Application\Debug\DebugTools.hpp" />
     <ClInclude Include="Source\Application\Debug\DebugManager.hpp" />

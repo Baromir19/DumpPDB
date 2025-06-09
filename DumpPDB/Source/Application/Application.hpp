@@ -6,6 +6,8 @@
 #include "Console\ConsoleManager.hpp"
 #include "Debug\DebugManager.hpp"
 
+#include "Command\CommandManager.hpp"
+
 class Application : public Singleton<Application>
 {
     SET_SINGLETON_FRIEND(Application)
@@ -13,15 +15,35 @@ class Application : public Singleton<Application>
 protected:
 
 public:
-    bool initialize(const std::wstring& a_pdbPath)
+    bool initialize(int a_argc, wchar_t* a_argv[])
     {
         static bool initState = false;
         if (initState) return true;
-
-        if (!DiaManager::instance().initialize(a_pdbPath))
+        
+        if (!ConsoleManager::instance().initialize(a_argc, a_argv))
         {
-            ConsoleManager::printError(L"DIA is not initializated!");
+            ConsoleManager::printError(L"Console is not initialized!\n");
         }
+
+        if (!CommandManager::instance().initialize())
+        {
+            ConsoleManager::printError(L"Commands is not initialized!\n");
+        }
+
+        const auto& _cmdString = ConsoleManager::instance().getCommand().c_str();
+        const auto& _cmd = CommandManager::instance().getCommand(_cmdString);
+
+        if (_cmd->getType() != _cmd->COMMAND_HELP)
+        {
+            const auto& _path = ConsoleManager::instance().getPath();
+
+            if (!DiaManager::instance().initialize(_path))
+            {
+                ConsoleManager::printError(L"DIA is not initialized!\n");
+            }
+        }
+
+        CommandManager::instance().executeCommand(_cmd);
 
         initState = true;
         return true;

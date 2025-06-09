@@ -6,6 +6,8 @@
 
 #include "..\..\Util\Container\Singleton.hpp"
 
+#include "..\Command\ICommand.hpp"
+
 class ConsoleManager : public Singleton<ConsoleManager>
 {
 	SET_SINGLETON_FRIEND(ConsoleManager)
@@ -13,10 +15,12 @@ class ConsoleManager : public Singleton<ConsoleManager>
 protected:
 	std::vector<std::wstring> m_arguments;
 	std::wstring m_path;
+	std::wstring m_command;
 
 	static constexpr wchar_t s_pdbFormat[] = L".pdb";
 
-	static constexpr int s_minArgSize = 3; // Program path (.exe) + call type + .pdb path
+	static constexpr int s_minArgPathSize = 3; // Program path (.exe) + call type + .pdb path
+	static constexpr int s_minArgCmdSize = 2;
 
 public:
 	bool initialize(int a_argc, wchar_t* a_argv[])
@@ -24,7 +28,7 @@ public:
 		static bool initState = false;
 		if (initState) return true;
 
-		verifyArgumentsNumber(a_argc);
+		// verifyArgumentsNumber(a_argc);
 
 		m_arguments.reserve(a_argc);  
 
@@ -78,7 +82,7 @@ public:
 	{
 		if (!m_path.empty()) { return m_path; }
 
-		if (!m_arguments.empty() && verifyArgumentsNumber(m_arguments.size()))
+		if (!m_arguments.empty() && verifyArgumentsNumber(m_arguments.size(), s_minArgPathSize))
 		{ 
 			m_path =  m_arguments.back();
 
@@ -115,12 +119,24 @@ public:
 		}
 	}
 
-protected:
-	static inline bool verifyArgumentsNumber(int a_argc)
+	const std::wstring& getCommand()
 	{
-		if (a_argc < s_minArgSize)
+		if (!m_command.empty()) { return m_command; }
+
+		if (verifyArgumentsNumber(m_arguments.size(), s_minArgCmdSize))
 		{
-			printError(L"Argument count (%u) is less than the minimum (%u)!", a_argc, s_minArgSize);
+			m_command = m_arguments[1];
+		}
+
+		return m_command;
+	}
+
+protected:
+	static inline bool verifyArgumentsNumber(int a_argc, int a_minimum)
+	{
+		if (a_argc < a_minimum)
+		{
+			printError(L"Argument count (%u) is less than the minimum (%u)!", a_argc, s_minArgPathSize);
 		}
 
 		return true;
@@ -130,15 +146,18 @@ protected:
 	{
 		auto _size = a_path.size();
 
-		if (_size >= 4 && *(__int64*)&(a_path.end()[-4]) == *(__int64*)s_pdbFormat)
+		if (_size >= 4 && wcscmp(&a_path.end()[-4], s_pdbFormat) == 0)
 		{
 			return true;
 		}
-		else
+
+		auto _begin = a_path.c_str();
+
+		for (auto i = a_path.size(); i > 0; --i)
 		{
-			_size >= 4
-				? printError(L"Unknown format (%s)!\n", &(a_path.end()[-4]))
-				: printError(L"Wrong name \"%s\" size (%u < 4)\n", a_path.c_str(), _size);
+			if (_begin[i] == L'.') { printError(L"Extension \"%s\" must be \".pdb\"! \n", &(_begin[i])); }
 		}
+
+		printError(L"No extension for \"%s\" (must be \".pdb\")!\n ", a_path.c_str());
 	}
 };
