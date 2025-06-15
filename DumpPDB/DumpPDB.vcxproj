@@ -151,7 +151,10 @@
     <ClInclude Include="Source\Application\Debug\DebugTools.hpp" />
     <ClInclude Include="Source\Application\Debug\DebugManager.hpp" />
     <ClInclude Include="Source\Application\DIA\DiaManager.hpp" />
+    <ClInclude Include="Source\Application\Settings\GlobalSettings.hpp" />
     <ClInclude Include="Source\Util\Container\Singleton.hpp" />
+    <ClInclude Include="Source\Util\Types\Serialization\BoolSerializable.hpp" />
+    <ClInclude Include="Source\Util\Types\Serialization\IBaseSerializable.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

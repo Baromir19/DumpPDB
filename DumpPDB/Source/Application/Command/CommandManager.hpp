@@ -30,13 +30,16 @@ public:
 
 	__declspec(noreturn) void displayCommandsInfo() const
 	{
+		ConsoleManager::print(L"Usage: DumpPDB.exe <commandname> <filename>\n");
 		ConsoleManager::print(L"Command list:\n");
+
+		/// TODO: get cmd size before ":"
 
 		for (const auto& _command : m_commands)
 		{
-			ConsoleManager::print(L"\t");
+			ConsoleManager::print(L"  ");
 
-			auto _names = _command->getCommandNames();
+			const auto& _names = _command->getCommandNames();
 
 			for (auto i = 0; i < _names.size(); ++i)
 			{
@@ -68,11 +71,27 @@ public:
 		// displayCommandsInfo();
 	}
 
+	ICommand* getCommand(const wchar_t* a_commandString, int a_userMessageSize) const
+	{
+		auto _ret = getCommand(a_commandString);
+
+		auto _count = _ret->getArgCount();
+		auto _type = _ret->getType();
+
+		_count += _type & _ret->s_executableMask ? 1 : 0; // is it need name of .pdb?
+
+		_count += 2; // executable path + command name
+
+		if (a_userMessageSize - _count >= 0) { return _ret; }
+
+		ConsoleManager::printError(L"Command size (%u) is less than minimum (%u) \n", a_userMessageSize, _count);
+	}
+
 	void executeCommand(ICommand* a_command)
 	{
-		a_command->execute();
+		a_command->execute(ConsoleManager::instance().getCommandArguments());
 
-		if (a_command->getType() == ICommand::COMMAND_HELP)
+		if (a_command->getType() == ICommand::COMMAND_HELP) /// ATTENTION
 		{
 			displayCommandsInfo();
 		}

@@ -31,9 +31,10 @@ public:
         }
 
         const auto& _cmdString = ConsoleManager::instance().getCommand().c_str();
-        const auto& _cmd = CommandManager::instance().getCommand(_cmdString);
+        const auto& _cmd = CommandManager::instance().getCommand(_cmdString, a_argc);
 
-        if (_cmd->getType() != _cmd->COMMAND_HELP)
+        if (_cmd->getType() & _cmd->s_executableMask 
+            && ConsoleManager::instance().verifyPDBFormat())
         {
             const auto& _path = ConsoleManager::instance().getPath();
 

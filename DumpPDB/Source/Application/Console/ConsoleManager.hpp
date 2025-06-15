@@ -37,7 +37,7 @@ public:
 			m_arguments.emplace_back(a_argv[i]); 
 		}
 
-		verifyFormat(m_arguments.back());
+		// verifyFormat(m_arguments.back());
 
 		initState = true;
 		return true;
@@ -131,6 +131,16 @@ public:
 		return m_command;
 	}
 
+	const std::wstring* getCommandArguments()
+	{
+		if (m_arguments.size() > s_cmdArgsOffset)
+		{
+			return &m_arguments[s_cmdArgsOffset]; // .exe + command name
+		}
+
+		return nullptr;
+	}
+
 protected:
 	static inline bool verifyArgumentsNumber(int a_argc, int a_minimum)
 	{
@@ -160,4 +170,14 @@ protected:
 
 		printError(L"No extension for \"%s\" (must be \".pdb\")!\n ", a_path.c_str());
 	}
+
+public:
+	inline bool verifyPDBFormat() const
+	{
+		return verifyFormat(m_arguments.back());
+	}
+
+	static constexpr int s_executableOffset = 0;
+	static constexpr int s_cmdOffset = 1;
+	static constexpr int s_cmdArgsOffset = 2;
 };
