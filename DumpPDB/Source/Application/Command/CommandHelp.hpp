@@ -43,7 +43,7 @@ class Nulla : public BoolSerializable, CommandType
 
 	__NON __a;
 
-	virtual float& ANON() { float _a = (float)__a; return _a; }
+	virtual float& ANON(bool a___, __NON b, aBC _d, LOL _c, TEST __formal, LOL) { float _a = (float)__a;  float b___ = 8; return _a; }
 
 	virtual const wchar_t* const RETT() { return L""; }
 };

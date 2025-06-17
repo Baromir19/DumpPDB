@@ -56,6 +56,9 @@ public:
     /// cmd api:
     static void displayClass(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
+        // displayTabulation(a_nestingLevel);
+        // displayFileSource(a_symbol);
+
         displayTabulation(a_nestingLevel);
         displaySize(a_symbol);
 
@@ -100,6 +103,9 @@ public:
 
     static void displayEnum(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
+        // displayTabulation(a_nestingLevel);
+        // displayTypeSource(a_symbol);
+
         displayTabulation(a_nestingLevel);
         displaySize(a_symbol);
 
@@ -160,6 +166,9 @@ public:
     static void displayTypedef(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
         // displaySize(_symbol);
+
+        // displayTabulation(a_nestingLevel);
+        // displayFileSource(a_symbol);
 
         displayTabulation(a_nestingLevel);
 
@@ -241,6 +250,42 @@ public:
         }
     }
 
+    static void displayFunctionArgs(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
+    {
+        bool _isFirst = true;
+
+        IDiaEnumSymbols* _enumParams = nullptr;
+        auto hr = a_symbol->findChildren(SymTagData, nullptr, nsNone, &_enumParams);
+
+        if (SUCCEEDED(hr) && _enumParams != nullptr) 
+        {
+            IDiaSymbol* _param = nullptr;
+            ULONG fetched = 0;
+            while (SUCCEEDED(_enumParams->Next(1, &_param, &fetched)) && fetched == 1) 
+            {
+                DWORD _kind = 0;
+                if (SUCCEEDED(_param->get_dataKind(&_kind)) && _kind == DataIsParam)
+                {
+                    if (!_isFirst) { ConsoleManager::print(L", "); }
+
+                    // SymTagEnum;
+                    // displaySymTag(_param);
+                    displayName(_param, false);
+                    //auto _type = getType(_param);
+                    // displaySymTag(_type); 
+                    //displayName(_type);
+                    // displayChildInfo(_type);
+                    //_type->Release();
+
+                    _isFirst = false;
+                }
+
+                _param->Release();
+            }
+            _enumParams->Release();
+        }
+    }
+
     static void displayFunction(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
         // displayTabulation(a_nestingLevel);
@@ -251,6 +296,9 @@ public:
 
         // displayTabulation(a_nestingLevel);
         // displaySize(_function);
+
+        // displayTabulation(a_nestingLevel);
+        // displayTypeSource(a_symbol);
 
         displayTabulation(a_nestingLevel);
         // displayTabulation(a_nestingLevel - 1);
@@ -273,7 +321,7 @@ public:
         auto _retType = getType(_funtionType);
         if (_retType)
         {
-            displaySymTag(_retType); SymTagEnum;
+            // displaySymTag(_retType); SymTagEnum;
             displayName(_retType, false);
             ConsoleManager::print(L" ");
 
@@ -282,14 +330,26 @@ public:
 
         displayName(a_symbol);
 
+        ConsoleManager::print(getFunctionArgsBegin_C());
+
+        displayFunctionArgs(a_symbol);
+
+        // displayChildInfo(a_symbol);
+
+        ConsoleManager::print(getFunctionArgsEnd_C());
+
+        // displayFileSource(a_symbol);
+
         auto _const = getConstName(a_symbol);
         if (_const ? _const : getConstName(_funtionType)) { ConsoleManager::print(L" %s", _const); }
 
         // if (getVirtualName(a_symbol)) { displayVTableOffset(a_symbol); } // didn't work correctly
 
+        // ConsoleManager::print(L" %s", getPureName(a_symbol));
+
         if (_funtionType) { _funtionType->Release(); }
 
-        ConsoleManager::print(L"\n");
+        ConsoleManager::print(L";\n");
     }
 
     static bool displayPointer(IDiaSymbol* a_symbol)
@@ -366,6 +426,7 @@ protected:
     static const wchar_t* getBaseTypeName_C(IDiaSymbol* a_symbol)
     {
         DWORD _baseType = 0;
+
         if (SUCCEEDED(a_symbol->get_baseType(&_baseType)))
         {
             switch (_baseType)
@@ -501,7 +562,7 @@ protected:
     static const wchar_t* getPureName(IDiaSymbol* a_symbol)
     {
         BOOL _isPure;
-        return SUCCEEDED(a_symbol->get_pure(&_isPure)) && !_isPure ? L" = 0;" : nullptr;
+        return SUCCEEDED(a_symbol->get_pure(&_isPure)) && !_isPure ? L"= 0" : nullptr;
     }
 
     static const wchar_t* getFirstBracketName_C() { return  L"{\n"; }
@@ -513,6 +574,10 @@ protected:
     static const wchar_t* getMultilineCommentBeginName_C() { return L"/* "; }
 
     static const wchar_t* getMultilineCommentEndName_C() { return L" */"; }
+
+    static const wchar_t* getFunctionArgsBegin_C() { return L"("; }
+
+    static const wchar_t* getFunctionArgsEnd_C() { return L")"; }
 
     static const wchar_t* getInheritenceName_C() { return L" : "; }
 
@@ -582,6 +647,41 @@ protected:
         }
         
         return 0;
+    }
+
+    static void displayTypeSource(IDiaSymbol* a_symbol)
+    {
+        IDiaSourceFile* _sourceFile = nullptr;
+        IDiaLineNumber* _lineNumber = nullptr;
+        IDiaEnumLineNumbers* _enumLineNumbers = nullptr;
+
+        DWORD _addressSection = 0;
+        DWORD _addressOffset = 0;
+
+        if (SUCCEEDED(a_symbol->get_addressSection(&_addressSection)) && SUCCEEDED(a_symbol->get_addressOffset(&_addressOffset)))
+        {
+            instance().m_session->findLinesByAddr(_addressSection, _addressOffset, 1, &_enumLineNumbers);
+
+            ULONG _celt = 0;
+            if (_enumLineNumbers && SUCCEEDED(_enumLineNumbers->Next(1, &_lineNumber, &_celt)) && _celt == 1)
+            {
+                if (SUCCEEDED(_lineNumber->get_sourceFile(&_sourceFile)) && _sourceFile)
+                {
+                    BSTR _filename;
+                    if (SUCCEEDED(_sourceFile->get_fileName(&_filename)))
+                    {
+                        ConsoleManager::print(L"%s%s\n", getCommentName_C(), _filename);
+                        SysFreeString(_filename);
+                    }
+                    _sourceFile->Release();
+                }
+                _lineNumber->Release();
+            }
+            if (_enumLineNumbers)
+            {
+                _enumLineNumbers->Release();
+            }
+        }
     }
 
     /// Note: Debug
@@ -705,6 +805,8 @@ protected:
 
     static bool displayName(IDiaSymbol* a_symbol, bool a_nonScope = true)
     {
+        static const wchar_t* s_hiddenName = L"__formal"; // you can use it to hide a name
+
         auto _res = false;
 
         auto _const = getConstName(a_symbol);
@@ -721,6 +823,7 @@ protected:
                 if (auto _base = getBaseTypeName_C(a_symbol)) { ConsoleManager::print(_base); } return true;
             case SymTagPointerType: return displayPointer(a_symbol);
             case SymTagArrayType: return displayArray(a_symbol);
+            case SymTagData: if (auto _type = getType(a_symbol)) { displayName(_type, a_nonScope); ConsoleManager::print(L" "); } break;
             default: break;
             }
         }
@@ -875,6 +978,14 @@ protected:
                 BOOL _isVirtual;
                 if (SUCCEEDED(_function->get_virtual(&_isVirtual)) && !_isVirtual) { continue; }
 
+                displayTabulation(a_nestingLevel);
+                displayTypeSource(_function);
+
+                displayTabulation(a_nestingLevel);
+                DWORD _offset = 0xFFFFFFFC;
+                _function->get_virtualBaseOffset(&_offset);
+                ConsoleManager::print(L"%s0x%X\n", getCommentName_C(), _offset);
+
                 displayFunction(_function, a_nestingLevel);
             }
 
@@ -960,6 +1071,28 @@ protected:
     static void displayTabulation(int a_repeatTimes = 1, const wchar_t* (*a_lTab)() = getTabulationName_C)
     {
         while (a_repeatTimes-- > 0) { safePrinter(a_lTab); }
+    }
+
+    static void displayChildInfo(IDiaSymbol* a_symbol)
+    {
+        IDiaEnumSymbols* _enumParams = nullptr;
+        auto hr = a_symbol->findChildren(SymTagNull, nullptr, nsNone, &_enumParams);
+
+        if (SUCCEEDED(hr) && _enumParams != nullptr)
+        {
+            IDiaSymbol* _param = nullptr;
+            ULONG _fetched = 0;
+            while (SUCCEEDED(_enumParams->Next(1, &_param, &_fetched)) && _fetched == 1)
+            {
+                ConsoleManager::print(L"\n");
+                displaySymTag(_param);
+                displayTabulation();
+                displayTabulation();
+                displayName(_param);
+                displayChildInfo(_param);
+            }
+            _enumParams->Release();
+        }
     }
 
     static IDiaSymbol* getParent(IDiaSymbol* a_symbol)
