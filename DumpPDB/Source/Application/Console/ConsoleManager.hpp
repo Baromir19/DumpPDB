@@ -22,6 +22,10 @@ protected:
 	static constexpr int s_minArgPathSize = 3; // Program path (.exe) + call type + .pdb path
 	static constexpr int s_minArgCmdSize = 2;
 
+	static constexpr size_t s_bufferSize = 0x2000;
+	static inline wchar_t s_lineBuffer[s_bufferSize];
+	static inline int s_bufferPointer = 0;
+
 public:
 	bool initialize(int a_argc, wchar_t* a_argv[])
 	{
@@ -139,6 +143,35 @@ public:
 		}
 
 		return nullptr;
+	}
+
+	/// Line Tools
+
+	static void printLine()
+	{
+		print(s_lineBuffer);
+		s_lineBuffer[0] = L'\0';
+		s_bufferPointer = 0;
+	}
+
+	static void appendToLine(const wchar_t* a_format, va_list a_args)
+	{
+		if (s_bufferPointer >= s_bufferSize) { return; }
+
+		int _written = vswprintf(s_lineBuffer + s_bufferPointer,
+			s_bufferSize - s_bufferPointer,
+			a_format,
+			a_args);
+
+		if (_written > 0) { s_bufferPointer += _written; }
+	}
+
+	static void appendToLine(const wchar_t* a_format, ...)
+	{
+		va_list _args;
+		va_start(_args, a_format);
+		appendToLine(a_format, _args);
+		va_end(_args);
 	}
 
 protected:

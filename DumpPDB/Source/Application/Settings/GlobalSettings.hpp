@@ -14,6 +14,7 @@ public:
 	static inline bool s_isNonScoped = true;
 	static inline bool s_isEnumHex = false;
 	static inline bool s_typeSource = true;
+	static inline bool s_infoComment = true;
 
 	static inline CV_access_e s_baseAccessType = (CV_access_e)false;
 };

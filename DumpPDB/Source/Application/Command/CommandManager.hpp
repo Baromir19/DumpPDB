@@ -7,6 +7,8 @@
 #include "ICommand.hpp"
 #include "CommandType.hpp"
 #include "CommandHelp.hpp"
+#include "CommandCompiland.hpp"
+#include "CommandSource.hpp"
 
 class CommandManager : public Singleton<CommandManager>
 {
@@ -23,6 +25,8 @@ public:
 
 		m_commands.push_back(new CommandType());
 		m_commands.push_back(new CommandHelp());
+		m_commands.push_back(new CommandCompiland());
+		m_commands.push_back(new CommandSource());
 
 		initState = true;
 		return true;

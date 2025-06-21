@@ -95,6 +95,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>$(VSInstallDir)DIA SDK\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -129,6 +130,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>$(VSInstallDir)DIA SDK\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -143,8 +145,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Application\Application.hpp" />
+    <ClInclude Include="Source\Application\Command\CommandCompiland.hpp" />
     <ClInclude Include="Source\Application\Command\CommandHelp.hpp" />
     <ClInclude Include="Source\Application\Command\CommandManager.hpp" />
+    <ClInclude Include="Source\Application\Command\CommandSource.hpp" />
     <ClInclude Include="Source\Application\Command\CommandType.hpp" />
     <ClInclude Include="Source\Application\Command\ICommand.hpp" />
     <ClInclude Include="Source\Application\Console\ConsoleManager.hpp" />
