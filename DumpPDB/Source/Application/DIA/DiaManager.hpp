@@ -5,6 +5,7 @@
 #pragma comment(lib, "diaguids.lib")
 
 #include <string>
+#include <algorithm>
 
 #include "..\..\Util\Container\Singleton.hpp"
 
@@ -24,6 +25,8 @@ protected:
     IDiaSymbol* m_globalScope;
 
 public:
+    std::vector<BSTR> m_typeSources;
+
     bool initialize(const std::wstring& a_pdbPath) 
     {
         if (FAILED(CoInitialize(nullptr))) return false;
@@ -73,6 +76,8 @@ public:
         displayClassMembers_C(a_symbol, a_nestingLevel);
         
         displayScopeEnd(a_nestingLevel); // }
+
+        displayTypeSources();
     }
 
     bool displayClass(const wchar_t* a_typeName)
@@ -297,15 +302,16 @@ public:
         // displayTabulation(a_nestingLevel);
         // displaySize(_function);
 
-        // displayTabulation(a_nestingLevel);
         // displayTypeSource(a_symbol);
 
-        displayTabulation(a_nestingLevel);
+        // displayTabulation(a_nestingLevel);
         // displayTabulation(a_nestingLevel - 1);
         // ConsoleManager::print(L"%s: ", getAccessName(a_symbol));
 
         // ConsoleManager::print(getCommentName_C());
         // auto _isMod = false;
+
+        displayTabulation(a_nestingLevel);
         const wchar_t* _names[] = { getVirtualName(a_symbol), getStaticName(a_symbol) };
         for (auto _name : _names) { if (_name) { ConsoleManager::print(L"%s ", _name); } }
 
@@ -349,7 +355,7 @@ public:
 
         if (_funtionType) { _funtionType->Release(); }
 
-        ConsoleManager::print(L";\n");
+        ConsoleManager::print(L";");
     }
 
     static bool displayPointer(IDiaSymbol* a_symbol)
@@ -375,7 +381,7 @@ public:
         return false;
     }
 
-    static bool displayArray(IDiaSymbol* a_symbol)
+    static DWORD getArrayDisplayData_C(IDiaSymbol* a_symbol)
     {
         DWORD _count = 0;
         a_symbol->get_count(&_count);
@@ -385,18 +391,55 @@ public:
         {
             displayName(_type);
             _type->Release();
-            ConsoleManager::print(L"%s%u%s", L"[", _count, L"]");
             if (_const) { ConsoleManager::print(L" %s", _const); }
-            return true;
         }
         else
         {
-            ConsoleManager::print(L"void%s%u%s", L"[", _count, L"]");
-            if (_const) { ConsoleManager::print(L" %s", _const); }
-            return true;
+            if (_const) { ConsoleManager::print(L"void %s", _const); }
         }
 
-        return false;
+        return _count;
+    }
+
+    static bool displayArray_C(DWORD a_count)
+    {
+        ConsoleManager::print(L"%s%u%s", L"[", a_count, L"]");
+        return true;
+    }
+
+    static std::pair<DWORD, ULONGLONG> getBitField_C(IDiaSymbol* a_symbol)
+    {
+        DWORD _bitPosition = 0;
+        ULONGLONG _bitLength = 0;
+
+        if (FAILED(a_symbol->get_bitPosition(&_bitPosition)) || FAILED(a_symbol->get_length(&_bitLength)))
+        {
+            return { UINT_MAX, MAXULONGLONG };
+        }
+        /*
+        if (auto _type = getType(a_symbol))
+        {
+            displayName(_type);
+            _type->Release();
+        }
+        else
+        {
+            ConsoleManager::print(L"unsigned int");
+        }*/
+
+        return { _bitPosition, _bitLength };
+    }
+
+    static bool displayBitField_C(DWORD a_bitPosition, ULONGLONG a_bitLength)
+    {
+        ConsoleManager::print(L" : %llu", a_bitLength);
+
+        if (GlobalSettings::s_isOffsetInfo)
+        {
+            ConsoleManager::print(L"; // 0x%X", a_bitPosition); // attention
+        }
+
+        return true;
     }
 
     bool displayType(const wchar_t* a_typeName)
@@ -649,8 +692,10 @@ protected:
         return 0;
     }
 
-    static void displayTypeSource(IDiaSymbol* a_symbol)
+    static void registerTypeSource(IDiaSymbol* a_symbol)
     {
+        if (!GlobalSettings::s_typeSource) { return; }
+
         IDiaSourceFile* _sourceFile = nullptr;
         IDiaLineNumber* _lineNumber = nullptr;
         IDiaEnumLineNumbers* _enumLineNumbers = nullptr;
@@ -670,8 +715,7 @@ protected:
                     BSTR _filename;
                     if (SUCCEEDED(_sourceFile->get_fileName(&_filename)))
                     {
-                        ConsoleManager::print(L"%s%s\n", getCommentName_C(), _filename);
-                        SysFreeString(_filename);
+                        instance().m_typeSources.push_back(_filename);
                     }
                     _sourceFile->Release();
                 }
@@ -682,6 +726,19 @@ protected:
                 _enumLineNumbers->Release();
             }
         }
+    }
+
+    static void displayTypeSources()
+    {
+        auto& _sources = instance().m_typeSources;
+
+        for (auto& _source : _sources)
+        {
+            ConsoleManager::print(L"%s%s\n", getCommentName_C(), _source);
+            SysFreeString(_source);
+        }
+
+        _sources.clear();
     }
 
     /// Note: Debug
@@ -806,6 +863,11 @@ protected:
     static bool displayName(IDiaSymbol* a_symbol, bool a_nonScope = true)
     {
         static const wchar_t* s_hiddenName = L"__formal"; // you can use it to hide a name
+        auto _symTagSubType = SymTagNull;
+        DWORD _arraySize = UINT_MAX;
+
+        ULONGLONG _bitfieldLength = UINT_MAX;
+        DWORD _bitfieldPosition = MAXULONGLONG;
 
         auto _res = false;
 
@@ -822,8 +884,23 @@ protected:
                 if (_const) { ConsoleManager::print(L"%s ", _const); } 
                 if (auto _base = getBaseTypeName_C(a_symbol)) { ConsoleManager::print(_base); } return true;
             case SymTagPointerType: return displayPointer(a_symbol);
-            case SymTagArrayType: return displayArray(a_symbol);
-            case SymTagData: if (auto _type = getType(a_symbol)) { displayName(_type, a_nonScope); ConsoleManager::print(L" "); } break;
+            case SymTagArrayType: return displayArray_C(getArrayDisplayData_C(a_symbol));
+            case SymTagData: 
+                if (auto _type = getType(a_symbol)) 
+                { 
+                    std::tie(_bitfieldPosition, _bitfieldLength) = getBitField_C(a_symbol);
+
+                    if (SUCCEEDED(_type->get_symTag((DWORD*)&_symTagSubType)) && _symTagSubType == SymTagArrayType)
+                    {
+                        _arraySize = getArrayDisplayData_C(_type);
+                    }
+                    else
+                    {
+                        displayName(_type, a_nonScope);
+                    }
+                    ConsoleManager::print(L" "); 
+                } 
+                break;
             default: break;
             }
         }
@@ -842,6 +919,17 @@ protected:
 
             SysFreeString(_bstrName);
         }
+
+        if (_symTagSubType == SymTagArrayType && _arraySize != UINT_MAX)
+        {
+            displayArray_C(_arraySize);
+        }
+
+        if (_bitfieldLength != MAXULONGLONG && _bitfieldLength != 0 && _bitfieldPosition != UINT_MAX) // attention to _bitfieldLength != 0
+        {
+            displayBitField_C(_bitfieldPosition, _bitfieldLength);
+        }
+
         return _res;
     }
 
@@ -973,20 +1061,120 @@ protected:
             } 
             */
 
-            for (auto& _function : _childsContainers[1]) // SymTagVTable
+            /// --------------------------------------- <SymTagFunction> ---------------------------------------
+
+            std::vector<IDiaSymbol*> _vfuncs;
+
+            for (auto& _function : _childsContainers[1]) // SymTagFunction + get_virtual
             {
-                BOOL _isVirtual;
-                if (SUCCEEDED(_function->get_virtual(&_isVirtual)) && !_isVirtual) { continue; }
+                BOOL _isVirtual = false;
+                if (FAILED(_function->get_virtual(&_isVirtual)) || !_isVirtual) { continue; }
+                registerTypeSource(_function);
+                _vfuncs.push_back(_function);
+            }
 
-                displayTabulation(a_nestingLevel);
-                displayTypeSource(_function);
+            std::sort(_vfuncs.begin(), _vfuncs.end(),
+                [](IDiaSymbol* a, IDiaSymbol* b)
+                {
+                    DWORD _offsetA, _offsetB;
+                    a->get_virtualBaseOffset(&_offsetA);
+                    b->get_virtualBaseOffset(&_offsetB);
+                    return _offsetA < _offsetB;
+                });
 
+            for (auto& _vfunc : _vfuncs)
+            {
+                displayFunction(_vfunc, a_nestingLevel);
+
+                if (GlobalSettings::s_isOffsetInfo)
+                {
+                    // displayTabulation(a_nestingLevel);
+                    DWORD _offset = 0xFFFFFFFC;
+                    if (SUCCEEDED(_vfunc->get_virtualBaseOffset(&_offset)) && _offset != 0xFFFFFFFC) 
+                    { 
+                        ConsoleManager::print(L" %s0x%X", getCommentName_C(), _offset); 
+                    }
+                }
+                
+                ConsoleManager::print(L"\n");
+            }
+
+            /// -------------------------------------- </SymTagFunction> ---------------------------------------
+
+            /// ----------------------------------------- <SymTagData> -----------------------------------------
+
+            std::vector<IDiaSymbol*> _fields;
+
+            for (auto& _field : _childsContainers[0]) // SymTagData
+            {
+                DWORD _kind = 0;
+                if (SUCCEEDED(_field->get_dataKind(&_kind)) && _kind == DataIsMember) 
+                {  
+                    _fields.push_back(_field);
+                }
+            }
+
+            std::sort(_fields.begin(), _fields.end(),
+                [](IDiaSymbol* a, IDiaSymbol* b)
+                {
+                    LONG _offsetA, _offsetB;
+                    a->get_offset(&_offsetA);
+                    b->get_offset(&_offsetB);
+                    return _offsetA < _offsetB;
+                });
+
+            for (auto& _field : _fields) 
+            {
                 displayTabulation(a_nestingLevel);
-                DWORD _offset = 0xFFFFFFFC;
-                _function->get_virtualBaseOffset(&_offset);
-                ConsoleManager::print(L"%s0x%X\n", getCommentName_C(), _offset);
+                displayName(_field);
+
+                ConsoleManager::print(L"; ");
+
+                if (GlobalSettings::s_isOffsetInfo)
+                {
+                    LONG _offset = 0xFFFFFFFC;
+                    if (SUCCEEDED(_field->get_offset(&_offset)) && _offset != 0xFFFFFFFC)
+                    {
+                        ConsoleManager::print(L"%s0x%X", getCommentName_C(), _offset);
+                    }
+                }
+                ConsoleManager::print(L"\n");
+            }
+
+            /// ----------------------------------------  </SymTagData> ----------------------------------------
+
+            for (auto& _function : _childsContainers[1]) // SymTagFunction + !get_virtual
+            {
+                BOOL _isVirtual = true;
+                if (FAILED(_function->get_virtual(&_isVirtual)) || _isVirtual) { continue; }
+
+                // displayTabulation(a_nestingLevel);
+                registerTypeSource(_function);
 
                 displayFunction(_function, a_nestingLevel);
+                ConsoleManager::print(L"\n");
+            }
+
+            for (auto& _field : _childsContainers[0]) // SymTagData / static - const
+            {
+                DWORD _kind = 0;
+                if (FAILED(_field->get_dataKind(&_kind)) || _kind == DataIsMember) { continue; }
+
+                displayTabulation(a_nestingLevel);
+
+                const wchar_t* _modificator = nullptr;
+                switch (_kind)
+                {
+                case DataIsStaticMember: _modificator = L"static "; break;
+                case DataIsConstant: _modificator = L"constexpr "; break;
+                default: break;
+                }
+                
+                ConsoleManager::print(_modificator);
+
+                displayName(_field);
+
+                ConsoleManager::print(L";\n ");
             }
 
             for (auto& _childsContainer : _childsContainers)

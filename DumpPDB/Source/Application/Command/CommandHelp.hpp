@@ -7,7 +7,18 @@
 
 class Nulla : public BoolSerializable, CommandType
 {
-	unsigned int a;
+	unsigned int INTVALUE;
+	static constexpr int CONSTEXPRINT = 8;
+	const int CONSTVALUE = 8;
+	BoolSerializable BOOLOBJ;
+	BoolSerializable* BOOLPTR;
+	BoolSerializable BOOLARRAY[10];
+	bool BOOLARR[10][30][1]; /// <- TODO
+	int (*tester)(char*, int); /// <- TODO
+	// int&& newRef; /// <- TODO
+	int bfield : 4;
+	int bfield1 : 8;
+	static inline auto ATOTYPE = 7;
 
 	friend class BoolSerializable;
 
