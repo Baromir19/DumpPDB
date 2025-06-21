@@ -5,6 +5,7 @@
 #pragma comment(lib, "diaguids.lib")
 
 #include <string>
+#include <sstream>
 #include <algorithm>
 
 #include "..\..\Util\Container\Singleton.hpp"
@@ -23,6 +24,60 @@ protected:
     IDiaDataSource* m_source;
     IDiaSession* m_session;
     IDiaSymbol* m_globalScope;
+
+    static constexpr DWORD s_noRetValue = 0xFFFFFFFC;
+
+    struct DiaSymbolType
+    {
+        bool m_isConstPointed = false;
+        bool m_isConst = false;
+        bool m_isVolatile = false;
+        bool m_isRoundBrackets = false;
+        std::wstring m_type = L"";
+        std::wstring m_name = L"";
+        std::wstring m_pointer = L"";
+        std::wstring m_array = L"";
+        std::wstring m_pointedFunctionArgs = L"";
+        std::wstring m_bitfield = L"";
+        
+        enum SymTagEnum m_tag = SymTagNull;
+
+        DiaSymbolType& operator+=(const DiaSymbolType& other)
+        {
+            if (!m_pointer.empty() && m_array.empty() && !other.m_array.empty())
+            {
+                m_isRoundBrackets = true;
+            }
+
+            m_isConstPointed = m_isConstPointed || other.m_isConstPointed;
+            m_isConst = m_isConst || other.m_isConst;
+            m_isVolatile = m_isVolatile || other.m_isVolatile;
+            m_isRoundBrackets = m_isRoundBrackets || other.m_isRoundBrackets;
+
+            if (!other.m_name.empty()) 
+            { 
+                if (!m_name.empty()) { m_name += L" "; }
+                m_name += other.m_name;
+            }
+
+            if (!other.m_type.empty())
+            {
+                if (!m_type.empty()) { m_type += L" "; }
+                m_type += other.m_type;
+            }
+
+            //m_pointer = other.m_pointer + m_pointer;
+            //m_array = other.m_array + m_array;            
+            m_pointer += other.m_pointer;
+            m_array += other.m_array;
+            m_pointedFunctionArgs += other.m_pointedFunctionArgs; // ? by ,
+            m_bitfield += other.m_bitfield;
+
+            if (!m_pointedFunctionArgs.empty()) { m_isRoundBrackets = true; }
+
+            return *this;
+        }
+    };
 
 public:
     std::vector<BSTR> m_typeSources;
@@ -59,16 +114,14 @@ public:
     /// cmd api:
     static void displayClass(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
-        // displayTabulation(a_nestingLevel);
-        // displayFileSource(a_symbol);
-
         displayTabulation(a_nestingLevel);
         displaySize(a_symbol);
 
         displayTabulation(a_nestingLevel);
         displayModType_C(a_symbol);
         displaySym_C(a_symbol);
-        displayName(a_symbol);
+        ConsoleManager::print(getSymTypeText(getSymType(a_symbol, false)).c_str());
+
         displayClassInheritence_C(a_symbol);
 
         displayScopeBegin(a_nestingLevel); // {
@@ -108,17 +161,13 @@ public:
 
     static void displayEnum(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
-        // displayTabulation(a_nestingLevel);
-        // displayTypeSource(a_symbol);
-
         displayTabulation(a_nestingLevel);
         displaySize(a_symbol);
 
-        // ConsoleManager::print(L"%s ", getAccessName(_symbol));
         displayTabulation(a_nestingLevel);
         displayModType_C(a_symbol);
         displaySym_C(a_symbol);
-        displayName(a_symbol);
+        ConsoleManager::print(getName(a_symbol, false).c_str()); 
 
         displayBaseTypeInheritence(a_symbol); // : TYPE
 
@@ -170,29 +219,17 @@ public:
 
     static void displayTypedef(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
-        // displaySize(_symbol);
-
-        // displayTabulation(a_nestingLevel);
-        // displayFileSource(a_symbol);
-
         displayTabulation(a_nestingLevel);
 
         displayModType_C(a_symbol);
         displaySym_C(a_symbol);
 
-        if (auto _base = getType(a_symbol))
-        {
-            displayName(_base);
-            ConsoleManager::instance().print(L" ");
-            _base->Release();
-        }
-
-        displayName(a_symbol);
+        ConsoleManager::print(getSymTypeText(getSymType(a_symbol, false)).c_str());
 
         ConsoleManager::instance().print(L";\n");
     }
 
-    bool displayTypedef(const wchar_t* a_typeName) // attention: no template using alias
+    bool displayTypedef(const wchar_t* a_typeName) // attention: there's no template using alias
     {
         IDiaEnumSymbols* _enumSymbols;
 
@@ -223,7 +260,8 @@ public:
 
         displayModType_C(a_symbol);
         displaySym_C(a_symbol);
-        displayName(a_symbol);
+        // displayName(a_symbol); 
+        ConsoleManager::print(getSymTypeText(getSymType(a_symbol, false)).c_str());
         ConsoleManager::instance().print(L";\n");
     }
 
@@ -236,7 +274,7 @@ public:
 
         displayTabulation(a_nestingLevel);
         ConsoleManager::print(getCommentName_C());
-        displayName(a_symbol);
+        ConsoleManager::print(getSymTypeText(getSymType(a_symbol, false)).c_str());
         ConsoleManager::print(L"\n");
 
         IDiaEnumSymbols* _enum;
@@ -248,9 +286,8 @@ public:
             {
                 displayTabulation(a_nestingLevel);
                 ConsoleManager::print(getCommentName_C());
-                displayName(_child);
+                ConsoleManager::print(getSymTypeText(getSymType(_child, false)).c_str());
                 ConsoleManager::print(L"\n");
-                // vfuncs
             }
         }
     }
@@ -265,22 +302,15 @@ public:
         if (SUCCEEDED(hr) && _enumParams != nullptr) 
         {
             IDiaSymbol* _param = nullptr;
-            ULONG fetched = 0;
-            while (SUCCEEDED(_enumParams->Next(1, &_param, &fetched)) && fetched == 1) 
+            ULONG _fetched = 0;
+            while (SUCCEEDED(_enumParams->Next(1, &_param, &_fetched)) && _fetched == 1) 
             {
                 DWORD _kind = 0;
                 if (SUCCEEDED(_param->get_dataKind(&_kind)) && _kind == DataIsParam)
                 {
                     if (!_isFirst) { ConsoleManager::print(L", "); }
 
-                    // SymTagEnum;
-                    // displaySymTag(_param);
-                    displayName(_param, false);
-                    //auto _type = getType(_param);
-                    // displaySymTag(_type); 
-                    //displayName(_type);
-                    // displayChildInfo(_type);
-                    //_type->Release();
+                    ConsoleManager::print(getSymTypeText(getSymType(_param, false)).c_str()); 
 
                     _isFirst = false;
                 }
@@ -293,118 +323,59 @@ public:
 
     static void displayFunction(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
-        // displayTabulation(a_nestingLevel);
-        // displayRVA(_function);
-        // displayTabulation(a_nestingLevel);
-        // displayVA(_function);
-        // displayLocationType(_function);
-
-        // displayTabulation(a_nestingLevel);
-        // displaySize(_function);
-
-        // displayTypeSource(a_symbol);
-
-        // displayTabulation(a_nestingLevel);
-        // displayTabulation(a_nestingLevel - 1);
-        // ConsoleManager::print(L"%s: ", getAccessName(a_symbol));
-
-        // ConsoleManager::print(getCommentName_C());
-        // auto _isMod = false;
-
         displayTabulation(a_nestingLevel);
         const wchar_t* _names[] = { getVirtualName(a_symbol), getStaticName(a_symbol) };
         for (auto _name : _names) { if (_name) { ConsoleManager::print(L"%s ", _name); } }
 
-        // DebugManager::WaitDebugger();
-
         auto _funtionType = getType(a_symbol); // SymTagFunctionType
-        /*if (_funtionType)
-        {
-            displayName(_funtionType, false);
-            ConsoleManager::print(L" ");
-        }*/
 
         auto _retType = getType(_funtionType);
         if (_retType)
         {
-            // displaySymTag(_retType); SymTagEnum;
-            displayName(_retType, false);
+            ConsoleManager::print(getSymTypeText(getSymType(_retType, false)).c_str());
             ConsoleManager::print(L" ");
 
             _retType->Release();
         }
 
-        displayName(a_symbol);
+        ConsoleManager::print(getName(a_symbol).c_str());
 
         ConsoleManager::print(getFunctionArgsBegin_C());
 
         displayFunctionArgs(a_symbol);
 
-        // displayChildInfo(a_symbol);
-
         ConsoleManager::print(getFunctionArgsEnd_C());
-
-        // displayFileSource(a_symbol);
 
         auto _const = getConstName(a_symbol);
         if (_const ? _const : getConstName(_funtionType)) { ConsoleManager::print(L" %s", _const); }
-
-        // if (getVirtualName(a_symbol)) { displayVTableOffset(a_symbol); } // didn't work correctly
-
-        // ConsoleManager::print(L" %s", getPureName(a_symbol));
 
         if (_funtionType) { _funtionType->Release(); }
 
         ConsoleManager::print(L";");
     }
 
-    static bool displayPointer(IDiaSymbol* a_symbol)
+    static std::wstring getPointer(IDiaSymbol* a_symbol)
     {
+        std::wstringstream _ss;
+
         auto _ref = getReferenceName(a_symbol);
-        auto _const = getConstName(a_symbol);
 
-        if (auto _type = getType(a_symbol))
-        {
-            displayName(_type);
-            _type->Release();
-            ConsoleManager::print(L"%s", _ref ? _ref : L"*");
-            if (_const) { ConsoleManager::print(L" %s", _const); }
-            return true;
-        }
-        else 
-        {
-            ConsoleManager::print(L"void%s", _ref ? _ref : L"*");
-            if (_const) { ConsoleManager::print(L" %s", _const); }
-            return true;
-        }
+        _ss << (_ref ? _ref : L"*");
 
-        return false;
+        return _ss.str();
     }
 
-    static DWORD getArrayDisplayData_C(IDiaSymbol* a_symbol)
+    static std::wstring getArray(IDiaSymbol* a_symbol)
     {
-        DWORD _count = 0;
-        a_symbol->get_count(&_count);
-        auto _const = getConstName(a_symbol);
+        std::wstringstream _ss;
 
-        if (auto _type = getType(a_symbol))
+        DWORD _count = s_noRetValue;
+        if (SUCCEEDED(a_symbol->get_count(&_count)) && _count != s_noRetValue)
         {
-            displayName(_type);
-            _type->Release();
-            if (_const) { ConsoleManager::print(L" %s", _const); }
-        }
-        else
-        {
-            if (_const) { ConsoleManager::print(L"void %s", _const); }
+            _ss << L"[" << _count << L"]";
         }
 
-        return _count;
-    }
-
-    static bool displayArray_C(DWORD a_count)
-    {
-        ConsoleManager::print(L"%s%u%s", L"[", a_count, L"]");
-        return true;
+        return _ss.str();
     }
 
     static std::pair<DWORD, ULONGLONG> getBitField_C(IDiaSymbol* a_symbol)
@@ -416,18 +387,32 @@ public:
         {
             return { UINT_MAX, MAXULONGLONG };
         }
-        /*
-        if (auto _type = getType(a_symbol))
-        {
-            displayName(_type);
-            _type->Release();
-        }
-        else
-        {
-            ConsoleManager::print(L"unsigned int");
-        }*/
 
         return { _bitPosition, _bitLength };
+    }
+
+    static std::wstring _getBitField_C(IDiaSymbol* a_symbol)
+    {
+        DWORD _bitPosition = UINT_MAX;
+        ULONGLONG _bitLength = MAXULONGLONG;
+
+        if (FAILED(a_symbol->get_bitPosition(&_bitPosition)) 
+            || FAILED(a_symbol->get_length(&_bitLength)) 
+            || _bitLength == 0 || _bitLength == MAXULONGLONG || _bitPosition == UINT_MAX)
+        {
+            return L"";
+        }
+
+        std::wstringstream _ss;
+
+        _ss << L" : " << _bitLength;
+
+        if (GlobalSettings::s_isOffsetInfo)
+        {
+            _ss << L"; // 0x" << std::uppercase << std::hex << _bitPosition << std::dec;
+        }
+
+        return _ss.str();
     }
 
     static bool displayBitField_C(DWORD a_bitPosition, ULONGLONG a_bitLength)
@@ -444,14 +429,193 @@ public:
 
     bool displayType(const wchar_t* a_typeName)
     {
-        if (displayClass(a_typeName) 
-            || displayEnum(a_typeName) 
-            || displayTypedef(a_typeName)) 
+        IDiaEnumSymbols* _enumSymbols;
+
+        auto _caseType = getNameSearchType();
+        auto hr = m_globalScope->findChildren(SymTagNull, a_typeName, _caseType, &_enumSymbols);
+
+        if (SUCCEEDED(hr))
         {
-            return true; 
+            IDiaSymbol* _symbol;
+            ULONG _celt = 0;
+
+            while (SUCCEEDED(_enumSymbols->Next(1, &_symbol, &_celt)) && _celt == 1)
+            {
+                DWORD _symTag = 0;
+                if (SUCCEEDED(_symbol->get_symTag(&_symTag)))
+                {
+                    switch (_symTag)
+                    {
+                    case SymTagTypedef: displayTypedef(_symbol); break;
+                    case SymTagUDT: displayClass(_symbol); break;
+                    case SymTagEnum: displayEnum(_symbol); break;
+                    }
+                }
+
+                _symbol->Release();
+            }
+
+            _enumSymbols->Release();
         }
 
-        return false;
+        return true;
+    }
+
+    bool displayCompilands()
+    {
+        // ConsoleManager::print(L"\n=== COMPILANDS ===\n");
+
+        IDiaEnumSymbols* _enumSymbols = nullptr;
+        IDiaSymbol* _globalScope = nullptr;
+
+        if (FAILED(m_session->get_globalScope(&_globalScope))) return false;
+
+        if (FAILED(_globalScope->findChildren(SymTagCompiland, nullptr, nsNone, &_enumSymbols)))
+        {
+            _globalScope->Release();
+            return false;
+        }
+
+        IDiaSymbol* _compiland = nullptr;
+        ULONG _celt = 0;
+        DWORD _compilandId = 0;
+
+        while (SUCCEEDED(_enumSymbols->Next(1, &_compiland, &_celt)) && _celt == 1)
+        {
+            BSTR _name = nullptr;
+            if (SUCCEEDED(_compiland->get_name(&_name)) && _name)
+            {
+                ConsoleManager::print(L"%s\n", _name);
+
+                SysFreeString(_name);
+            }
+
+            /*IDiaEnumSourceFiles* enumFiles = nullptr;
+            if (SUCCEEDED(m_session->findFile(compiland, nullptr, nsNone, &enumFiles)))
+            {
+                IDiaSourceFile* srcFile = nullptr;
+                ULONG fileCelt = 0;
+
+                while (SUCCEEDED(enumFiles->Next(1, &srcFile, &fileCelt)) && fileCelt == 1)
+                {
+                    BSTR srcFileName = nullptr;
+                    if (SUCCEEDED(srcFile->get_fileName(&srcFileName)) && srcFileName)
+                    {
+                        ConsoleManager::print(L"%s%s\n", L"  Source: ", srcFileName);
+                        SysFreeString(srcFileName);
+                    }
+                    srcFile->Release();
+                }
+                enumFiles->Release();
+            }*/
+
+            _compiland->Release();
+        }
+
+        _enumSymbols->Release();
+        _globalScope->Release();
+
+        return true;
+    }
+
+    bool displayCompilandsEnv()
+    {
+        IDiaEnumSymbols* _enum;
+        IDiaSymbol* _global;
+
+        if (FAILED(m_session->get_globalScope(&_global))) { return false; }
+
+        if (FAILED(_global->findChildren(SymTagCompiland, nullptr, nsNone, &_enum))) { return false; }
+
+        IDiaSymbol* _compiland;
+        ULONG _celt = 0;
+
+        while (SUCCEEDED(_enum->Next(1, &_compiland, &_celt)) && _celt == 1)
+        {
+            std::wstring _name = getName(_compiland);
+            ConsoleManager::print(L"[OBJ] %s\n", _name.c_str());
+
+            IDiaEnumSymbols* _details;
+            if (SUCCEEDED(_compiland->findChildren(SymTagCompilandDetails, nullptr, nsNone, &_details))) 
+            {
+                IDiaSymbol* _detail;
+                while (SUCCEEDED(_details->Next(1, &_detail, &_celt)) && _celt == 1) 
+                {
+                    DWORD _platform, _language;
+                    _detail->get_platform(&_platform);
+                    _detail->get_language(&_language);
+
+                    BSTR _compilerName;
+                    _detail->get_compilerName(&_compilerName);//= getName(_detail); 
+
+                    BOOL _isDebug;
+                    _detail->get_hasDebugInfo(&_isDebug);
+                    ConsoleManager::print(L"[ABOUT] Compiler: %s; Language: %u; Platform: %u; Debug: %s\n", _compilerName, _language, _platform, _isDebug ? L"true" : L"false");
+                    SysFreeString(_compilerName);
+                    _detail->Release();
+                }
+
+                _details->Release();
+            }
+            
+            IDiaEnumSymbols* _env;
+            if (SUCCEEDED(_compiland->findChildren(SymTagCompilandEnv, nullptr, nsNone, &_env))) 
+            {
+                IDiaSymbol* _envSym;
+                while (SUCCEEDED(_env->Next(1, &_envSym, &_celt)) && _celt == 1) 
+                {
+                    std::wstring _envName = getName(_envSym);
+
+                    VARIANT _val; 
+                    VariantInit(&_val);
+                    if (SUCCEEDED(_envSym->get_value(&_val)) && _val.bstrVal && _val.vt == VT_BSTR)
+                    {
+                        ConsoleManager::print(L"[ENV] %s = %s\n", _envName.c_str(), _val.bstrVal);
+
+                        VariantClear(&_val);
+                    }
+                    else 
+                    {
+                        ConsoleManager::print(L"[ENV] %s\n", _envName.c_str());
+                    }
+                    _envSym->Release();
+                }
+
+                _env->Release();
+            }
+        }
+
+        _enum->Release();
+        _global->Release();
+        _compiland->Release();
+
+        return true;
+    }
+
+    bool displaySourceFiles()
+    {
+        // ConsoleManager::print(L"%s\n", L"=== SOURCE FILES ===");
+
+        IDiaEnumSourceFiles* _enumSourceFiles = nullptr;
+        if (FAILED(m_session->findFile(nullptr, nullptr, nsNone, &_enumSourceFiles))) { return false; }
+
+        IDiaSourceFile* _sourceFile = nullptr;
+        ULONG _celt = 0;
+        DWORD _fileId = 0;
+
+        while (SUCCEEDED(_enumSourceFiles->Next(1, &_sourceFile, &_celt)) && _celt == 1)
+        {
+            BSTR _fileName = nullptr;
+            if (SUCCEEDED(_sourceFile->get_fileName(&_fileName)) && _fileName)
+            {
+                ConsoleManager::print(L"%s\n", _fileName);
+                SysFreeString(_fileName);
+            }
+
+            _sourceFile->Release();
+        }
+
+        _enumSourceFiles->Release();
     }
 
 protected:
@@ -567,15 +731,6 @@ protected:
     {
         BOOL _isStatic;
         return SUCCEEDED(a_symbol->get_isStatic(&_isStatic)) && _isStatic ? L"static" : nullptr;
-        /*IDiaSymbol* _parent = nullptr;
-        if (SUCCEEDED(a_symbol->get_classParent(&_parent)))
-        {
-            if (_parent) { _parent->Release(); return L"static"; }
-        }
-
-        return nullptr;*/
-        //DWORD _locationType = 0;
-        //return SUCCEEDED(a_symbol->get_locationType(&_locationType)) && _locationType == LocIsStatic ? L"static" : nullptr; // not guaranteed
     }
 
     static const wchar_t* getInlineName(IDiaSymbol* a_symbol)
@@ -788,15 +943,6 @@ protected:
         return false;
     }
 
-    /*static bool displayLength(IDiaSymbol* a_symbol, const wchar_t* (*a_commentName)() = getCommentName_C) // same as size
-    {
-        ULONGLONG _length;
-        if (SUCCEEDED(a_symbol->get_length(&_length)))
-        {
-            ConsoleManager::print(L"%s length: %llu bytes\n", a_commentName(), _length);
-        }
-    }*/
-
     static bool displayRVA(IDiaSymbol* a_symbol, const wchar_t* (*a_commentName)() = getCommentName_C)
     {
         DWORD _rva = 0;
@@ -849,9 +995,9 @@ protected:
 
     static bool displaySym_C(IDiaSymbol* a_symbol)
     {
-        auto _sym = getSymTagBegin_C(a_symbol);
+        const wchar_t* _sym = nullptr;
 
-        if (_sym)
+        if (_sym = getSymTagBegin_C(a_symbol))
         {
             ConsoleManager::print(_sym);
             ConsoleManager::print(L" ");
@@ -860,107 +1006,178 @@ protected:
         return _sym;
     }
 
-    static bool displayName(IDiaSymbol* a_symbol, bool a_nonScope = true)
+    static DiaSymbolType getFuncArgsType(IDiaSymbol* a_symbol)
     {
-        static const wchar_t* s_hiddenName = L"__formal"; // you can use it to hide a name
-        auto _symTagSubType = SymTagNull;
-        DWORD _arraySize = UINT_MAX;
+        DiaSymbolType _ret;
 
-        ULONGLONG _bitfieldLength = UINT_MAX;
-        DWORD _bitfieldPosition = MAXULONGLONG;
+        bool _isFirst = true;
 
-        auto _res = false;
-
-        auto _const = getConstName(a_symbol);
-        if (auto _volatile = getVolatileName(a_symbol)) { ConsoleManager::print(L"%s ", _volatile); }
-
-        // displaySymTag(a_symbol); SymTagEnum;
-        auto _symTag = SymTagNull;
-        if (SUCCEEDED(a_symbol->get_symTag((DWORD*)&_symTag)))
+        IDiaEnumSymbols* _enumSymbols = nullptr;
+        if (SUCCEEDED(a_symbol->findChildren(SymTagFunctionArgType, nullptr, nsNone, &_enumSymbols)) && _enumSymbols)
         {
-            switch (_symTag)
+            IDiaSymbol* _childSymbol = nullptr; ULONG _celt = 0;
+            while (SUCCEEDED(_enumSymbols->Next(1, &_childSymbol, &_celt)) && _celt == 1)
             {
-            case SymTagBaseType: 
-                if (_const) { ConsoleManager::print(L"%s ", _const); } 
-                if (auto _base = getBaseTypeName_C(a_symbol)) { ConsoleManager::print(_base); } return true;
-            case SymTagPointerType: return displayPointer(a_symbol);
-            case SymTagArrayType: return displayArray_C(getArrayDisplayData_C(a_symbol));
-            case SymTagData: 
-                if (auto _type = getType(a_symbol)) 
-                { 
-                    std::tie(_bitfieldPosition, _bitfieldLength) = getBitField_C(a_symbol);
+                // displaySymTag(_childSymbol);
+                IDiaSymbol* _argType = nullptr;
+                if (SUCCEEDED(_childSymbol->get_type(&_argType)) && _argType)
+                {
+                    if (!_isFirst)
+                    {
+                        _ret.m_pointedFunctionArgs += L", ";
+                    }
 
-                    if (SUCCEEDED(_type->get_symTag((DWORD*)&_symTagSubType)) && _symTagSubType == SymTagArrayType)
-                    {
-                        _arraySize = getArrayDisplayData_C(_type);
-                    }
-                    else
-                    {
-                        displayName(_type, a_nonScope);
-                    }
-                    ConsoleManager::print(L" "); 
-                } 
-                break;
-            default: break;
+                    auto _typeText = getSymTypeText(getSymType(_argType));
+
+                    _ret.m_pointedFunctionArgs += _typeText;
+
+                    _isFirst = false;
+                }
             }
         }
+
+        return _ret;
+    }
+
+    static std::wstring getSymTypeText(DiaSymbolType a_type)
+    {
+        std::wstring _ret = L"";
+
+        bool _toSpace = false;
+        auto _space = [&]() { if (_toSpace) { _ret += L" "; } _toSpace = false; };
+
+        /*if (!a_type.m_pointedFunctionArgs.empty()
+            || (!a_type.m_pointer.empty() && !a_type.m_array.empty()))
+        {
+            a_type.m_isRoundBrackets = true;
+        }*/
+
+        if (a_type.m_isVolatile)        { _space(); _toSpace = true; _ret += L"volatile"; }
+        if (a_type.m_isConst)           { _space(); _toSpace = true; _ret += L"const"; }
+        if (!a_type.m_type.empty())     { _space(); _toSpace = true; _ret += a_type.m_type.c_str(); }
+        if (a_type.m_isRoundBrackets)   { _space();                  _ret += L"("; }
+        if (!a_type.m_pointer.empty())  { if (!a_type.m_isRoundBrackets) _toSpace = true; _ret += a_type.m_pointer.c_str(); }
+        if (a_type.m_isConstPointed)    { _space(); _toSpace = true; _ret += L"const"; }
+        if (!a_type.m_name.empty())     { _space(); _toSpace = true; _ret += a_type.m_name.c_str(); }
+        if (a_type.m_isRoundBrackets)   {           _toSpace = true; _ret += L")"; }
+        if (!a_type.m_pointedFunctionArgs.empty())                 { _ret += L"("; _ret += a_type.m_pointedFunctionArgs.c_str(); _ret += L")"; }
+        if (!a_type.m_array.empty())    {           _toSpace = true; _ret += a_type.m_array.c_str(); }
+        if (!a_type.m_bitfield.empty()) {           _toSpace = true; _ret += a_type.m_bitfield.c_str(); }
+
+        return _ret;
+    }
+
+    static DiaSymbolType getSymType(IDiaSymbol* a_symbol, bool a_nonScope = true)
+    {
+        std::wstringstream _ss;
+        DiaSymbolType _ret;
+
+        DiaSymbolType _subTypeSymbol;
+        IDiaSymbol* _subType = getType(a_symbol);
+
+        auto _symTag = SymTagNull;
+        _ret.m_tag = SUCCEEDED(a_symbol->get_symTag((DWORD*)&_symTag)) ? _symTag : SymTagNull;
+
+        if (_subType) { _subTypeSymbol = getSymType(_subType); }
+
+        std::wstring _bitfield;
+        // std::wstring _array;
+
+        auto _name = getName(a_symbol);
+        auto _volatile = getVolatileName(a_symbol);
+        auto _const = getConstName(a_symbol);
+
+        //bool _toSpace = false;
+
+        //auto _space = [&]() { if (_toSpace) { _ss << " "; } _toSpace = false; };
+
+        // auto _pointer = getPointer(a_symbol);
+
+        if (_ret.m_tag != SymTagPointerType && _ret.m_tag != SymTagArrayType)
+        {
+            if (_volatile) { _ret.m_isVolatile = true; }
+            if (_const) { _ret.m_isConst = true; }
+        }
+
+        switch (_ret.m_tag)
+        {
+        case SymTagBaseType: 
+        {
+            _ret.m_type = getBaseTypeName_C(a_symbol); break;
+        }
+        case SymTagPointerType: 
+        {
+            _ret.m_pointer = getPointer(a_symbol); break;
+        }
+        case SymTagArrayType: 
+        {
+            _ret.m_array = getArray(a_symbol); break;
+        }
+        case SymTagData:
+        {
+            _ret.m_bitfield = _getBitField_C(a_symbol);
+            if (!_name.empty()) { _ret.m_name = _name; }  
+            break;
+        }
+        case SymTagFunctionType:
+        {
+            _ret += getFuncArgsType(a_symbol);
+
+            // _ss << getFunctionArgsBegin_C() /* << getFunctionArgs(a_symbol)*/ << getFunctionArgsEnd_C();
+            break;
+        }
+        case SymTagUDT:
+        case SymTagTypedef:
+        case SymTagEnum:
+        {
+            if (!_name.empty()) { _ret.m_type = _name; } break;
+        }
+
+        default: break;
+        }
+
+        if (_ret.m_tag == SymTagPointerType || _ret.m_tag == SymTagArrayType)
+        {
+            // if (_volatile) { _space(); _toSpace = true; _ss << _volatile << L""; }
+            if (_const) { _ret.m_isConstPointed = true; }
+        }
+
+
+        // if (!_array.empty()) { _toSpace = true; _ss << _array; }
+
+        if (_ret.m_tag != SymTagEnum) _ret += _subTypeSymbol;
+
+        // _ret.m_name = _ss.str();
+
+        if (_subType) { _subType->Release(); }
+
+        return _ret;
+    }
+
+    static std::wstring getName(IDiaSymbol* a_symbol, bool a_nonScope = true)
+    {
+        static const wchar_t* s_hiddenName = L"__formal";
 
         BSTR _bstrName = nullptr;
         if (SUCCEEDED(a_symbol->get_name(&_bstrName)))
         {
-            if (_const) { ConsoleManager::print(L"%s ", _const); }
-
             if (_bstrName != nullptr)
             {
                 auto _nameBegin = GlobalSettings::s_isNonScoped && a_nonScope ? getNonscopedNameBegin(_bstrName) : 0;
-                ConsoleManager::print(L"%s", &_bstrName[_nameBegin]);
-                _res = true;
+                return std::wstring(&_bstrName[_nameBegin]);
             }
 
             SysFreeString(_bstrName);
         }
 
-        if (_symTagSubType == SymTagArrayType && _arraySize != UINT_MAX)
-        {
-            displayArray_C(_arraySize);
-        }
-
-        if (_bitfieldLength != MAXULONGLONG && _bitfieldLength != 0 && _bitfieldPosition != UINT_MAX) // attention to _bitfieldLength != 0
-        {
-            displayBitField_C(_bitfieldPosition, _bitfieldLength);
-        }
-
-        return _res;
-    }
-
-    static bool displayUndecoratedName(IDiaSymbol* a_symbol)
-    {
-        auto _res = false;
-
-        BSTR _bstrName = nullptr;
-        if (SUCCEEDED(a_symbol->get_undecoratedName(&_bstrName)))
-        {
-            if (_bstrName != nullptr)
-            {
-                // auto _nameBegin = GlobalSettings::s_isNonScoped ? getNonscopedNameBegin(_bstrName) : 0;
-                ConsoleManager::print(L"%s", _bstrName);
-                _res = true;
-            }
-            else 
-            {
-                displayName(a_symbol);
-            }
-
-            SysFreeString(_bstrName);
-        }
-        return _res;
+        return L"";
     }
 
     static bool displayEnumMemberValue_C(IDiaSymbol* a_symbol)
     {
         auto _res = false;
 
-        displayName(a_symbol);
+        ConsoleManager::print(getSymTypeText(getSymType(a_symbol)).c_str());
 
         VARIANT v;
         VariantInit(&v);
@@ -989,12 +1206,13 @@ protected:
                 ConsoleManager::print(_isBegin ? getInheritenceName_C() : L", ");
                 _isBegin = false;
 
-                if (auto _access = getAccessName(_baseSymbol))
+                const wchar_t* _access = nullptr;
+                if (_access = getAccessName(_baseSymbol))
                 {
                     ConsoleManager::print(L"%s ", _access);
                 }
 
-                displayName(_baseSymbol);
+                ConsoleManager::print(getName(_baseSymbol).c_str());
                 
                 _baseSymbol->Release();
             }
@@ -1089,8 +1307,8 @@ protected:
                 if (GlobalSettings::s_isOffsetInfo)
                 {
                     // displayTabulation(a_nestingLevel);
-                    DWORD _offset = 0xFFFFFFFC;
-                    if (SUCCEEDED(_vfunc->get_virtualBaseOffset(&_offset)) && _offset != 0xFFFFFFFC) 
+                    DWORD _offset = s_noRetValue;
+                    if (SUCCEEDED(_vfunc->get_virtualBaseOffset(&_offset)) && _offset != s_noRetValue)
                     { 
                         ConsoleManager::print(L" %s0x%X", getCommentName_C(), _offset); 
                     }
@@ -1126,14 +1344,18 @@ protected:
             for (auto& _field : _fields) 
             {
                 displayTabulation(a_nestingLevel);
-                displayName(_field);
+                // displayName(_field);
+
+                // DebugManager::WaitDebugger();
+
+                ConsoleManager::print(getSymTypeText(getSymType(_field)).c_str());
 
                 ConsoleManager::print(L"; ");
 
                 if (GlobalSettings::s_isOffsetInfo)
                 {
-                    LONG _offset = 0xFFFFFFFC;
-                    if (SUCCEEDED(_field->get_offset(&_offset)) && _offset != 0xFFFFFFFC)
+                    LONG _offset = s_noRetValue;
+                    if (SUCCEEDED(_field->get_offset(&_offset)) && _offset != s_noRetValue)
                     {
                         ConsoleManager::print(L"%s0x%X", getCommentName_C(), _offset);
                     }
@@ -1172,7 +1394,8 @@ protected:
                 
                 ConsoleManager::print(_modificator);
 
-                displayName(_field);
+                ConsoleManager::print(getSymTypeText(getSymType(_field)).c_str());
+                // displayName(_field);
 
                 ConsoleManager::print(L";\n ");
             }
@@ -1276,7 +1499,8 @@ protected:
                 displaySymTag(_param);
                 displayTabulation();
                 displayTabulation();
-                displayName(_param);
+                ConsoleManager::print(getSymTypeText(getSymType(_param)).c_str());
+                // displayName(_param);
                 displayChildInfo(_param);
             }
             _enumParams->Release();
@@ -1295,7 +1519,7 @@ protected:
 
     static IDiaSymbol* getType(IDiaSymbol* a_symbol)
     {
-        IDiaSymbol* _baseType;
+        IDiaSymbol* _baseType = nullptr;
         if (SUCCEEDED(a_symbol->get_type(&_baseType)))
         {
             return _baseType;
