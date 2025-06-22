@@ -1,70 +1,65 @@
 #pragma once 
 
-#include <string>
+#include "IBaseSerializableBase.hpp"
 
-#include <winnt.h>
-#include <fileapi.h>
-#include <minwindef.h>
+#include "..\..\..\Application\String\StringManager.hpp"
+
+#define SERIALIZABLE(type_name, parent_name, var_name, base_value) \
+	type_name ## Serializable var_name = type_name ## Serializable(base_value, HashManager::crc32(#parent_name "::" #var_name), #parent_name "::" #var_name);
 
 template<typename T>
-class IBaseSerializable
+class IBaseSerializable : public IBaseSerializableBase
 {
 protected:
-	enum TypeId : unsigned __int16
-	{
-		TYPE_INT32 = 0,
-		TYPE_UINT32,
-		TYPE_INT16,
-		TYPE_UINT16,
-		TYPE_INT8,
-		TYPE_UINT8,
-		TYPE_BOOL,
-		TYPE_FLOAT,
-	};
-
-	T m_value;
-	const size_t m_size = sizeof(T);
-	const std::wstring m_name;
-	const TypeId m_typeId;
+	// T m_value;
+	// const size_t m_size = sizeof(T);
+	// const std::wstring m_name;
+	SaveManager::Entry<T> m_entry;
+	const char* m_name;
 
 public:
-	IBaseSerializable(T _baseValue, const TypeId _typeId, const wchar_t* _name = L"")
-		: m_value(_baseValue), m_typeId(_typeId), m_name(_name) {};
-
-	T getValue() const { return m_value; }
-	void setValue(T a_newValue) { m_value = a_newValue; } // specially for mngr
-
-	bool save(HANDLE a_hFile) const
+	IBaseSerializable(T _baseValue, SaveManager::TypeId _typeId, const unsigned __int32 m_hash, const char* _name = "")
+		:	m_entry{ _typeId, m_hash, _baseValue },
+			m_name(_name)
 	{
-		struct __mainDataWrite
-		{
-			TypeId m_typeId;
-			T m_value;
-			unsigned __int16 m_nameSize;
-		} _buffer;
+		load();
+		m_instances.push_back(this);
+	};
 
-		_buffer.m_typeId = this->m_typeId;
-		_buffer.m_value = this->m_value;
-		_buffer.m_nameSize = this->m_name.size();
+	IBaseSerializable(T _baseValue, SaveManager::TypeId _typeId, const char* _name = "")
+		: IBaseSerializable(_baseValue, _typeId, HashManager::crc32(_name), _name) { };
 
-		DWORD _bytesWritten;
-		WriteFile(a_hFile, &_buffer, sizeof(_buffer), &_bytesWritten, NULL);
+	T getValue() const { return m_entry.m_value; }
+	// void setValue(T a_newValue) { m_entry.m_value = a_newValue; } // specially for mngr
+	void setValue(int a_newValue) override { m_entry.m_value = a_newValue; }
 
-		if (_bytesWritten != sizeof(_buffer))
-		{
-			return false;
-		}
+	unsigned __int32 getHash() const override { return m_entry.m_hash; }
 
-		WriteFile(a_hFile, m_name.c_str(), m_name.size(), &_bytesWritten, NULL);
-
-		return m_name.size() != sizeof(_buffer) ? false : true;
+	void displayInfo() const override 
+	{ 
+		ConsoleManager::print(L"\t%-45s (value: %u, type: 0x%X)\n",
+			StringManager::convertCharToWChar(m_name).c_str(),
+			m_entry.m_value,
+			m_entry.m_typeId);
 	}
 
-	bool load(HANDLE a_hFile) 
+	bool save() const override
 	{
-		// MYSTRUCT buffer;
-		TypeId _typeId;
-		DWORD _bytesRead;
-		ReadFile(a_hFile, &_typeId, sizeof(_typeId), &_bytesRead, NULL); // get file size + checks
+		// DebugManager::WaitDebugger();
+		SaveManager::instance().setEntry(m_entry);
+		return true;
+	}
+
+	bool load() override
+	{
+		SaveManager::instance().getEntry(m_entry);
+		return true;
+	}
+
+	operator T() const { return m_entry.m_value; }
+
+	~IBaseSerializable()
+	{
+		m_instances.remove(this);
 	}
 };

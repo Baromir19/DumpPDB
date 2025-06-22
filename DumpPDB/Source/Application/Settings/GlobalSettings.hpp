@@ -2,19 +2,21 @@
 
 #include <cvconst.h>
 
+#include "..\..\Util\Types\Serialization\BoolSerializable.hpp"
+#include "..\..\Util\Types\Serialization\UInt32Serializable.hpp"
+
 class GlobalSettings
 {
 public:
-	static inline bool s_isSizeInfo = true; // info about struct size
-	static inline bool s_isOffsetInfo = true; // info about struct fields offsets
-	static inline bool s_isCurlyBracketTransfer = true; // is C-style for "{" ?
-	static inline bool s_isEnumInheritence = true; // is enum base type should be written
-	static inline bool s_isCaseSensitiveSearch = false;
-	static inline bool s_isShowAccess = true;
-	static inline bool s_isNonScoped = true;
-	static inline bool s_isEnumHex = false;
-	static inline bool s_typeSource = true;
-	static inline bool s_infoComment = true;
-
-	static inline CV_access_e s_baseAccessType = (CV_access_e)false;
+	static inline SERIALIZABLE(Bool, GlobalSettings, s_isSizeInfo, true)// info about struct size
+	static inline SERIALIZABLE(Bool, GlobalSettings, s_isOffsetInfo, true) // info about struct fields offsets
+	static inline SERIALIZABLE(Bool, GlobalSettings, s_isCurlyBracketTransfer, true) // is C-style for "{" ?
+	static inline SERIALIZABLE(Bool, GlobalSettings, s_isEnumInheritence, true)  // is enum base type should be written
+	static inline SERIALIZABLE(Bool, GlobalSettings, s_isCaseSensitiveSearch, false)
+	static inline SERIALIZABLE(Bool, GlobalSettings, s_isShowAccess, true)
+	static inline SERIALIZABLE(Bool, GlobalSettings, s_isNonScoped, true)
+	static inline SERIALIZABLE(Bool, GlobalSettings, s_isEnumHex, false)
+	static inline SERIALIZABLE(Bool, GlobalSettings, s_typeSource, true)
+	static inline SERIALIZABLE(Bool, GlobalSettings, s_infoComment, true)
+	static inline SERIALIZABLE(UInt32, GlobalSettings, s_baseAccessType, 0) // CV_access_e
 };

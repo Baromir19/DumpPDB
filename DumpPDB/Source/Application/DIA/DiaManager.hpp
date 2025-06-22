@@ -616,6 +616,8 @@ public:
         }
 
         _enumSourceFiles->Release();
+
+        return true;
     }
 
 protected:
@@ -684,11 +686,12 @@ protected:
             default: return nullptr;
             }
         }
+        return nullptr;
     }
 
     static const wchar_t* getAccessName(IDiaSymbol* a_symbol)
     {
-        DWORD _access;
+        DWORD _access = 0;
         if (SUCCEEDED(a_symbol->get_access(&_access)))
         {
             if (GlobalSettings::s_baseAccessType) { _access = GlobalSettings::s_baseAccessType; }
@@ -698,9 +701,11 @@ protected:
             case CV_private: return L"private";
             case CV_protected: return L"protected";
             case CV_public: return L"public";
-            case 0: return nullptr;
+            default: return nullptr;
             }
         }
+
+        return nullptr;
     }
 
     static const wchar_t* getConstName(IDiaSymbol* a_symbol)
@@ -827,6 +832,7 @@ protected:
             default: return nullptr;
             }
         }
+        return nullptr;
     }
 
     static int getNonscopedNameBegin(const wchar_t* a_name, const wchar_t* a_separator = L"::")
@@ -1177,7 +1183,7 @@ protected:
     {
         auto _res = false;
 
-        ConsoleManager::print(getSymTypeText(getSymType(a_symbol)).c_str());
+        ConsoleManager::print(getName(a_symbol).c_str());
 
         VARIANT v;
         VariantInit(&v);
@@ -1199,12 +1205,14 @@ protected:
 
         if (SUCCEEDED(a_symbol->findChildren(SymTagBaseClass, NULL, nsNone, &_baseEnum)))
         {
-            IDiaSymbol* _baseSymbol;
+            IDiaSymbol* _baseSymbol = nullptr;
             ULONG _celt = 0;
             while (SUCCEEDED(_baseEnum->Next(1, &_baseSymbol, &_celt)) && _celt == 1)
             {
                 ConsoleManager::print(_isBegin ? getInheritenceName_C() : L", ");
                 _isBegin = false;
+
+                // DebugManager::WaitDebugger();
 
                 const wchar_t* _access = nullptr;
                 if (_access = getAccessName(_baseSymbol))
@@ -1252,9 +1260,11 @@ protected:
                 }
             }
 
+            bool _isFirst = true;
+
             if (!_childsContainers[6].empty() && GlobalSettings::s_infoComment)
             {
-                ConsoleManager::print(L"\n");
+                if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
                 ConsoleManager::print(L"/// FRIENDS:\n");
             }
@@ -1266,7 +1276,7 @@ protected:
 
             if (!_childsContainers[3].empty() && GlobalSettings::s_infoComment)
             {
-                ConsoleManager::print(L"\n");
+                if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
                 ConsoleManager::print(L"/// ENUMS:\n");
             }
@@ -1278,7 +1288,7 @@ protected:
 
             if (!_childsContainers[4].empty() && GlobalSettings::s_infoComment)
             {
-                ConsoleManager::print(L"\n");
+                if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
                 ConsoleManager::print(L"/// TYPEDEFS:\n");
             }
@@ -1290,7 +1300,7 @@ protected:
 
             if (!_childsContainers[2].empty() && GlobalSettings::s_infoComment)
             {
-                ConsoleManager::print(L"\n");
+                if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
                 ConsoleManager::print(L"/// CLASSES:\n");
             }
@@ -1330,7 +1340,7 @@ protected:
 
             if (!_vfuncs.empty() && GlobalSettings::s_infoComment)
             {
-                ConsoleManager::print(L"\n");
+                if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
                 ConsoleManager::print(L"/// VIRTUALS:\n");
             }
@@ -1378,7 +1388,7 @@ protected:
 
             if (!_fields.empty() && GlobalSettings::s_infoComment)
             {
-                ConsoleManager::print(L"\n");
+                if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
                 ConsoleManager::print(L"/// FIELDS:\n");
             }
@@ -1415,7 +1425,7 @@ protected:
 
                 if (_firstFunc && GlobalSettings::s_infoComment)
                 {
-                    ConsoleManager::print(L"\n");
+                    if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                     displayTabulation(a_nestingLevel);
                     ConsoleManager::print(L"/// FUNCS:\n");
                 }
@@ -1436,7 +1446,7 @@ protected:
 
                 if (_firstStatic && GlobalSettings::s_infoComment)
                 {
-                    ConsoleManager::print(L"\n");
+                    if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                     displayTabulation(a_nestingLevel);
                     ConsoleManager::print(L"/// OTHER MEMBERS:\n");
                 }
@@ -1457,7 +1467,7 @@ protected:
                 ConsoleManager::print(getSymTypeText(getSymType(_field)).c_str());
                 // displayName(_field);
 
-                ConsoleManager::print(L";\n ");
+                ConsoleManager::print(L";\n");
             }
 
             for (auto& _childsContainer : _childsContainers)

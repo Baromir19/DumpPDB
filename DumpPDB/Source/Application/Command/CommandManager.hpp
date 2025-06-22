@@ -5,10 +5,12 @@
 #include "..\Console\ConsoleManager.hpp"
 
 #include "ICommand.hpp"
+
 #include "CommandType.hpp"
 #include "CommandHelp.hpp"
 #include "CommandCompiland.hpp"
 #include "CommandSource.hpp"
+#include "CommandSettings.hpp"
 
 class CommandManager : public Singleton<CommandManager>
 {
@@ -27,6 +29,7 @@ public:
 		m_commands.push_back(new CommandHelp());
 		m_commands.push_back(new CommandCompiland());
 		m_commands.push_back(new CommandSource());
+		m_commands.push_back(new CommandSettings());
 
 		initState = true;
 		return true;

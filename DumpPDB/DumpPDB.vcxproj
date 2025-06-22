@@ -142,12 +142,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Source\Main.cpp" />
+    <ClCompile Include="Source\Util\Types\Serialization\UInt32Serializable.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Application\Application.hpp" />
     <ClInclude Include="Source\Application\Command\CommandCompiland.hpp" />
     <ClInclude Include="Source\Application\Command\CommandHelp.hpp" />
     <ClInclude Include="Source\Application\Command\CommandManager.hpp" />
+    <ClInclude Include="Source\Application\Command\CommandSettings.hpp" />
     <ClInclude Include="Source\Application\Command\CommandSource.hpp" />
     <ClInclude Include="Source\Application\Command\CommandType.hpp" />
     <ClInclude Include="Source\Application\Command\ICommand.hpp" />
@@ -155,10 +157,15 @@
     <ClInclude Include="Source\Application\Debug\DebugTools.hpp" />
     <ClInclude Include="Source\Application\Debug\DebugManager.hpp" />
     <ClInclude Include="Source\Application\DIA\DiaManager.hpp" />
+    <ClInclude Include="Source\Application\Hash\HashManager.hpp" />
+    <ClInclude Include="Source\Application\Save\SaveManager.hpp" />
     <ClInclude Include="Source\Application\Settings\GlobalSettings.hpp" />
+    <ClInclude Include="Source\Application\String\StringManager.hpp" />
     <ClInclude Include="Source\Util\Container\Singleton.hpp" />
     <ClInclude Include="Source\Util\Types\Serialization\BoolSerializable.hpp" />
     <ClInclude Include="Source\Util\Types\Serialization\IBaseSerializable.hpp" />
+    <ClInclude Include="Source\Util\Types\Serialization\IBaseSerializableBase.hpp" />
+    <ClInclude Include="Source\Util\Types\Serialization\SerializableRegistry.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
