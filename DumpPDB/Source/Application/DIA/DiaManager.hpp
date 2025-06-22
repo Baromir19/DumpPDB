@@ -292,9 +292,10 @@ public:
         }
     }
 
-    static void displayFunctionArgs(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
+    static int displayFunctionArgs(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
         bool _isFirst = true;
+        auto _entriesCount = 0;
 
         IDiaEnumSymbols* _enumParams = nullptr;
         auto hr = a_symbol->findChildren(SymTagData, nullptr, nsNone, &_enumParams);
@@ -305,9 +306,12 @@ public:
             ULONG _fetched = 0;
             while (SUCCEEDED(_enumParams->Next(1, &_param, &_fetched)) && _fetched == 1) 
             {
+                // displaySymTag(_param);
+                // ConsoleManager::print(getSymTypeText(getSymType(_param, false)).c_str());
                 DWORD _kind = 0;
                 if (SUCCEEDED(_param->get_dataKind(&_kind)) && _kind == DataIsParam)
                 {
+                    ++_entriesCount;
                     if (!_isFirst) { ConsoleManager::print(L", "); }
 
                     ConsoleManager::print(getSymTypeText(getSymType(_param, false)).c_str()); 
@@ -319,6 +323,8 @@ public:
             }
             _enumParams->Release();
         }
+
+        return _entriesCount;
     }
 
     static void displayFunction(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
@@ -328,6 +334,8 @@ public:
         for (auto _name : _names) { if (_name) { ConsoleManager::print(L"%s ", _name); } }
 
         auto _funtionType = getType(a_symbol); // SymTagFunctionType
+
+        auto _argCount = getChildsCount(_funtionType, SymTagFunctionArgType);
 
         auto _retType = getType(_funtionType);
         if (_retType)
@@ -342,7 +350,12 @@ public:
 
         ConsoleManager::print(getFunctionArgsBegin_C());
 
-        displayFunctionArgs(a_symbol);
+        if (displayFunctionArgs(a_symbol) != _argCount) // IS SEARCH ERROR: <- TO REPLACE
+        {
+            // ConsoleManager::print(L" <- %i ", _argCount); 
+            ConsoleManager::print(L" <- "); 
+            ConsoleManager::print(getFuncArgsType(_funtionType).m_pointedFunctionArgs.c_str());
+        }
 
         ConsoleManager::print(getFunctionArgsEnd_C());
 
@@ -635,9 +648,12 @@ protected:
     static const wchar_t* getBaseTypeName_C(IDiaSymbol* a_symbol)
     {
         DWORD _baseType = 0;
+        ULONGLONG _length = 0;
 
         if (SUCCEEDED(a_symbol->get_baseType(&_baseType)))
         {
+            a_symbol->get_length(&_length);
+
             switch (_baseType)
             {
             case btCurrency: return L"CY";
@@ -652,12 +668,40 @@ protected:
             case btChar8: return L"char8_t";
 
             case btVoid: return L"void";
-            case btFloat: return L"float";
+
+            case btFloat:
+                switch (_length) 
+                {
+                case 4: return L"float";
+                case 8: return L"double";
+                case 0x10: return L"long double";
+                default: return L"float";
+                }
+
             case btBool: return L"bool";
-            case btInt: return L"int";
-            case btUInt: return L"unsigned int";
             case btChar: return L"char";
             case btWChar: return L"wchar_t";
+
+            case btInt:
+                switch (_length) 
+                {
+                case 1: return L"__int8";
+                case 2: return L"__int16";
+                case 4: return L"__int32";
+                case 8: return L"__int64";
+                default: return L"int";
+                }
+
+            case btUInt:
+                switch (_length) 
+                {
+                case 1: return L"unsigned __int8";
+                case 2: return L"unsigned __int16";
+                case 4: return L"unsigned __int32";
+                case 8: return L"unsigned __int64";
+                default: return L"unsigned int";
+                }
+
             case btLong: return L"long";
             case btULong: return L"unsigned long";
 
@@ -1010,6 +1054,23 @@ protected:
         }
 
         return _sym;
+    }
+
+    static int getChildsCount(IDiaSymbol* a_symbol, enum SymTagEnum a_type)
+    {
+        int _ret = 0;
+
+        IDiaEnumSymbols* _enumSymbols = nullptr;
+        if (SUCCEEDED(a_symbol->findChildren(a_type, nullptr, nsNone, &_enumSymbols)) && _enumSymbols)
+        {
+            IDiaSymbol* _childSymbol = nullptr; ULONG _celt = 0;
+            while (SUCCEEDED(_enumSymbols->Next(1, &_childSymbol, &_celt)) && _celt == 1)
+            {
+                ++_ret;
+            }
+        }
+
+        return _ret;
     }
 
     static DiaSymbolType getFuncArgsType(IDiaSymbol* a_symbol)
