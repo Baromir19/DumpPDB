@@ -7,7 +7,7 @@
 class CommandSettings : public ICommand
 {
 public:
-	CommandSettings() : ICommand(0, COMMAND_OPTIONS)
+	CommandSettings() : ICommand(1, COMMAND_OPTIONS)
 	{
 		m_names.push_back(L"-settings");
 		m_names.push_back(L"--s");
@@ -22,6 +22,7 @@ public:
 	{ 
 		if (a_commandArgs[0] == L"-h")
 		{
+			ConsoleManager::print(L"Settings list:\n");
 			IBaseSerializableBase::displayInstancesInfo();
 			return true;
 		}

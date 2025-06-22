@@ -55,7 +55,11 @@ public:
 				if (i < _names.size() - 1) ConsoleManager::print(L", ");
 			}
 
-			ConsoleManager::print(L" %s : %s\n", _command->getArgHelp(), _command->getUsageHelp());
+			ConsoleManager::setCursor(20);
+			ConsoleManager::print(L" %s", _command->getArgHelp());
+
+			ConsoleManager::setCursor(44);
+			ConsoleManager::print(L" : %s\n", _command->getUsageHelp());
 		}
 
 		exit(EXIT_SUCCESS);

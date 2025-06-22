@@ -37,7 +37,7 @@ public:
 
 	void displayInfo() const override 
 	{ 
-		ConsoleManager::print(L"\t%-45s (value: %u, type: 0x%X)\n",
+		ConsoleManager::print(L"    %-45s (value: %u, type: 0x%X)\n",
 			StringManager::convertCharToWChar(m_name).c_str(),
 			m_entry.m_value,
 			m_entry.m_typeId);
