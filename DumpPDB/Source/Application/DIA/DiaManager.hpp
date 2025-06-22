@@ -1470,6 +1470,7 @@ protected:
                     LONG _offset = s_noRetValue;
                     if (SUCCEEDED(_field->get_offset(&_offset)) && _offset != s_noRetValue)
                     {
+                        ConsoleManager::setCursorNoDiscard(60, -1, GlobalSettings::s_isTabulation);
                         ConsoleManager::print(L"%s0x%X", getCommentName_C(), _offset);
                     }
                 }

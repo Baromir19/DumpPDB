@@ -4,6 +4,8 @@
 #include <string>
 #include <cstdarg>
 
+// #include "..\Settings\GlobalSettings.hpp"
+
 #include "..\..\Util\Container\Singleton.hpp"
 
 #include "..\Command\ICommand.hpp"
@@ -80,6 +82,38 @@ public:
 		va_end(_args);
 
 		exit(EXIT_FAILURE);
+	}
+
+	static bool setCursorNoDiscard(int a_pos, unsigned int a_repeatTime = -1, bool a_tabulation = true)
+	{
+		while (!setCursor(a_pos, a_tabulation) && a_repeatTime--)
+		{
+			a_pos += a_pos / 1.5;
+		}
+
+		return true;
+	}
+
+	static bool setCursor(int a_pos, bool a_tabulation = true)
+	{
+		if (!a_tabulation) { return true; }
+
+		int _ret = false;
+
+		CONSOLE_SCREEN_BUFFER_INFO _csbi;
+		GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &_csbi);
+		SHORT _currentX = _csbi.dwCursorPosition.X;
+
+		COORD _newPos = _csbi.dwCursorPosition;
+
+		const SHORT _padTo = max(a_pos, _currentX + 1);
+		_newPos.X = _padTo;
+
+		if (_padTo == a_pos) { _ret = true; }
+
+		SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), _newPos);
+
+		return _ret;
 	}
 
 	const std::wstring& getPath()
