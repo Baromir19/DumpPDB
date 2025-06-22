@@ -45,13 +45,16 @@ class MainObjectDefinition : public ExposedDefinition
 ```
 
 # Goals
-- complete the serialization
-- expanded function type output
-- implement a one-time output of the field's scope
-- hints on function generation by the compiler
-- cleanup of the "void" type for the destructor
+- complete the serialization ✅
+- expanded function type output (e.g. `declspec(__naked)`, `__noinline` etc.)
+- implement a one-time output of the field's scope (if 3-4 fields in succession share the same visibility, display only that visibility at the very top)
+- hints on function generation by the compiler (default constructors, the equality operator, and others are often created by the compiler.)
+- cleanup of the "void" type for the destructor (e.g. `void ~Object()`)
+- print namespace's data
 - code cleanup
 
 # Possible problems
 You may encounter a command line limitations: `> was unexpected at this time.` or `The system cannot find the file specified.` 
 You can encounter this when entering a template type, but `<` controls input and output in the command line; to solve the problem, it is enough to simply enter the above type in quotes, for example `"TemplateType<SizeS>"`.
+
+When outputting functions, sometimes the named args may be incomplete, so the code outputs their complete types (without names, they are displayed after the sign "<-").
