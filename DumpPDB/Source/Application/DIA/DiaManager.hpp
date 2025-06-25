@@ -25,6 +25,7 @@ protected:
     IDiaSession* m_session;
     IDiaSymbol* m_globalScope;
 
+    static inline std::wstring s_parentClassName = L"";
     static constexpr DWORD s_noRetValue = 0xFFFFFFFC;
 
     struct DiaSymbolType
@@ -114,6 +115,10 @@ public:
     /// cmd api:
     static void displayClass(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
+        const auto _prevParentName = s_parentClassName;
+        s_parentClassName = getName(a_symbol);
+        //---------------------------------------------
+
         displayTabulation(a_nestingLevel);
         displaySize(a_symbol);
 
@@ -131,6 +136,9 @@ public:
         displayScopeEnd(a_nestingLevel); // }
 
         displayTypeSources();
+
+        //---------------------------------------------
+        s_parentClassName = _prevParentName;
     }
 
     bool displayClass(const wchar_t* a_typeName)
@@ -350,10 +358,12 @@ public:
 
         ConsoleManager::print(getFunctionArgsBegin_C());
 
-        if (displayFunctionArgs(a_symbol) != _argCount) // IS SEARCH ERROR: <- TO REPLACE
+        auto _namedArgCount = displayFunctionArgs(a_symbol);
+
+        if (_namedArgCount != _argCount) // IS SEARCH ERROR: <- TO REPLACE
         {
             // ConsoleManager::print(L" <- %i ", _argCount); 
-            ConsoleManager::print(L" <- "); 
+            if (_namedArgCount) { ConsoleManager::print(L" <- "); } // If named args are present
             ConsoleManager::print(getFuncArgsType(_funtionType).m_pointedFunctionArgs.c_str());
         }
 
@@ -1226,15 +1236,21 @@ protected:
         static const wchar_t* s_hiddenName = L"__formal";
 
         BSTR _bstrName = nullptr;
-        if (SUCCEEDED(a_symbol->get_name(&_bstrName)))
+        if (SUCCEEDED(a_symbol->get_name(&_bstrName)) && _bstrName)
         {
-            if (_bstrName != nullptr)
-            {
-                auto _nameBegin = GlobalSettings::s_isNonScoped && a_nonScope ? getNonscopedNameBegin(_bstrName) : 0;
-                return std::wstring(&_bstrName[_nameBegin]);
-            }
+            auto _parent = getClassParent(a_symbol);
+            std::wstring _parentScope = s_parentClassName + L"::"; // To save last class name -> print -> restore
 
+            /*if (_parent)
+            {
+                _parentScope = getName(_parent, false) + _parentScope;
+                _parent->Release();
+            }*/
+
+            auto _nameBegin = GlobalSettings::s_isNonScoped && a_nonScope ? getNonscopedNameBegin(_bstrName, _parentScope.c_str()) : 0;
+            auto _ret = std::wstring(&_bstrName[_nameBegin]);
             SysFreeString(_bstrName);
+            return _ret;
         }
 
         return L"";
@@ -1655,6 +1671,17 @@ protected:
         if (SUCCEEDED(a_symbol->get_type(&_baseType)))
         {
             return _baseType;
+        }
+        return nullptr;
+    }
+
+    static IDiaSymbol* getClassParent(IDiaSymbol* a_symbol)
+    {
+        IDiaSymbol* _ret = nullptr;
+        if (SUCCEEDED(a_symbol->get_classParent(&_ret)))
+        {
+            //return _ret ? _ret : (_ret->Release(), nullptr);
+            return _ret;
         }
         return nullptr;
     }
