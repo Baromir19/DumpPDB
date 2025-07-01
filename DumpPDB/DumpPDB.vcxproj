@@ -23,7 +23,7 @@
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{fd26e9b4-9fb9-4ad5-9217-932fd9b5e200}</ProjectGuid>
     <RootNamespace>DumpPDB</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -161,6 +161,7 @@
     <ClInclude Include="Source\Application\Save\SaveManager.hpp" />
     <ClInclude Include="Source\Application\Settings\GlobalSettings.hpp" />
     <ClInclude Include="Source\Application\String\StringManager.hpp" />
+    <ClInclude Include="Source\Test\Tests.hpp" />
     <ClInclude Include="Source\Util\Container\Singleton.hpp" />
     <ClInclude Include="Source\Util\Types\Serialization\BoolSerializable.hpp" />
     <ClInclude Include="Source\Util\Types\Serialization\IBaseSerializable.hpp" />

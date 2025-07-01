@@ -86,5 +86,8 @@
     <ClInclude Include="Source\Application\Command\CommandSettings.hpp">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
+    <ClInclude Include="Source\Test\Tests.hpp">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
