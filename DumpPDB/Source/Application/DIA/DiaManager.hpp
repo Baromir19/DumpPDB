@@ -40,39 +40,46 @@ protected:
         std::wstring m_array = L"";
         std::wstring m_pointedFunctionArgs = L"";
         std::wstring m_bitfield = L"";
+        std::wstring m_definedType = L"";
         
         enum SymTagEnum m_tag = SymTagNull;
 
-        DiaSymbolType& operator+=(const DiaSymbolType& other)
+        DiaSymbolType& operator+=(const DiaSymbolType& a_other)
         {
-            if (!m_pointer.empty() && m_array.empty() && !other.m_array.empty())
+            if (!m_pointer.empty() && m_array.empty() && !a_other.m_array.empty())
             {
                 m_isRoundBrackets = true;
             }
 
-            m_isConstPointed = m_isConstPointed || other.m_isConstPointed;
-            m_isConst = m_isConst || other.m_isConst;
-            m_isVolatile = m_isVolatile || other.m_isVolatile;
-            m_isRoundBrackets = m_isRoundBrackets || other.m_isRoundBrackets;
+            m_isConstPointed = m_isConstPointed || a_other.m_isConstPointed;
+            m_isConst = m_isConst || a_other.m_isConst;
+            m_isVolatile = m_isVolatile || a_other.m_isVolatile;
+            m_isRoundBrackets = m_isRoundBrackets || a_other.m_isRoundBrackets;
 
-            if (!other.m_name.empty()) 
+            if (!a_other.m_name.empty()) 
             { 
                 if (!m_name.empty()) { m_name += L" "; }
-                m_name += other.m_name;
+                m_name += a_other.m_name;
             }
 
-            if (!other.m_type.empty())
+            if (!a_other.m_type.empty())
             {
                 if (!m_type.empty()) { m_type += L" "; }
-                m_type += other.m_type;
+                m_type += a_other.m_type;
+            }
+
+            if (!a_other.m_definedType.empty())
+            {
+                if (!m_definedType.empty()) { m_definedType += L" "; }
+                m_definedType += a_other.m_definedType;
             }
 
             //m_pointer = other.m_pointer + m_pointer;
             //m_array = other.m_array + m_array;            
-            m_pointer += other.m_pointer;
-            m_array += other.m_array;
-            m_pointedFunctionArgs += other.m_pointedFunctionArgs; // ? by ,
-            m_bitfield += other.m_bitfield;
+            m_pointer += a_other.m_pointer;
+            m_array += a_other.m_array;
+            m_pointedFunctionArgs += a_other.m_pointedFunctionArgs; // ? by ,
+            m_bitfield += a_other.m_bitfield;
 
             if (!m_pointedFunctionArgs.empty()) { m_isRoundBrackets = true; }
 
@@ -89,15 +96,16 @@ public:
 
         HRESULT hr = CoCreateInstance(__uuidof(DiaSource), nullptr, CLSCTX_INPROC_SERVER,
             __uuidof(IDiaDataSource), (void**)&m_source);
-        if (FAILED(hr)) return false;
+        if (FAILED(hr)) { ConsoleManager::print(L"\"CoCreateInstance\": 0x%X;\n", hr); return false; }
 
         hr = m_source->loadDataFromPdb(a_pdbPath.c_str());
-        if (FAILED(hr)) return false;
+        if (FAILED(hr)) { ConsoleManager::print(L"\"loadDataFromPdb\": 0x%X;\n", hr); return false; }
 
         hr = m_source->openSession(&m_session);
-        if (FAILED(hr)) return false;
+        if (FAILED(hr)) { ConsoleManager::print(L"\"openSession\": 0x%X;\n", hr); return false; }
 
         hr = m_session->get_globalScope(&m_globalScope);
+        if (FAILED(hr)) { ConsoleManager::print(L"\"get_globalScope\": 0x%X;\n", hr); return false; }
         return SUCCEEDED(hr);
     }
 
@@ -131,7 +139,7 @@ public:
 
         displayScopeBegin(a_nestingLevel); // {
 
-        displayClassMembers_C(a_symbol, a_nestingLevel);
+        displayMembers(a_symbol, a_nestingLevel);
         
         displayScopeEnd(a_nestingLevel); // }
 
@@ -225,8 +233,11 @@ public:
         return false;
     }
 
+    static inline bool s_isProcessedTypedef = false;
+
     static void displayTypedef(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
+        s_isProcessedTypedef = true;
         displayTabulation(a_nestingLevel);
 
         displayModType_C(a_symbol);
@@ -235,6 +246,7 @@ public:
         ConsoleManager::print(getSymTypeText(getSymType(a_symbol, false)).c_str());
 
         ConsoleManager::instance().print(L";\n");
+        s_isProcessedTypedef = false;
     }
 
     bool displayTypedef(const wchar_t* a_typeName) // attention: there's no template using alias
@@ -281,7 +293,7 @@ public:
         displayVA(a_symbol);
 
         displayTabulation(a_nestingLevel);
-        ConsoleManager::print(getCommentName_C());
+        ConsoleManager::print(GET_STRING(LINE_COMMENT));
         ConsoleManager::print(getSymTypeText(getSymType(a_symbol, false)).c_str());
         ConsoleManager::print(L"\n");
 
@@ -293,7 +305,7 @@ public:
             while (SUCCEEDED(_enum->Next(1, &_child, &_celt)) && _celt == 1) 
             {
                 displayTabulation(a_nestingLevel);
-                ConsoleManager::print(getCommentName_C());
+                ConsoleManager::print(GET_STRING(LINE_COMMENT));
                 ConsoleManager::print(getSymTypeText(getSymType(_child, false)).c_str());
                 ConsoleManager::print(L"\n");
             }
@@ -356,7 +368,7 @@ public:
 
         ConsoleManager::print(getName(a_symbol).c_str());
 
-        ConsoleManager::print(getFunctionArgsBegin_C());
+        ConsoleManager::print(getFunctionArgsBegin());
 
         auto _namedArgCount = displayFunctionArgs(a_symbol);
 
@@ -367,7 +379,7 @@ public:
             ConsoleManager::print(getFuncArgsType(_funtionType).m_pointedFunctionArgs.c_str());
         }
 
-        ConsoleManager::print(getFunctionArgsEnd_C());
+        ConsoleManager::print(getFunctionArgsEnd());
 
         auto _const = getConstName(a_symbol);
         if (_const ? _const : getConstName(_funtionType)) { ConsoleManager::print(L" %s", _const); }
@@ -452,36 +464,81 @@ public:
 
     bool displayType(const wchar_t* a_typeName)
     {
-        IDiaEnumSymbols* _enumSymbols;
+        IDiaEnumSymbols* _enumSymbols = nullptr;
+        bool _found = false;
 
         auto _caseType = getNameSearchType();
         auto hr = m_globalScope->findChildren(SymTagNull, a_typeName, _caseType, &_enumSymbols);
 
         if (SUCCEEDED(hr))
         {
-            IDiaSymbol* _symbol;
+            IDiaSymbol* _symbol = nullptr;
             ULONG _celt = 0;
 
             while (SUCCEEDED(_enumSymbols->Next(1, &_symbol, &_celt)) && _celt == 1)
             {
-                DWORD _symTag = 0;
-                if (SUCCEEDED(_symbol->get_symTag(&_symTag)))
-                {
-                    switch (_symTag)
-                    {
-                    case SymTagTypedef: displayTypedef(_symbol); break;
-                    case SymTagUDT: displayClass(_symbol); break;
-                    case SymTagEnum: displayEnum(_symbol); break;
-                    }
-                }
-
+                processTypes(_symbol);
                 _symbol->Release();
+                _found = true;
             }
 
             _enumSymbols->Release();
         }
 
-        return true;
+        if (!_found) { _found = displayTypePrefixed(a_typeName); }
+
+        return _found;
+    }
+
+    bool displayTypePrefixed(const wchar_t* a_typeName) // search by namespace
+    {
+        IDiaEnumSymbols* _enumSymbols = nullptr;
+
+        HRESULT hr = m_globalScope->findChildren(SymTagNull, nullptr, nsNone, &_enumSymbols);
+        if (FAILED(hr) || !_enumSymbols) return false;
+
+        IDiaSymbol* _symbol = nullptr;
+        ULONG _celt = 0;
+        bool _found = false;
+        std::wstring _prefix = a_typeName; 
+        
+        if (_prefix.size() < 2 || _prefix[_prefix.size() - 2] != L':' || _prefix[_prefix.size() - 1] != L':') 
+        {
+            _prefix += L"::";
+        }
+
+        // DebugManager::WaitDebugger();
+
+        while (SUCCEEDED(_enumSymbols->Next(1, &_symbol, &_celt)) && _celt == 1)
+        {
+            std::wstring _name = getName(_symbol, false);
+			// DebugManager::WaitDebugger();
+            if (_name.compare(0, _prefix.size(), _prefix) == 0 
+                && _name.find(L"::", _prefix.size()) == std::wstring::npos)
+            {
+                processTypes(_symbol);
+                _found = true;
+            }
+            _symbol->Release();
+        }
+        _enumSymbols->Release();
+        return _found;
+    }
+
+    void processTypes(IDiaSymbol* a_symbol)
+    {
+        DWORD _symTag = 0;
+        if (SUCCEEDED(a_symbol->get_symTag(&_symTag)))
+        {
+            switch (_symTag)
+            {
+            case SymTagTypedef: displayTypedef(a_symbol); break;
+            case SymTagUDT: displayClass(a_symbol); break;
+            case SymTagEnum: displayEnum(a_symbol); break;
+            case SymTagData: ConsoleManager::print(getSymTypeText(getSymType(a_symbol)).c_str());; break;
+            case SymTagFunction:   displayFunction(a_symbol); registerTypeSource(a_symbol); break;
+            }
+        }
     }
 
     bool displayCompilands()
@@ -826,15 +883,13 @@ protected:
 
     static const wchar_t* getLastBracketName_C() { return L"};\n"; } // \n
 
-    static const wchar_t* getCommentName_C() { return L"// "; }
-
     static const wchar_t* getMultilineCommentBeginName_C() { return L"/* "; }
 
     static const wchar_t* getMultilineCommentEndName_C() { return L" */"; }
 
-    static const wchar_t* getFunctionArgsBegin_C() { return L"("; }
+    static const wchar_t* getFunctionArgsBegin() { return GET_STRING(PARAMETERS_BEGIN); }
 
-    static const wchar_t* getFunctionArgsEnd_C() { return L")"; }
+    static const wchar_t* getFunctionArgsEnd() { return GET_STRING(PARAMETERS_END); }
 
     static const wchar_t* getInheritenceName_C() { return L" : "; }
 
@@ -949,7 +1004,7 @@ protected:
 
         for (auto& _source : _sources)
         {
-            ConsoleManager::print(L"%s%s\n", getCommentName_C(), _source);
+            ConsoleManager::print(L"%s %s\n", GET_STRING(LINE_COMMENT), _source);
             SysFreeString(_source);
         }
 
@@ -962,7 +1017,7 @@ protected:
         DWORD _locationType = 0;
         if (SUCCEEDED(a_symbol->get_locationType(&_locationType))) 
         {
-            ConsoleManager::print(L"\n%s ", getCommentName_C());
+            ConsoleManager::print(L"\n%s ", GET_STRING(LINE_COMMENT));
 
             switch (_locationType) 
             {
@@ -979,48 +1034,48 @@ protected:
         }
     }
 
-    static bool displaySize(IDiaSymbol* a_symbol, const wchar_t* (*a_commentName)() = getCommentName_C)
+    static bool displaySize(IDiaSymbol* a_symbol)
     {
         ULONGLONG _len;
         if (SUCCEEDED(a_symbol->get_length(&_len)) && GlobalSettings::s_isSizeInfo)
         {
-            if (a_commentName) { ConsoleManager::print(a_commentName()); }
-            ConsoleManager::print(L"size: %llu byte\n", _len);
+            ConsoleManager::print(GET_STRING(LINE_COMMENT));
+            ConsoleManager::print(L" size: %llu byte\n", _len);
             return true;
         }
         return false;
     }
 
-    static bool displayVTableOffset(IDiaSymbol* a_symbol, const wchar_t* (*a_commentName)() = getCommentName_C)
+    static bool displayVTableOffset(IDiaSymbol* a_symbol)
     {
         DWORD _offset;
         if (SUCCEEDED(a_symbol->get_virtualBaseOffset(&_offset)))
         {
-            if (a_commentName) { ConsoleManager::print(a_commentName()); }
-            ConsoleManager::print(L"0x%X\n", _offset);
+            ConsoleManager::print(GET_STRING(LINE_COMMENT));
+            ConsoleManager::print(L" 0x%X\n", _offset);
             return true;
         }
         return false;
     }
 
-    static bool displayRVA(IDiaSymbol* a_symbol, const wchar_t* (*a_commentName)() = getCommentName_C)
+    static bool displayRVA(IDiaSymbol* a_symbol)
     {
         DWORD _rva = 0;
         if (SUCCEEDED(a_symbol->get_relativeVirtualAddress(&_rva))) 
         {
-            if (a_commentName) { ConsoleManager::print(a_commentName()); }
-            ConsoleManager::print(L"RVA: 0x%X\n", _rva);
+            ConsoleManager::print(GET_STRING(LINE_COMMENT));
+            ConsoleManager::print(L" RVA: 0x%X\n", _rva);
         }
         return _rva;
     }
 
-    static bool displayVA(IDiaSymbol* a_symbol, const wchar_t* (*a_commentName)() = getCommentName_C)
+    static bool displayVA(IDiaSymbol* a_symbol)
     {
         ULONGLONG _va = 0;
         if (SUCCEEDED(a_symbol->get_virtualAddress(&_va)))
         {
-            if (a_commentName) { ConsoleManager::print(a_commentName()); }
-            ConsoleManager::print(L"VA: 0x%llX\n", _va);
+            ConsoleManager::print(GET_STRING(LINE_COMMENT));
+            ConsoleManager::print(L" VA: 0x%llX\n", _va);
         }
         return _va;
     }
@@ -1129,17 +1184,18 @@ protected:
             a_type.m_isRoundBrackets = true;
         }*/
 
-        if (a_type.m_isVolatile)        { _space(); _toSpace = true; _ret += L"volatile"; }
-        if (a_type.m_isConst)           { _space(); _toSpace = true; _ret += L"const"; }
-        if (!a_type.m_type.empty())     { _space(); _toSpace = true; _ret += a_type.m_type.c_str(); }
-        if (a_type.m_isRoundBrackets)   { _space();                  _ret += L"("; }
-        if (!a_type.m_pointer.empty())  { if (!a_type.m_isRoundBrackets) _toSpace = true; _ret += a_type.m_pointer.c_str(); }
-        if (a_type.m_isConstPointed)    { _space(); _toSpace = true; _ret += L"const"; }
-        if (!a_type.m_name.empty())     { _space(); _toSpace = true; _ret += a_type.m_name.c_str(); }
-        if (a_type.m_isRoundBrackets)   {           _toSpace = true; _ret += L")"; }
-        if (!a_type.m_pointedFunctionArgs.empty())                 { _ret += L"("; _ret += a_type.m_pointedFunctionArgs.c_str(); _ret += L")"; }
-        if (!a_type.m_array.empty())    {           _toSpace = true; _ret += a_type.m_array.c_str(); }
-        if (!a_type.m_bitfield.empty()) {           _toSpace = true; _ret += a_type.m_bitfield.c_str(); }
+        if (a_type.m_isVolatile)                    { _space(); _toSpace = true; _ret += L"volatile"; }
+        if (a_type.m_isConst)                       { _space(); _toSpace = true; _ret += L"const"; }
+        if (!a_type.m_type.empty())                 { _space(); _toSpace = true; _ret += a_type.m_type.c_str(); }
+        if (a_type.m_isRoundBrackets)               { _space();                  _ret += L"("; }
+        if (!a_type.m_pointer.empty())              { if (!a_type.m_isRoundBrackets) _toSpace = true; _ret += a_type.m_pointer.c_str(); }
+        if (a_type.m_isConstPointed)                { _space(); _toSpace = true; _ret += L"const"; }
+        if (!a_type.m_name.empty())                 { _space(); _toSpace = true; _ret += a_type.m_name.c_str(); }
+        if (a_type.m_isRoundBrackets)               {           _toSpace = true; _ret += L")"; }
+        if (!a_type.m_pointedFunctionArgs.empty())  {                            _ret += L"("; _ret += a_type.m_pointedFunctionArgs.c_str(); _ret += L")"; }
+        if (!a_type.m_array.empty())                {           _toSpace = true; _ret += a_type.m_array.c_str(); }
+        if (!a_type.m_bitfield.empty())             {           _toSpace = true; _ret += a_type.m_bitfield.c_str(); }
+        if (!a_type.m_definedType.empty())          { _space(); _toSpace = true; _ret += a_type.m_definedType.c_str(); }
 
         return _ret;
     }
@@ -1204,10 +1260,21 @@ protected:
             break;
         }
         case SymTagUDT:
-        case SymTagTypedef:
         case SymTagEnum:
         {
             if (!_name.empty()) { _ret.m_type = _name; } break;
+        }
+
+        case SymTagTypedef:
+        {
+            if (!_name.empty()) 
+            { 
+                if (s_isProcessedTypedef) 
+                    _ret.m_definedType = _name;
+                else 
+                    _ret.m_type = _name;
+            } 
+            break; 
         }
 
         default: break;
@@ -1239,6 +1306,7 @@ protected:
         if (SUCCEEDED(a_symbol->get_name(&_bstrName)) && _bstrName)
         {
             auto _parent = getClassParent(a_symbol);
+            if (s_parentClassName.empty() || wcschr(_bstrName, L'<')) a_nonScope = false;
             std::wstring _parentScope = s_parentClassName + L"::"; // To save last class name -> print -> restore
 
             /*if (_parent)
@@ -1306,7 +1374,7 @@ protected:
         return _isBegin;
     }
 
-    static void displayClassMembers_C(IDiaSymbol* a_symbol, int a_nestingLevel)
+    static void displayMembers(IDiaSymbol* a_symbol, int a_nestingLevel)
     {
         // auto& _dia = DiaManager::instance();
 
@@ -1343,7 +1411,8 @@ protected:
             {
                 if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
-                ConsoleManager::print(L"/// FRIENDS:\n");
+                ConsoleManager::print(GET_STRING(DOC_COMMENT));
+                ConsoleManager::print(L" FRIENDS:\n");
             }
 
             for (auto& _friend : _childsContainers[6]) // SymTagFriend
@@ -1355,7 +1424,8 @@ protected:
             {
                 if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
-                ConsoleManager::print(L"/// ENUMS:\n");
+                ConsoleManager::print(GET_STRING(DOC_COMMENT));
+                ConsoleManager::print(L" ENUMS:\n");
             }
 
             for (auto& _enum : _childsContainers[3]) // SymTagEnum
@@ -1367,7 +1437,8 @@ protected:
             {
                 if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
-                ConsoleManager::print(L"/// TYPEDEFS:\n");
+                ConsoleManager::print(GET_STRING(DOC_COMMENT));
+                ConsoleManager::print(L" TYPEDEFS:\n");
             }
 
             for (auto& _typedef : _childsContainers[4]) // SymTagTypedef
@@ -1379,7 +1450,8 @@ protected:
             {
                 if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
-                ConsoleManager::print(L"/// CLASSES:\n");
+                ConsoleManager::print(GET_STRING(DOC_COMMENT));
+                ConsoleManager::print(L" CLASSES:\n");
             }
 
             for (auto& _class : _childsContainers[2]) // SymTagUDT
@@ -1419,7 +1491,8 @@ protected:
             {
                 if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
-                ConsoleManager::print(L"/// VIRTUALS:\n");
+                ConsoleManager::print(GET_STRING(DOC_COMMENT));
+                ConsoleManager::print(L" VIRTUALS:\n");
             }
 
             for (auto& _vfunc : _vfuncs)
@@ -1432,7 +1505,7 @@ protected:
                     DWORD _offset = s_noRetValue;
                     if (SUCCEEDED(_vfunc->get_virtualBaseOffset(&_offset)) && _offset != s_noRetValue)
                     { 
-                        ConsoleManager::print(L" %s0x%X", getCommentName_C(), _offset); 
+                        ConsoleManager::print(L" %s 0x%X", GET_STRING(LINE_COMMENT), _offset);
                     }
                 }
                 
@@ -1467,7 +1540,8 @@ protected:
             {
                 if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                 displayTabulation(a_nestingLevel);
-                ConsoleManager::print(L"/// FIELDS:\n");
+                ConsoleManager::print(GET_STRING(DOC_COMMENT));
+                ConsoleManager::print(L" FIELDS:\n");
             }
 
             for (auto& _field : _fields) 
@@ -1487,7 +1561,7 @@ protected:
                     if (SUCCEEDED(_field->get_offset(&_offset)) && _offset != s_noRetValue)
                     {
                         ConsoleManager::setCursorNoDiscard(60, -1, GlobalSettings::s_isTabulation);
-                        ConsoleManager::print(L"%s0x%X", getCommentName_C(), _offset);
+                        ConsoleManager::print(L"%s 0x%X", GET_STRING(LINE_COMMENT), _offset);
                     }
                 }
                 ConsoleManager::print(L"\n");
@@ -1505,7 +1579,8 @@ protected:
                 {
                     if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                     displayTabulation(a_nestingLevel);
-                    ConsoleManager::print(L"/// FUNCS:\n");
+                    ConsoleManager::print(GET_STRING(DOC_COMMENT));
+                    ConsoleManager::print(L" FUNCS:\n");
                 }
                 _firstFunc = false;
                 
@@ -1526,7 +1601,8 @@ protected:
                 {
                     if (!_isFirst) { ConsoleManager::print(L"\n"); } _isFirst = false;
                     displayTabulation(a_nestingLevel);
-                    ConsoleManager::print(L"/// OTHER MEMBERS:\n");
+                    ConsoleManager::print(GET_STRING(DOC_COMMENT));
+                    ConsoleManager::print(L" OTHER MEMBERS:\n");
                 }
                 _firstStatic = false;
 
