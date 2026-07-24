@@ -7,6 +7,7 @@
 #include <Application\Command\ICommand.hpp>
 
 #include <Util\Container\Singleton.hpp>
+#include <Util\Error\DumpError.hpp>
 
 
 class ConsoleManager : public Singleton<ConsoleManager>
@@ -71,16 +72,20 @@ public:
 		va_end(_args);
 	}
 
-	static __declspec(noreturn) void printError(const wchar_t* a_format, ...)
+	static void printError(const wchar_t* a_format, ...)
 	{
-		print(L"Error: ");
+		wchar_t _buffer[0x2000];
+		_buffer[0] = L'\0';
 
 		va_list _args;
 		va_start(_args, a_format);
-		print(a_format, _args);
+		vswprintf(_buffer, 0x2000, a_format, _args);
 		va_end(_args);
 
-		exit(EXIT_FAILURE);
+		std::wstring _msg = L"Error: ";
+		_msg += _buffer;
+
+		throw DumpError(_msg);
 	}
 
 	static bool setCursorNoDiscard(int a_pos, unsigned int a_repeatTime = -1, bool a_tabulation = true)

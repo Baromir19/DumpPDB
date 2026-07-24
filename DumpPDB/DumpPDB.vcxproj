@@ -177,6 +177,12 @@
     <ClCompile Include="Source\Util\Types\Serialization\UInt32Serializable.hpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Source\Core\DiaSession.hpp" />
+    <ClInclude Include="Source\Core\SymbolDumper.hpp" />
+    <ClInclude Include="Source\Core\TypeBuilder.hpp" />
+    <ClInclude Include="Source\Core\TypeWalker.hpp" />
+    <ClInclude Include="Source\Util\Com\ComPtr.hpp" />
+    <ClInclude Include="Source\Util\Error\DumpError.hpp" />
     <ClInclude Include="Source\Application\Application.hpp" />
     <ClInclude Include="Source\Application\Command\CommandCompiland.hpp" />
     <ClInclude Include="Source\Application\Command\CommandHelp.hpp" />
@@ -199,6 +205,7 @@
     <ClInclude Include="Source\Util\Types\Serialization\IBaseSerializable.hpp" />
     <ClInclude Include="Source\Util\Types\Serialization\IBaseSerializableBase.hpp" />
     <ClInclude Include="Source\Util\Types\Serialization\SerializableRegistry.hpp" />
+    <ClInclude Include="Source\Util\Types\Serialization\UInt32Serializable.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

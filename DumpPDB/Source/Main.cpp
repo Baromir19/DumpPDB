@@ -2,6 +2,9 @@
 
 #include <Application\Application.hpp>
 #include <Application\Save\SaveManager.hpp>
+#include <Application\Console\ConsoleManager.hpp>
+
+#include <Util\Error\DumpError.hpp>
 
 #include <Test/Tests.hpp>
 
@@ -11,7 +14,20 @@ int wmain(int argc, wchar_t* argv[])
 
     COMPILE_TEST
 
-    Application::instance().initialize(argc, argv);
+    try
+    {
+        Application::instance().initialize(argc, argv);
+    }
+    catch (const DumpError& a_error)
+    {
+        ConsoleManager::print(L"%s\n", a_error.wideMessage().c_str());
+        return EXIT_FAILURE;
+    }
+    catch (const std::exception& a_error)
+    {
+        ConsoleManager::print(L"Unexpected error: %S\n", a_error.what());
+        return EXIT_FAILURE;
+    }
 
     // SaveManager::instance().save();
 

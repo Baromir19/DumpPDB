@@ -9,6 +9,7 @@
 #include <Application\Debug\DebugManager.hpp>
 
 #include <Util\Container\Singleton.hpp>
+#include <Util\Error\DumpError.hpp>
 
 class SaveManager : public Singleton<SaveManager>
 {
@@ -121,7 +122,7 @@ public:
 	template<typename T>
 	bool appendEntry(Entry<T> a_entry) 
 	{ 
-		if (m_cursor + sizeof(Entry<T>) > s_bufferSize) { exit(ERROR_HANDLE_EOF); }
+		if (m_cursor + sizeof(Entry<T>) > s_bufferSize) { throw DumpError(L"Save buffer overflow"); }
 		(*(Entry<T>*)(&m_saveBuffer[m_cursor])) = a_entry; // ???
 		m_cursor += sizeof(Entry<T>);
 		++m_entriesCount;
@@ -221,7 +222,7 @@ protected:
 
 		if (!(fread(m_saveBuffer, 1, sizeof(m_saveBuffer), m_file) == sizeof(m_saveBuffer)))
 		{
-			exit(ERROR);
+			throw DumpError(L"Failed to read save file");
 		}
 
 		if (m_file) { fclose(m_file); }
@@ -241,7 +242,7 @@ protected:
 		if (m_fullPath.empty())
 		{
 			DWORD _length = GetCurrentDirectoryW(MAX_PATH, _buffer);
-			if (_length <= 0 || _length >= MAX_PATH) { exit(ERROR); }
+			if (_length <= 0 || _length >= MAX_PATH) { throw DumpError(L"Failed to get current directory"); }
 			m_fullPath = _buffer;
 		}
 		else
