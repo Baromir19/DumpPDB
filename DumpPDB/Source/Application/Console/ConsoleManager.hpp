@@ -4,11 +4,10 @@
 #include <string>
 #include <cstdarg>
 
-// #include "..\Settings\GlobalSettings.hpp"
+#include <Application\Command\ICommand.hpp>
 
-#include "..\..\Util\Container\Singleton.hpp"
+#include <Util\Container\Singleton.hpp>
 
-#include "..\Command\ICommand.hpp"
 
 class ConsoleManager : public Singleton<ConsoleManager>
 {

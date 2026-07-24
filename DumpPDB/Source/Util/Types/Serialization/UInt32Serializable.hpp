@@ -1,6 +1,6 @@
 #pragma once 
 
-#include "IBaseSerializable.hpp"
+#include <Util\Types\Serialization\IBaseSerializable.hpp>
 
 class UInt32Serializable : public IBaseSerializable<unsigned __int32>
 {

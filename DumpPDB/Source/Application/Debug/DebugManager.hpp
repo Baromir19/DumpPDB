@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DebugTools.hpp"
+#include <Application\Debug\DebugTools.hpp>
 
 class DebugManager
 {

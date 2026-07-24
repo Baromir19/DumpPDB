@@ -1,16 +1,15 @@
 #pragma once
 
-#include "..\..\Util\Container\Singleton.hpp"
+#include <Util\Container\Singleton.hpp>
 
-#include "..\Console\ConsoleManager.hpp"
+#include <Application\Console\ConsoleManager.hpp>
 
-#include "ICommand.hpp"
-
-#include "CommandType.hpp"
-#include "CommandHelp.hpp"
-#include "CommandCompiland.hpp"
-#include "CommandSource.hpp"
-#include "CommandSettings.hpp"
+#include <Application\Command\ICommand.hpp>
+#include <Application\Command\CommandType.hpp>
+#include <Application\Command\CommandCompiland.hpp>
+#include <Application\Command\CommandSource.hpp>
+#include <Application\Command\CommandSettings.hpp>
+#include <Application\Command\CommandHelp.hpp>
 
 class CommandManager : public Singleton<CommandManager>
 {

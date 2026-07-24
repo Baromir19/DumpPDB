@@ -5,9 +5,10 @@
 #include <windows.h>
 #include <ShlObj.h>
 
-#include "..\..\Util\Container\Singleton.hpp"
-#include "..\Console\ConsoleManager.hpp"
-#include "..\Debug\DebugManager.hpp"
+#include <Application\Console\ConsoleManager.hpp>
+#include <Application\Debug\DebugManager.hpp>
+
+#include <Util\Container\Singleton.hpp>
 
 class SaveManager : public Singleton<SaveManager>
 {

@@ -7,4 +7,4 @@ class IBaseSerializable;
 
 static std::list<IBaseSerializable<unsigned int>*> m_instances;
 
-#include "IBaseSerializable.hpp"
+#include <Util\Types\Serialization\IBaseSerializable.hpp>

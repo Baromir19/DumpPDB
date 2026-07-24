@@ -1,8 +1,9 @@
 #pragma once
 
-#include "ICommand.hpp"
+#include <Application\Command\ICommand.hpp>
 
-#include "..\..\Util\Types\Serialization\IBaseSerializableBase.hpp"
+#include <Util\Types\Serialization\IBaseSerializableBase.hpp>
+
 
 class CommandSettings : public ICommand
 {

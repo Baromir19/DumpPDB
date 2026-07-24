@@ -8,11 +8,11 @@
 #include <sstream>
 #include <algorithm>
 
-#include "..\..\Util\Container\Singleton.hpp"
+#include <Util/Container\Singleton.hpp>
 
-#include "..\Console\ConsoleManager.hpp"
-#include "..\Settings\GlobalSettings.hpp"
-#include "..\Debug\DebugManager.hpp"
+#include <Application/Debug/DebugManager.hpp>
+#include <Application/Settings/GlobalSettings.hpp>
+#include <Application/Console/ConsoleManager.hpp>
 
 class DiaManager : public Singleton<DiaManager>
 {

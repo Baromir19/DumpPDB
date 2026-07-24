@@ -1,8 +1,7 @@
 #pragma once
 
-#include "ICommand.hpp"
-
-#include "..\DIA\DiaManager.hpp"
+#include <Application\DIA\DiaManager.hpp>
+#include <Application\Command\ICommand.hpp>
 
 class CommandCompiland : public ICommand
 {

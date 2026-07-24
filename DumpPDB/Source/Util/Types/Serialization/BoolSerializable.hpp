@@ -1,6 +1,6 @@
 #pragma once 
 
-#include "IBaseSerializable.hpp"
+#include <Util\Types\Serialization\IBaseSerializable.hpp>
 
 class BoolSerializable : public IBaseSerializable<bool>
 {

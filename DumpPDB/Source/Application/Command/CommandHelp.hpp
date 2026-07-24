@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ICommand.hpp"
+#include <Util\Types\Serialization\BoolSerializable.hpp>
 
-#include "..\..\Util\Types\Serialization\BoolSerializable.hpp"
+#include <Application\Command\ICommand.hpp>
 
 class CommandHelp : public ICommand
 {

@@ -1,8 +1,8 @@
 #pragma once 
 
-#include "IBaseSerializableBase.hpp"
+#include <Util\Types\Serialization\IBaseSerializableBase.hpp>
 
-#include "..\..\..\Application\String\StringManager.hpp"
+#include <Application\String\StringManager.hpp>
 
 #define SERIALIZABLE(type_name, parent_name, var_name, base_value) \
 	type_name ## Serializable var_name = type_name ## Serializable(base_value, HashManager::crc32(#parent_name "::" #var_name), #parent_name "::" #var_name);

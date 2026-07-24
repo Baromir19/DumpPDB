@@ -2,8 +2,8 @@
 
 #include <cvconst.h>
 
-#include "..\..\Util\Types\Serialization\BoolSerializable.hpp"
-#include "..\..\Util\Types\Serialization\UInt32Serializable.hpp"
+#include <Util\Types\Serialization\UInt32Serializable.hpp>
+#include <Util\Types\Serialization\BoolSerializable.hpp>
 
 class GlobalSettings
 {

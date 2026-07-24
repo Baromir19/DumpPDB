@@ -1,12 +1,11 @@
 #pragma once
 
-#include "..\Util\Container\Singleton.hpp"
+#include <Application\DIA\DiaManager.hpp>
+#include <Application\Command\CommandManager.hpp>
+#include <Application\Debug\DebugManager.hpp>
+#include <Application\Console\ConsoleManager.hpp>
 
-#include "DIA\DiaManager.hpp"
-#include "Console\ConsoleManager.hpp"
-#include "Debug\DebugManager.hpp"
-
-#include "Command\CommandManager.hpp"
+#include <Util\Container\Singleton.hpp>
 
 class Application : public Singleton<Application>
 {

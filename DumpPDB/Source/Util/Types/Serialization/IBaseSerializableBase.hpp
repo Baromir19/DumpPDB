@@ -1,8 +1,8 @@
 #pragma once
 
-#include "..\..\..\Application\Hash\HashManager.hpp"
-#include "..\..\..\Application\Save\SaveManager.hpp"
-#include "..\..\..\Application\String\StringManager.hpp"
+#include <Application\Hash\HashManager.hpp>
+#include <Application\String\StringManager.hpp>
+#include <Application\Save\SaveManager.hpp>
 
 #include <list>
 
