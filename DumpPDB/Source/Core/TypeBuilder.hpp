@@ -104,59 +104,58 @@ public:
     {
         std::wstring _result;
 
-        // 1. Leading qualifiers (const, volatile) for the base type
+        // 1. Leading qualifiers (const, volatile) for the base type.
+        //    m_isConstPointed means the pointed-to type is const (e.g. const int*),
+        //    which goes before the base type, not after the pointer.
         if (m_isVolatile) { _result += L"volatile "; }
-        if (m_isConst)    { _result += L"const "; }
+        if (m_isConst || m_isConstPointed) { _result += L"const "; }
 
         // 2. Base type
         if (!m_baseType.empty()) { _result += m_baseType; }
 
-        // 3. Apply modifiers from outer to inner using spiral rule
-        //    Walk the chain backwards (outermost first)
-        bool _hasPtrOrRef = false;
-        bool _hasParen = false;
+        // 3. Build prefix (before name) and postfix (after name) from the modifier chain.
+        //    Walk from inner (begin) to outer (end) to correctly handle C++ declarators.
+        //    When a postfix modifier (Function/Array) wraps a prefix modifier (Pointer/Ref),
+        //    we need parentheses around the prefix: e.g. int (*)(float) not int*(float).
+        std::wstring _prefix;
+        std::wstring _postfix;
+        bool _seenPostfix = false;
+        bool _needsParen = false;
 
-        for (auto it = m_chain.rbegin(); it != m_chain.rend(); ++it)
+        for (auto it = m_chain.begin(); it != m_chain.end(); ++it)
         {
             switch (it->kind)
             {
             case ModifierKind::Pointer:
-                if (!_hasPtrOrRef && !_hasParen && m_name.empty())
-                {
-                    // No name yet, pointer goes after base type
-                    _result += L"*";
-                }
-                else
-                {
-                    _result += L"*";
-                }
-                _hasPtrOrRef = true;
+                if (_seenPostfix) { _needsParen = true; }
+                _prefix += L"*";
                 break;
 
             case ModifierKind::Reference:
-                _result += L"&";
-                _hasPtrOrRef = true;
+                if (_seenPostfix) { _needsParen = true; }
+                _prefix += L"&";
                 break;
 
             case ModifierKind::RValueReference:
-                _result += L"&&";
-                _hasPtrOrRef = true;
+                if (_seenPostfix) { _needsParen = true; }
+                _prefix += L"&&";
                 break;
 
             case ModifierKind::Array:
-                _result += L"[";
+                _postfix += L"[";
                 if (it->arrayCount > 0)
                 {
-                    wchar_t _buf[32];
-                    _result += std::to_wstring(it->arrayCount);
+                    _postfix += std::to_wstring(it->arrayCount);
                 }
-                _result += L"]";
+                _postfix += L"]";
+                _seenPostfix = true;
                 break;
 
             case ModifierKind::Function:
-                _result += L"(";
-                _result += it->functionArgs;
-                _result += L")";
+                _postfix += L"(";
+                _postfix += it->functionArgs;
+                _postfix += L")";
+                _seenPostfix = true;
                 break;
 
             case ModifierKind::BitField:
@@ -164,21 +163,28 @@ public:
             }
         }
 
-        // 4. const on pointed-to type
-        if (m_isConstPointed && _hasPtrOrRef)
+        // 4. Emit prefix with parentheses if needed for correct C++ declarator syntax.
+        //    The name is placed inside the parentheses (or right after prefix if no parens)
+        //    to correctly handle the spiral rule for pointers to arrays/functions.
+        //    e.g. int (*arr)[10] not int (*)[10] arr
+        if (_needsParen)
         {
-            _result += L" const";
+            _result += L" (";
+            _result += _prefix;
+            if (!m_name.empty()) { _result += L" "; _result += m_name; }
+            _result += L")";
+        }
+        else
+        {
+            _result += _prefix;
+            if (!m_name.empty()) { _result += L" "; _result += m_name; }
         }
 
-        // 5. Name
-        if (!m_name.empty())
-        {
-            _result += L" ";
-            _result += m_name;
-        }
+        // 5. Postfix (function args, array dimensions)
+        _result += _postfix;
 
-        // 6. Bitfield
-        for (auto it = m_chain.rbegin(); it != m_chain.rend(); ++it)
+        // 7. Bitfield
+        for (auto it = m_chain.begin(); it != m_chain.end(); ++it)
         {
             if (it->kind == ModifierKind::BitField && it->bitLength > 0)
             {

@@ -35,12 +35,14 @@ public:
 
     ComPtr& operator=(ComPtr&& a_other) noexcept
     {
-        if (this != &a_other)
+        if (this != std::addressof(a_other))
         {
             internalRelease();
+
             m_ptr = a_other.m_ptr;
             a_other.m_ptr = nullptr;
         }
+
         return *this;
     }
 
@@ -100,7 +102,11 @@ protected:
 
     void internalRelease() noexcept
     {
-        if (m_ptr) { m_ptr->Release(); }
+        if (m_ptr) 
+        { 
+            m_ptr->Release(); 
+            m_ptr = nullptr;
+        }
     }
 
 private:

@@ -20,10 +20,15 @@ public:
 
     bool initialize(const std::wstring& a_pdbPath)
     {
-        if (FAILED(CoInitialize(nullptr)))
+        HRESULT _comHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        if (FAILED(_comHr))
         {
-            throw DumpError(L"Failed to initialize COM");
+            wchar_t _buf[64];
+            swprintf_s(_buf, L"CoInitializeEx failed: 0x%X", _comHr);
+            throw DumpError(_buf);
         }
+        // S_FALSE means COM was already initialized on this thread.
+        // We still need to call CoUninitialize for this call.
         m_comInitialized = true;
 
         ComPtr<IDiaDataSource> _source;
@@ -82,11 +87,43 @@ public:
         }
     }
 
-    // Non-copyable, movable
+    // Non-copyable
     DiaSession(const DiaSession&) = delete;
     DiaSession& operator=(const DiaSession&) = delete;
-    DiaSession(DiaSession&&) = default;
-    DiaSession& operator=(DiaSession&&) = default;
+
+    // Move: transfer COM ownership and reset source to prevent double CoUninitialize
+    DiaSession(DiaSession&& a_other) noexcept
+        : m_source(std::move(a_other.m_source))
+        , m_session(std::move(a_other.m_session))
+        , m_globalScope(std::move(a_other.m_globalScope))
+        , m_comInitialized(a_other.m_comInitialized)
+    {
+        a_other.m_comInitialized = false;
+    }
+
+    DiaSession& operator=(DiaSession&& a_other) noexcept
+    {
+        if (this != &a_other)
+        {
+            // Release current resources
+            m_globalScope.Release();
+            m_session.Release();
+            m_source.Release();
+            if (m_comInitialized)
+            {
+                CoUninitialize();
+            }
+
+            // Transfer ownership
+            m_source = std::move(a_other.m_source);
+            m_session = std::move(a_other.m_session);
+            m_globalScope = std::move(a_other.m_globalScope);
+            m_comInitialized = a_other.m_comInitialized;
+
+            a_other.m_comInitialized = false;
+        }
+        return *this;
+    }
 
 private:
     ComPtr<IDiaDataSource> m_source;

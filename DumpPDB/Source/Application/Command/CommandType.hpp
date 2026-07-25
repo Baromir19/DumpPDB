@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Application\DIA\DiaManager.hpp>
+#include <Core\PdbToolset.hpp>
 #include <Application\Command\ICommand.hpp>
+#include <Application\Console\ConsoleManager.hpp>
 
 class CommandType : public ICommand
 {
@@ -20,6 +21,9 @@ public:
 			return false;
 		}
 
-		return DiaManager::instance().displayType(a_commandArgs[0].c_str());
+		auto _text = PdbToolset::instance().dumpTypeByName(a_commandArgs[0].c_str(), false);
+		if (_text.empty()) return false;
+		ConsoleManager::print(_text.c_str());
+		return true;
 	}
 };

@@ -6,6 +6,8 @@ add_library(pdbcore STATIC
     ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Core/TypeBuilder.hpp
     ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Core/TypeWalker.hpp
     ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Core/SymbolDumper.hpp
+    ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Core/SymbolFinder.hpp
+    ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Core/PdbToolset.hpp
     ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Util/Com/ComPtr.hpp
     ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Util/Error/DumpError.hpp
 )
@@ -29,6 +31,8 @@ target_sources(pdbcore PUBLIC
         ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Core/TypeBuilder.hpp
         ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Core/TypeWalker.hpp
         ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Core/SymbolDumper.hpp
+        ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Core/SymbolFinder.hpp
+        ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Core/PdbToolset.hpp
         ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Util/Com/ComPtr.hpp
         ${CMAKE_SOURCE_DIR}/DumpPDB/Source/Util/Error/DumpError.hpp
 )

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Application\DIA\DiaManager.hpp>
+#include <Core\PdbToolset.hpp>
+
 #include <Application\Command\CommandManager.hpp>
 #include <Application\Debug\DebugManager.hpp>
 #include <Application\Console\ConsoleManager.hpp>
@@ -37,13 +38,41 @@ public:
         {
             const auto& _path = ConsoleManager::instance().getPath();
 
-            if (!DiaManager::instance().initialize(_path))
+            if (!PdbToolset::instance().initialize(_path))
             {
                 ConsoleManager::printError(L"DIA is not initialized!\n");
             }
         }
 
-        CommandManager::instance().executeCommand(_cmd);
+        try
+        {/*
+            __try
+            {*/
+                // while (!IsDebuggerPresent()) {}
+                CommandManager::instance().executeCommand(_cmd);
+            /* }
+            __except (
+                [](EXCEPTION_POINTERS* p)
+                {
+                    printf(
+                        "SEH exception: 0x%08X\n",
+                        p->ExceptionRecord->ExceptionCode
+                    );
+
+                    return EXCEPTION_EXECUTE_HANDLER;
+                }(GetExceptionInformation())
+                    )
+            {
+            }*/
+        }
+        catch (const std::exception& e)
+        {
+            printf("Exception: %s\n", e.what());
+        }
+        catch (...)
+        {
+            printf("Unknown C++ exception\n");
+        }
 
         initState = true;
         return true;

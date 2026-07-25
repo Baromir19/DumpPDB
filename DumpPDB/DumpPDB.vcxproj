@@ -93,7 +93,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(VSInstallDir)DIA SDK\include;C:\Users\Sergey\source\repos\DumpPDB\Source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(VSInstallDir)DIA SDK\include;$(ProjectDir)\Source;C:\Users\Sergey\source\repos\DumpPDB\Source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalModuleDependencies>
       </AdditionalModuleDependencies>
       <AdditionalBMIDirectories>
@@ -114,7 +114,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(VSInstallDir)DIA SDK\include;C:\Users\Sergey\source\repos\DumpPDB\Source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(VSInstallDir)DIA SDK\include;$(ProjectDir)\Source;C:\Users\Sergey\source\repos\DumpPDB\Source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <AdditionalModuleDependencies>
       </AdditionalModuleDependencies>
@@ -136,7 +136,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(VSInstallDir)DIA SDK\include;C:\Users\Sergey\source\repos\DumpPDB\Source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(VSInstallDir)DIA SDK\include;$(ProjectDir)\Source;C:\Users\Sergey\source\repos\DumpPDB\Source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalModuleDependencies>
       </AdditionalModuleDependencies>
       <AdditionalBMIDirectories>
@@ -178,7 +178,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Core\DiaSession.hpp" />
+    <ClInclude Include="Source\Core\PdbToolset.hpp" />
     <ClInclude Include="Source\Core\SymbolDumper.hpp" />
+    <ClInclude Include="Source\Core\SymbolFinder.hpp" />
     <ClInclude Include="Source\Core\TypeBuilder.hpp" />
     <ClInclude Include="Source\Core\TypeWalker.hpp" />
     <ClInclude Include="Source\Util\Com\ComPtr.hpp" />

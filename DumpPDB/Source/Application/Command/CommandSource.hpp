@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Application\DIA\DiaManager.hpp>
+#include <Core\PdbToolset.hpp>
 #include <Application\Command\ICommand.hpp>
+#include <Application\Console\ConsoleManager.hpp>
 
 class CommandSource : public ICommand
 {
@@ -15,6 +16,9 @@ public:
 
 	virtual bool execute(const std::wstring a_commandArgs[]) override
 	{
-		return DiaManager::instance().displaySourceFiles();
+		auto _text = PdbToolset::instance().dumpSourceFiles();
+		if (_text.empty()) return false;
+		ConsoleManager::print(_text.c_str());
+		return true;
 	}
 };

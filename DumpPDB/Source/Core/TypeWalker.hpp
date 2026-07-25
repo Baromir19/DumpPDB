@@ -103,7 +103,10 @@ public:
 
     /// Build a TypeBuilder chain by recursively walking the DIA type tree.
     /// Returns a TypeBuilder populated with the full type chain.
-    static TypeBuilder resolveType(IDiaSymbol* a_symbol, const std::wstring& a_parentClassName = L"")
+    /// @param a_stripScope Controls whether parent scope prefix is stripped from names
+    ///                     (corresponds to DumpConfig::showNonScoped).
+    static TypeBuilder resolveType(IDiaSymbol* a_symbol, const std::wstring& a_parentClassName = L"",
+                                    bool a_stripScope = true)
     {
         TypeBuilder _builder;
 
@@ -118,8 +121,8 @@ public:
         a_symbol->get_constType(&_isConst);
         a_symbol->get_volatileType(&_isVolatile);
 
-        // Get name
-        std::wstring _name = getName(a_symbol, a_parentClassName);
+        // Get name (strip scope based on a_stripScope parameter)
+        std::wstring _name = getName(a_symbol, a_parentClassName, a_stripScope);
 
         // Get sub-type (recursive)
         ComPtr<IDiaSymbol> _subType;
@@ -137,7 +140,7 @@ public:
                 if (_isVolatile) _builder.volatileQual();
             }
 
-            TypeBuilder _subBuilder = resolveType(_subType.get(), a_parentClassName);
+            TypeBuilder _subBuilder = resolveType(_subType.get(), a_parentClassName, a_stripScope);
             // Merge sub-builder into this one
             _builder = std::move(_subBuilder);
         }
@@ -189,7 +192,7 @@ public:
 
         case SymTagFunctionType:
         {
-            std::wstring _args = getFuncArgsString(a_symbol);
+            std::wstring _args = getFuncArgsString(a_symbol, a_stripScope);
             _builder.function(std::move(_args));
             break;
         }
@@ -231,7 +234,7 @@ public:
     }
 
     /// Get function arguments as a comma-separated string.
-    static std::wstring getFuncArgsString(IDiaSymbol* a_symbol)
+    static std::wstring getFuncArgsString(IDiaSymbol* a_symbol, bool a_stripScope = true)
     {
         std::wstring _result;
         bool _isFirst = true;
@@ -247,7 +250,7 @@ public:
                 if (SUCCEEDED(_child->get_type(&_argType)) && _argType)
                 {
                     if (!_isFirst) { _result += L", "; }
-                    _result += resolveType(_argType.get()).build();
+                    _result += resolveType(_argType.get(), L"", a_stripScope).build();
                     _isFirst = false;
                 }
             }
@@ -257,7 +260,14 @@ public:
     }
 
     /// Get the name of a symbol, optionally stripping the parent scope.
-    static std::wstring getName(IDiaSymbol* a_symbol, const std::wstring& a_parentClassName = L"")
+    /// @param a_symbol        The DIA symbol to get the name from.
+    /// @param a_parentClassName If non-empty, scopes the lookup (used for children).
+    /// @param a_stripScope    If true (default), strips the parent scope prefix from the name.
+    ///                         Controls the "showNonScoped" behavior: when true, only the
+    ///                         short/non-scoped name is returned. When false, the full scoped
+    ///                         name (e.g. "ParentClass::Child") is preserved.
+    static std::wstring getName(IDiaSymbol* a_symbol, const std::wstring& a_parentClassName = L"",
+                                 bool a_stripScope = true)
     {
         BSTR _bstrName = nullptr;
         if (SUCCEEDED(a_symbol->get_name(&_bstrName)) && _bstrName)
@@ -265,8 +275,8 @@ public:
             std::wstring _ret(_bstrName);
             SysFreeString(_bstrName);
 
-            // Strip parent scope if requested
-            if (!a_parentClassName.empty() && _ret.find(a_parentClassName + L"::") == 0)
+            // Strip parent scope if requested (showNonScoped behavior)
+            if (a_stripScope && !a_parentClassName.empty() && _ret.find(a_parentClassName + L"::") == 0)
             {
                 _ret = _ret.substr(a_parentClassName.size() + 2);
             }
@@ -314,23 +324,50 @@ public:
         return nullptr;
     }
 
-    /// Get the calling convention name.
-    static const wchar_t* getCallingConvention(IDiaSymbol* a_symbol)
+    /// C++ calling convention enum.
+    enum class CallingConvention
+    {
+        Unknown,
+        Cdecl,
+        Fastcall,
+        Stdcall,
+        Thiscall,
+        Syscall,
+        Clrcall
+    };
+
+    /// Get the calling convention from a DIA symbol.
+    static CallingConvention getCallingConvention(IDiaSymbol* a_symbol)
     {
         DWORD _cc = 0;
         if (SUCCEEDED(a_symbol->get_callingConvention(&_cc)))
         {
             switch (_cc)
             {
-            case CV_CALL_NEAR_C:    return L"__cdecl";
-            case CV_CALL_NEAR_FAST: return L"__fastcall";
-            case CV_CALL_NEAR_STD:  return L"__stdcall";
-            case CV_CALL_NEAR_SYS:  return L"__syscall";
-            case CV_CALL_THISCALL:  return L"__thiscall";
-            case CV_CALL_CLRCALL:   return L"__clrcall";
-            default:                return nullptr;
+            case CV_CALL_NEAR_C:    return CallingConvention::Cdecl;
+            case CV_CALL_NEAR_FAST: return CallingConvention::Fastcall;
+            case CV_CALL_NEAR_STD:  return CallingConvention::Stdcall;
+            case CV_CALL_NEAR_SYS:  return CallingConvention::Syscall;
+            case CV_CALL_THISCALL:  return CallingConvention::Thiscall;
+            case CV_CALL_CLRCALL:   return CallingConvention::Clrcall;
+            default:                return CallingConvention::Unknown;
             }
         }
-        return nullptr;
+        return CallingConvention::Unknown;
+    }
+
+    /// Render a calling convention enum to its C++ keyword string.
+    static const wchar_t* renderCallingConvention(CallingConvention a_cc)
+    {
+        switch (a_cc)
+        {
+        case CallingConvention::Cdecl:    return L"__cdecl";
+        case CallingConvention::Fastcall: return L"__fastcall";
+        case CallingConvention::Stdcall:  return L"__stdcall";
+        case CallingConvention::Syscall:  return L"__syscall";
+        case CallingConvention::Thiscall: return L"__thiscall";
+        case CallingConvention::Clrcall:  return L"__clrcall";
+        default:                          return nullptr;
+        }
     }
 };

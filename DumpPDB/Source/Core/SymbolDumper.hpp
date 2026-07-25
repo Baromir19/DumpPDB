@@ -14,13 +14,13 @@
 /// Configuration for dumping output.
 struct DumpConfig
 {
-    bool showSize       = true;
-    bool showOffset     = true;
-    bool showAccess     = true;
-    bool showInfoComment= true;
-    bool showNonScoped  = true;
-    bool showEnumHex    = false;
-    bool showTypeSource = true;
+    bool showSize        = true;
+    bool showOffset      = true;
+    bool showAccess      = true;
+    bool showInfoComment = true;
+    bool showNonScoped   = true;
+    bool showEnumHex     = false;
+    bool showTypeSource  = true;
     bool curlyBraceNewline = true;
     DWORD baseAccessType = 0; // override access type
 };
@@ -47,7 +47,7 @@ public:
     {
         std::wstring _ret;
         std::wstring _prevParent = m_parentClassName;
-        m_parentClassName = TypeWalker::getName(a_symbol);
+        m_parentClassName = TypeWalker::getName(a_symbol, L"", m_config.showNonScoped);
         
         _ret += tab(a_nestingLevel);
         _ret += sizeComment(a_symbol);
@@ -59,7 +59,7 @@ public:
         std::wstring _typeText;
         try
         {
-            _typeText = TypeWalker::resolveType(a_symbol, _prevParent).build();
+            _typeText = TypeWalker::resolveType(a_symbol, _prevParent, m_config.showNonScoped).build();
         }
         catch (...)
         {
@@ -89,7 +89,7 @@ public:
         _ret += tab(a_nestingLevel);
         _ret += modPrefix(a_symbol);
         _ret += L"enum ";
-        _ret += TypeWalker::getName(a_symbol);
+        _ret += TypeWalker::getName(a_symbol, L"", m_config.showNonScoped);
 
         _ret += baseTypeInheritance(a_symbol);
         _ret += scopeBegin(a_nestingLevel);
@@ -119,10 +119,28 @@ public:
         _ret += modPrefix(a_symbol);
         _ret += L"typedef ";
 
+        // Get the typedef name
+        std::wstring _typedefName = TypeWalker::getName(a_symbol, m_parentClassName);
+
+        // Resolve the underlying type (the type this typedef aliases)
+        // We need to get the type of the typedef symbol, not the typedef itself
         std::wstring _typeText;
         try
         {
-            _typeText = TypeWalker::resolveType(a_symbol, m_parentClassName).build();
+            ComPtr<IDiaSymbol> _underlyingType;
+            if (SUCCEEDED(a_symbol->get_type(&_underlyingType)) && _underlyingType)
+            {
+                // Build the underlying type's full declaration
+                TypeBuilder _builder = TypeWalker::resolveType(_underlyingType.get(), m_parentClassName);
+                // Set the typedef name as the "variable name" in the declaration
+                _builder.name(_typedefName);
+                _typeText = _builder.build();
+            }
+            else
+            {
+                // Fallback: just use the typedef name itself
+                _typeText = _typedefName;
+            }
         }
         catch (...)
         {
@@ -240,12 +258,12 @@ public:
             {
                 switch (_symTag)
                 {
-                case SymTagData:        _childContainers[0].push_back(std::move(_child)); break;
-                case SymTagFunction:    _childContainers[1].push_back(std::move(_child)); break;
-                case SymTagUDT:         _childContainers[2].push_back(std::move(_child)); break;
-                case SymTagEnum:        _childContainers[3].push_back(std::move(_child)); break;
-                case SymTagTypedef:     _childContainers[4].push_back(std::move(_child)); break;
-                case SymTagFriend:      _childContainers[6].push_back(std::move(_child)); break;
+                case SymTagData:        _childContainers[0].push_back(_child); break;
+                case SymTagFunction:    _childContainers[1].push_back(_child); break;
+                case SymTagUDT:         _childContainers[2].push_back(_child); break;
+                case SymTagEnum:        _childContainers[3].push_back(_child); break;
+                case SymTagTypedef:     _childContainers[4].push_back(_child); break;
+                case SymTagFriend:      _childContainers[6].push_back(_child); break;
                 default:
                     // SymTagVTable, etc. - skip
                     break;
@@ -306,7 +324,7 @@ public:
             BOOL _isVirtual = FALSE;
             if (SUCCEEDED(_func->get_virtual(&_isVirtual)) && _isVirtual)
             {
-                _vfuncs.push_back(std::move(_func));
+                _vfuncs.push_back(_func);
             }
         }
 
@@ -340,13 +358,15 @@ public:
         }
 
         // Fields (SymTagData, DataIsMember, sorted by offset)
+        // Track access specifiers per field and emit labels when they change
+        DWORD _lastAccess = (DWORD)-1; // sentinel value meaning "no previous access"
         std::vector<ComPtr<IDiaSymbol>> _fields;
         for (auto& _field : _childContainers[0])
         {
             DWORD _kind = 0;
             if (SUCCEEDED(_field->get_dataKind(&_kind)) && _kind == DataIsMember)
             {
-                _fields.push_back(std::move(_field));
+                _fields.push_back(_field);
             }
         }
 
@@ -365,6 +385,30 @@ public:
         }
         for (auto& _field : _fields)
         {
+            // Emit access specifier label when showAccess is enabled and access changes
+            if (m_config.showAccess)
+            {
+                DWORD _access = 0;
+                if (SUCCEEDED(_field->get_access(&_access)) && _access != _lastAccess)
+                {
+                    _lastAccess = _access;
+                    _ret += tab(a_nestingLevel);
+                    const wchar_t* _accessName = nullptr;
+                    if (m_config.baseAccessType) { _access = m_config.baseAccessType; }
+                    switch (_access)
+                    {
+                    case CV_private:   _accessName = L"private"; break;
+                    case CV_protected: _accessName = L"protected"; break;
+                    case CV_public:    _accessName = L"public"; break;
+                    }
+                    if (_accessName)
+                    {
+                        _ret += _accessName;
+                        _ret += L":\n";
+                    }
+                }
+            }
+
             _ret += tab(a_nestingLevel);
             try
             {
@@ -471,7 +515,10 @@ public:
                         BSTR _filename;
                         if (SUCCEEDED(_sourceFile->get_fileName(&_filename)))
                         {
-                            m_typeSources.push_back(_filename);
+                            // Convert BSTR to std::wstring immediately to avoid
+                            // ownership issues (double-free, use-after-free, leaks)
+                            m_typeSources.emplace_back(_filename, SysStringLen(_filename));
+                            SysFreeString(_filename);
                         }
                     }
                 }
@@ -486,12 +533,11 @@ public:
         if (m_typeSources.empty()) return L"";
 
         std::wstring _ret;
-        for (auto& _src : m_typeSources)
+        for (const auto& _src : m_typeSources)
         {
             _ret += L"// ";
             _ret += _src;
             _ret += L"\n";
-            SysFreeString(_src);
         }
         m_typeSources.clear();
         return _ret;
@@ -755,6 +801,6 @@ private:
 
     DumpConfig m_config;
     std::wstring m_parentClassName;
-    std::vector<BSTR> m_typeSources;
+    std::vector<std::wstring> m_typeSources;
     IDiaSession* m_session = nullptr;
 };
