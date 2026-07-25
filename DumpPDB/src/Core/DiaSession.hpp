@@ -20,56 +20,56 @@ public:
 
     bool initialize(const std::wstring& a_pdbPath)
     {
-        HRESULT _comHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        if (FAILED(_comHr))
+        HRESULT comHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        if (FAILED(comHr))
         {
-            wchar_t _buf[64];
-            swprintf_s(_buf, L"CoInitializeEx failed: 0x%X", _comHr);
-            throw DumpError(_buf);
+            wchar_t buf[64];
+            swprintf_s(buf, L"CoInitializeEx failed: 0x%X", comHr);
+            throw DumpError(buf);
         }
         // S_FALSE means COM was already initialized on this thread.
         // We still need to call CoUninitialize for this call.
         m_comInitialized = true;
 
-        ComPtr<IDiaDataSource> _source;
+        ComPtr<IDiaDataSource> source;
         HRESULT hr = CoCreateInstance(__uuidof(DiaSource), nullptr, CLSCTX_INPROC_SERVER,
-            __uuidof(IDiaDataSource), (void**)&_source);
+            __uuidof(IDiaDataSource), (void**)&source);
         if (FAILED(hr))
         {
-            wchar_t _buf[64];
-            swprintf_s(_buf, L"CoCreateInstance failed: 0x%X", hr);
-            throw DumpError(_buf);
+            wchar_t buf[64];
+            swprintf_s(buf, L"CoCreateInstance failed: 0x%X", hr);
+            throw DumpError(buf);
         }
 
-        hr = _source->loadDataFromPdb(a_pdbPath.c_str());
+        hr = source->loadDataFromPdb(a_pdbPath.c_str());
         if (FAILED(hr))
         {
-            wchar_t _buf[64];
-            swprintf_s(_buf, L"loadDataFromPdb failed: 0x%X", hr);
-            throw DumpError(_buf);
+            wchar_t buf[64];
+            swprintf_s(buf, L"loadDataFromPdb failed: 0x%X", hr);
+            throw DumpError(buf);
         }
 
-        ComPtr<IDiaSession> _session;
-        hr = _source->openSession(&_session);
+        ComPtr<IDiaSession> session;
+        hr = source->openSession(&session);
         if (FAILED(hr))
         {
-            wchar_t _buf[64];
-            swprintf_s(_buf, L"openSession failed: 0x%X", hr);
-            throw DumpError(_buf);
+            wchar_t buf[64];
+            swprintf_s(buf, L"openSession failed: 0x%X", hr);
+            throw DumpError(buf);
         }
 
-        ComPtr<IDiaSymbol> _globalScope;
-        hr = _session->get_globalScope(&_globalScope);
+        ComPtr<IDiaSymbol> globalScope;
+        hr = session->get_globalScope(&globalScope);
         if (FAILED(hr))
         {
-            wchar_t _buf[64];
-            swprintf_s(_buf, L"get_globalScope failed: 0x%X", hr);
-            throw DumpError(_buf);
+            wchar_t buf[64];
+            swprintf_s(buf, L"get_globalScope failed: 0x%X", hr);
+            throw DumpError(buf);
         }
 
-        m_source = std::move(_source);
-        m_session = std::move(_session);
-        m_globalScope = std::move(_globalScope);
+        m_source = std::move(source);
+        m_session = std::move(session);
+        m_globalScope = std::move(globalScope);
         return true;
     }
 

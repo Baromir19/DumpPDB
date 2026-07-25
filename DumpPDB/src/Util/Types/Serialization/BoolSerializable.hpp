@@ -7,9 +7,9 @@ class BoolSerializable : public IBaseSerializable<bool>
 protected:
 
 public:
-	BoolSerializable(bool _baseValue = false, const char* _name = "") :
-		IBaseSerializable(_baseValue, SaveManager::TYPE_BOOL, _name) {};
+	BoolSerializable(bool a_baseValue = false, const char* a_name = "") :
+		IBaseSerializable(a_baseValue, SaveManager::TYPE_BOOL, a_name) {};
 
-	BoolSerializable(bool _baseValue, unsigned __int32 _hash, const char* _name = "") :
-		IBaseSerializable(_baseValue, SaveManager::TYPE_BOOL, _hash, _name) {};
+	BoolSerializable(bool a_baseValue, unsigned __int32 a_hash, const char* a_name = "") :
+		IBaseSerializable(a_baseValue, SaveManager::TYPE_BOOL, a_hash, a_name) {};
 };

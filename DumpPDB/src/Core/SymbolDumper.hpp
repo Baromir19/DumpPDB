@@ -8,7 +8,6 @@
 #include <dia2.h>
 
 #include <Util/Com/ComPtr.hpp>
-#include <Util\DiaSymbolInspector.hpp>
 #include <Core/TypeWalker.hpp>
 #include <Core/TypeBuilder.hpp>
 
@@ -21,7 +20,7 @@ struct DumpConfig
     bool m_showInfoComment = false;
     bool m_showNonScoped   = true;
     bool m_showEnumHex     = false;
-    bool m_showTypeSource  = true;
+    bool m_showTypeSource  = false;
     bool m_curlyBraceNewline = true;
     bool m_hideCompilerGenerated = true; // hide __local_vftable_ctor_closure, etc.
     DWORD m_baseAccessType = 0; // override access type
@@ -45,38 +44,38 @@ public:
 
     std::wstring dumpClass(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
-        std::wstring _ret;
-        std::wstring _prevParent = m_parentClassName;
+        std::wstring ret;
+        std::wstring prevParent = m_parentClassName;
         m_parentClassName = TypeWalker::getName(a_symbol, L"", m_config.m_showNonScoped);
         
-        _ret += tab(a_nestingLevel);
-        _ret += sizeComment(a_symbol);
+        ret += tab(a_nestingLevel);
+        ret += sizeComment(a_symbol);
 
-        _ret += tab(a_nestingLevel);
-        _ret += modPrefix(a_symbol);
-        _ret += udtKeyword(a_symbol);
+        ret += tab(a_nestingLevel);
+        ret += modPrefix(a_symbol);
+        ret += udtKeyword(a_symbol);
 
-        std::wstring _typeText;
+        std::wstring typeText;
         try
         {
-            _typeText = TypeWalker::resolveType(a_symbol, _prevParent, m_config.m_showNonScoped).build();
+            typeText = TypeWalker::resolveType(a_symbol, prevParent, m_config.m_showNonScoped).build();
         }
         catch (...)
         {
-            _typeText = L"/* <error resolving type> */";
+            typeText = L"/* <error resolving type> */";
         }
-        _ret += _typeText;
+        ret += typeText;
 
-        _ret += classInheritance(a_symbol);
-        _ret += scopeBegin(a_nestingLevel);
+        ret += classInheritance(a_symbol);
+        ret += scopeBegin(a_nestingLevel);
 
-        _ret += dumpMembers(a_symbol, a_nestingLevel + 1);
+        ret += dumpMembers(a_symbol, a_nestingLevel + 1);
 
-        _ret += scopeEnd(a_nestingLevel);
-        _ret += typeSources();
+        ret += scopeEnd(a_nestingLevel);
+        ret += typeSources();
 
-        m_parentClassName = _prevParent;
-        return _ret;
+        m_parentClassName = prevParent;
+        return ret;
     }
 
     /// Dump an anonymous UDT (union/struct) as an inline block, without a name.
@@ -85,260 +84,260 @@ public:
     /// Emits "struct { ... };" or "union { ... };" with no variable name.
     std::wstring dumpAnonymousUDT(IDiaSymbol* a_udtSymbol, int a_nestingLevel)
     {
-        std::wstring _ret;
+        std::wstring ret;
 
-        _ret += tab(a_nestingLevel);
-        _ret += modPrefix(a_udtSymbol);
-        _ret += udtKeyword(a_udtSymbol); // "struct " / "union " — no name follows
+        ret += tab(a_nestingLevel);
+        ret += modPrefix(a_udtSymbol);
+        ret += udtKeyword(a_udtSymbol); // "struct " / "union " — no name follows
 
-        _ret += scopeBegin(a_nestingLevel);
-        _ret += dumpMembers(a_udtSymbol, a_nestingLevel + 1);
-        _ret += scopeEnd(a_nestingLevel);
+        ret += scopeBegin(a_nestingLevel);
+        ret += dumpMembers(a_udtSymbol, a_nestingLevel + 1);
+        ret += scopeEnd(a_nestingLevel);
 
-        return _ret;
+        return ret;
     }
 
     std::wstring dumpEnum(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
-        std::wstring _ret;
+        std::wstring ret;
 
-        _ret += tab(a_nestingLevel);
-        _ret += sizeComment(a_symbol);
+        ret += tab(a_nestingLevel);
+        ret += sizeComment(a_symbol);
 
-        _ret += tab(a_nestingLevel);
-        _ret += modPrefix(a_symbol);
-        _ret += L"enum";
+        ret += tab(a_nestingLevel);
+        ret += modPrefix(a_symbol);
+        ret += L"enum";
 
         // Filter synthetic names like <unnamed-tag> or $HASH names
-        std::wstring _enumName = TypeWalker::getName(a_symbol, L"", m_config.m_showNonScoped);
-        if (!TypeWalker::isSyntheticName(_enumName))
+        std::wstring enum_symbolsName = TypeWalker::getName(a_symbol, L"", m_config.m_showNonScoped);
+        if (!TypeWalker::isSyntheticName(enum_symbolsName))
         {
-            _ret += L" ";
-            _ret += _enumName;
+            ret += L" ";
+            ret += enum_symbolsName;
         }
 
-        _ret += baseTypeInheritance(a_symbol);
-        _ret += scopeBegin(a_nestingLevel);
+        ret += baseTypeInheritance(a_symbol);
+        ret += scopeBegin(a_nestingLevel);
 
-        ComPtr<IDiaEnumSymbols> _enumMembers;
-        if (SUCCEEDED(a_symbol->findChildren(SymTagData, nullptr, nsNone, &_enumMembers)))
+        ComPtr<IDiaEnumSymbols> enum_symbolsMembers;
+        if (SUCCEEDED(a_symbol->findChildren(SymTagData, nullptr, nsNone, &enum_symbolsMembers)))
         {
-            ComPtr<IDiaSymbol> _member;
-            ULONG _celt = 0;
-            while (SUCCEEDED(_enumMembers->Next(1, &_member, &_celt)) && _celt == 1)
+            ComPtr<IDiaSymbol> member;
+            ULONG celt = 0;
+            while (SUCCEEDED(enum_symbolsMembers->Next(1, &member, &celt)) && celt == 1)
             {
-                _ret += tab(a_nestingLevel + 1);
-                _ret += TypeWalker::getName(_member.get());
-                _ret += enumMemberValue(_member.get());
-                _ret += L",\n";
+                ret += tab(a_nestingLevel + 1);
+                ret += TypeWalker::getName(member.get());
+                ret += enumMemberValue(member.get());
+                ret += L",\n";
             }
         }
 
-        _ret += scopeEnd(a_nestingLevel);
-        return _ret;
+        ret += scopeEnd(a_nestingLevel);
+        return ret;
     }
 
     std::wstring dumpTypedef(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
-        std::wstring _ret;
-        _ret += tab(a_nestingLevel);
-        _ret += modPrefix(a_symbol);
-        _ret += L"typedef ";
+        std::wstring ret;
+        ret += tab(a_nestingLevel);
+        ret += modPrefix(a_symbol);
+        ret += L"typedef ";
 
         // Get the typedef name
-        std::wstring _typedefName = TypeWalker::getName(a_symbol, m_parentClassName);
+        std::wstring typedefName = TypeWalker::getName(a_symbol, m_parentClassName);
 
         // Resolve the underlying type (the type this typedef aliases)
         // We need to get the type of the typedef symbol, not the typedef itself
-        std::wstring _typeText;
+        std::wstring typeText;
         try
         {
-            ComPtr<IDiaSymbol> _underlyingType;
-            if (SUCCEEDED(a_symbol->get_type(&_underlyingType)) && _underlyingType)
+            ComPtr<IDiaSymbol> underlyingType;
+            if (SUCCEEDED(a_symbol->get_type(&underlyingType)) && underlyingType)
             {
                 // Build the underlying type's full declaration
-                TypeBuilder _builder = TypeWalker::resolveType(_underlyingType.get(), m_parentClassName);
+                TypeBuilder builder = TypeWalker::resolveType(underlyingType.get(), m_parentClassName);
                 // Set the typedef name as the "variable name" in the declaration
-                _builder.name(_typedefName);
-                _typeText = _builder.build();
+                builder.name(typedefName);
+                typeText = builder.build();
             }
             else
             {
                 // Fallback: just use the typedef name itself
-                _typeText = _typedefName;
+                typeText = typedefName;
             }
         }
         catch (...)
         {
-            _typeText = L"/* <error resolving type> */";
+            typeText = L"/* <error resolving type> */";
         }
-        _ret += _typeText;
-        _ret += L";\n";
-        return _ret;
+        ret += typeText;
+        ret += L";\n";
+        return ret;
     }
 
     std::wstring dumpFriend(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
-        std::wstring _ret;
-        _ret += tab(a_nestingLevel);
-        _ret += modPrefix(a_symbol);
-        _ret += L"friend ";
+        std::wstring ret;
+        ret += tab(a_nestingLevel);
+        ret += modPrefix(a_symbol);
+        ret += L"friend ";
 
-        std::wstring _typeText;
+        std::wstring typeText;
         try
         {
-            _typeText = TypeWalker::resolveType(a_symbol, m_parentClassName).build();
+            typeText = TypeWalker::resolveType(a_symbol, m_parentClassName).build();
         }
         catch (...)
         {
-            _typeText = L"/* <error resolving type> */";
+            typeText = L"/* <error resolving type> */";
         }
-        _ret += _typeText;
-        _ret += L";\n";
-        return _ret;
+        ret += typeText;
+        ret += L";\n";
+        return ret;
     }
 
     std::wstring dumpFunction(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
-        std::wstring _ret;
-        _ret += tab(a_nestingLevel);
+        std::wstring ret;
+        ret += tab(a_nestingLevel);
 
         // Virtual/static qualifiers
-        const wchar_t* _names[] = { getVirtualName(a_symbol), getStaticName(a_symbol) };
-        for (auto _name : _names) { if (_name) { _ret += _name; _ret += L" "; } }
+        const wchar_t* names[] = { getVirtualName(a_symbol), getStaticName(a_symbol) };
+        for (auto name : names) { if (name) { ret += name; ret += L" "; } }
 
-        auto _funtionType = getTypeCom(a_symbol); // SymTagFunctionType
+        auto funtionType = getTypeCom(a_symbol); // SymTagFunctionType
 
-        DWORD _argCount = 0;
-        if (_funtionType)
+        DWORD argCount = 0;
+        if (funtionType)
         {
-            _argCount = countChildren(_funtionType.get(), SymTagFunctionArgType);
+            argCount = countChildren(funtionType.get(), SymTagFunctionArgType);
         }
 
         // Return type
-        if (_funtionType)
+        if (funtionType)
         {
-            ComPtr<IDiaSymbol> _retType;
-            if (SUCCEEDED(_funtionType->get_type(&_retType)) && _retType)
+            ComPtr<IDiaSymbol> retType;
+            if (SUCCEEDED(funtionType->get_type(&retType)) && retType)
             {
-                std::wstring _retTypeStr;
+                std::wstring retTypeStr;
                 try
                 {
-                    _retTypeStr = TypeWalker::resolveType(_retType.get()).build();
+                    retTypeStr = TypeWalker::resolveType(retType.get()).build();
                 }
                 catch (...)
                 {
-                    _retTypeStr = L"/* <error> */";
+                    retTypeStr = L"/* <error> */";
                 }
-                _ret += _retTypeStr;
-                _ret += L" ";
+                ret += retTypeStr;
+                ret += L" ";
             }
         }
 
-        _ret += TypeWalker::getName(a_symbol, m_parentClassName);
-        _ret += L"(";
+        ret += TypeWalker::getName(a_symbol, m_parentClassName);
+        ret += L"(";
 
         // Named parameters (searched on SymTagFunction itself)
-        auto _namedArgCount = dumpFunctionArgsToString(a_symbol, _ret);
+        auto namedArgCount = dumpFunctionArgsToString(a_symbol, ret);
 
         // If named arg count doesn't match the actual function type arg count,
         // fall back to the function type's args (which may have unnamed params).
         // This fixes constructors/copy-constructors where params are on FunctionType
         // but not directly on the Function symbol.
-        if (_funtionType && _namedArgCount != (int)_argCount)
+        if (funtionType && namedArgCount != (int)argCount)
         {
-            if (_namedArgCount > 0) { _ret += L", "; }
-            _ret += TypeWalker::getFuncArgsString(_funtionType.get(), m_config.m_showNonScoped);
+            if (namedArgCount > 0) { ret += L", "; }
+            ret += TypeWalker::getFuncArgsString(funtionType.get(), m_config.m_showNonScoped);
         }
 
-        _ret += L")";
+        ret += L")";
 
         // Const qualifier on function
-        if (_funtionType)
+        if (funtionType)
         {
-            BOOL _isConst = FALSE;
-            if (SUCCEEDED(_funtionType->get_constType(&_isConst)) && _isConst)
+            BOOL isConst = FALSE;
+            if (SUCCEEDED(funtionType->get_constType(&isConst)) && isConst)
             {
-                _ret += L" const";
+                ret += L" const";
             }
         }
 
-        _ret += L";";
+        ret += L";";
 
         registerTypeSource(a_symbol);
 
-        return _ret;
+        return ret;
     }
 
     /// Check if a function symbol is compiler-generated (starts with __).
     static bool isCompilerGenerated(IDiaSymbol* a_symbol)
     {
-        BSTR _bstrName = nullptr;
-        if (SUCCEEDED(a_symbol->get_name(&_bstrName)) && _bstrName)
+        BSTR bstrName = nullptr;
+        if (SUCCEEDED(a_symbol->get_name(&bstrName)) && bstrName)
         {
-            std::wstring _name(_bstrName);
-            SysFreeString(_bstrName);
-            return _name.size() >= 2 && _name[0] == L'_' && _name[1] == L'_';
+            std::wstring name(bstrName);
+            SysFreeString(bstrName);
+            return name.size() >= 2 && name[0] == L'_' && name[1] == L'_';
         }
         return false;
     }
 
     /// Emit access specifier label if access has changed.
     /// Returns the new lastAccess value.
-    DWORD emitAccessLabel(std::wstring& a_out, IDiaSymbol* a_symbol, DWORD a_lastAccess, int a_nestingLevel) const
+    DWORD emitAccessLabel(std::wstring& aout, IDiaSymbol* a_symbol, DWORD alastAccess, int a_nestingLevel) const
     {
-        if (!m_config.m_showAccess) return a_lastAccess;
+        if (!m_config.m_showAccess) return alastAccess;
 
-        DWORD _access = 0;
-        if (SUCCEEDED(a_symbol->get_access(&_access)) && _access != a_lastAccess)
+        DWORD access = 0;
+        if (SUCCEEDED(a_symbol->get_access(&access)) && access != alastAccess)
         {
-            a_lastAccess = _access;
-            a_out += tab(a_nestingLevel - 1);
-            const wchar_t* _accessName = nullptr;
-            if (m_config.m_baseAccessType) { _access = m_config.m_baseAccessType; }
-            switch (_access)
+            alastAccess = access;
+            aout += tab(a_nestingLevel - 1);
+            const wchar_t* accessName = nullptr;
+            if (m_config.m_baseAccessType) { access = m_config.m_baseAccessType; }
+            switch (access)
             {
-            case CV_private:   _accessName = L"private"; break;
-            case CV_protected: _accessName = L"protected"; break;
-            case CV_public:    _accessName = L"public"; break;
-            case 0:            _accessName = L"public"; break; // undefined !!!
+            case CV_private:   accessName = L"private"; break;
+            case CV_protected: accessName = L"protected"; break;
+            case CV_public:    accessName = L"public"; break;
+            case 0:            accessName = L"public"; break; // undefined !!!
             }
-            if (_accessName)
+            if (accessName)
             {
-                a_out += _accessName;
-                a_out += L":\n";
+                aout += accessName;
+                aout += L":\n";
             }
         }
-        return a_lastAccess;
+        return alastAccess;
     }
 
     std::wstring dumpMembers(IDiaSymbol* a_symbol, int a_nestingLevel)
     {
-        std::wstring _ret;
+        std::wstring ret;
 
-        ComPtr<IDiaEnumSymbols> _children;
-        if (FAILED(a_symbol->findChildren(SymTagNull, nullptr, nsNone, &_children)))
-            return _ret;
+        ComPtr<IDiaEnumSymbols> children;
+        if (FAILED(a_symbol->findChildren(SymTagNull, nullptr, nsNone, &children)))
+            return ret;
 
-        std::vector<ComPtr<IDiaSymbol>> _childContainers[7];
+        std::vector<ComPtr<IDiaSymbol>> childContainers[7];
 
-        ComPtr<IDiaSymbol> _child;
-        ULONG _celt = 0;
-        while (SUCCEEDED(_children->Next(1, &_child, &_celt)) && _celt == 1)
+        ComPtr<IDiaSymbol> child;
+        ULONG celt = 0;
+        while (SUCCEEDED(children->Next(1, &child, &celt)) && celt == 1)
         {
-            DWORD _symTag = 0;
-            _child->get_symTag(&_symTag);
+            DWORD symTag = 0;
+            child->get_symTag(&symTag);
 
             try
             {
-                switch (_symTag)
+                switch (symTag)
                 {
-                case SymTagData:        _childContainers[0].push_back(_child); break;
-                case SymTagFunction:    _childContainers[1].push_back(_child); break;
-                case SymTagUDT:         _childContainers[2].push_back(_child); break;
-                case SymTagEnum:        _childContainers[3].push_back(_child); break;
-                case SymTagTypedef:     _childContainers[4].push_back(_child); break;
-                case SymTagFriend:      _childContainers[6].push_back(_child); break;
+                case SymTagData:        childContainers[0].push_back(child); break;
+                case SymTagFunction:    childContainers[1].push_back(child); break;
+                case SymTagUDT:         childContainers[2].push_back(child); break;
+                case SymTagEnum:        childContainers[3].push_back(child); break;
+                case SymTagTypedef:     childContainers[4].push_back(child); break;
+                case SymTagFriend:      childContainers[6].push_back(child); break;
                 default:
                     // SymTagVTable, etc. - skip
                     break;
@@ -346,98 +345,98 @@ public:
             }
             catch (...)
             {
-                _ret += tab(a_nestingLevel) + L"/* <error processing child symbol> */\n";
+                ret += tab(a_nestingLevel) + L"/* <error processing child symbol> */\n";
             }
         }
 
-        bool _hasContent = false;
-        DWORD _lastAccess = (DWORD)-1; // sentinel value - no previous access
+        bool hasContent = false;
+        DWORD lastAccess = (DWORD)-1; // sentinel value - no previous access
 
         // Friends
-        if (!_childContainers[6].empty() && m_config.m_showInfoComment)
+        if (!childContainers[6].empty() && m_config.m_showInfoComment)
         {
-            _hasContent = headerComment(_ret, L" FRIENDS:", a_nestingLevel, _hasContent);
+            hasContent = headerComment(ret, L" FRIENDS:", a_nestingLevel, hasContent);
         }
-        for (auto& _friend : _childContainers[6])
+        for (auto& _friend : childContainers[6])
         {
-            _lastAccess = emitAccessLabel(_ret, _friend.get(), _lastAccess, a_nestingLevel);
-            _ret += dumpFriend(_friend.get(), a_nestingLevel);
+            lastAccess = emitAccessLabel(ret, _friend.get(), lastAccess, a_nestingLevel);
+            ret += dumpFriend(_friend.get(), a_nestingLevel);
         }
 
         // Enums
-        if (!_childContainers[3].empty() && m_config.m_showInfoComment)
+        if (!childContainers[3].empty() && m_config.m_showInfoComment)
         {
-            _hasContent = headerComment(_ret, L" ENUMS:", a_nestingLevel, _hasContent);
+            hasContent = headerComment(ret, L" ENUMS:", a_nestingLevel, hasContent);
         }
-        for (auto& _enum : _childContainers[3])
+        for (auto& enum_symbols : childContainers[3])
         {
-            _lastAccess = emitAccessLabel(_ret, _enum.get(), _lastAccess, a_nestingLevel);
-            _ret += dumpEnum(_enum.get(), a_nestingLevel);
+            lastAccess = emitAccessLabel(ret, enum_symbols.get(), lastAccess, a_nestingLevel);
+            ret += dumpEnum(enum_symbols.get(), a_nestingLevel);
         }
 
         // Typedefs
-        if (!_childContainers[4].empty() && m_config.m_showInfoComment)
+        if (!childContainers[4].empty() && m_config.m_showInfoComment)
         {
-            _hasContent = headerComment(_ret, L" TYPEDEFS:", a_nestingLevel, _hasContent);
+            hasContent = headerComment(ret, L" TYPEDEFS:", a_nestingLevel, hasContent);
         }
-        for (auto& _typedef : _childContainers[4])
+        for (auto& _typedef : childContainers[4])
         {
-            _lastAccess = emitAccessLabel(_ret, _typedef.get(), _lastAccess, a_nestingLevel);
-            _ret += dumpTypedef(_typedef.get(), a_nestingLevel);
+            lastAccess = emitAccessLabel(ret, _typedef.get(), lastAccess, a_nestingLevel);
+            ret += dumpTypedef(_typedef.get(), a_nestingLevel);
         }
 
         // Nested classes
-        if (!_childContainers[2].empty() && m_config.m_showInfoComment)
+        if (!childContainers[2].empty() && m_config.m_showInfoComment)
         {
-            _hasContent = headerComment(_ret, L" CLASSES:", a_nestingLevel, _hasContent);
+            hasContent = headerComment(ret, L" CLASSES:", a_nestingLevel, hasContent);
         }
-        for (auto& _class : _childContainers[2])
+        for (auto& _class : childContainers[2])
         {
-            _lastAccess = emitAccessLabel(_ret, _class.get(), _lastAccess, a_nestingLevel);
-            _ret += dumpClass(_class.get(), a_nestingLevel);
+            lastAccess = emitAccessLabel(ret, _class.get(), lastAccess, a_nestingLevel);
+            ret += dumpClass(_class.get(), a_nestingLevel);
         }
 
         // Virtual functions (sorted by vtable offset, filter compiler-generated)
-        std::vector<ComPtr<IDiaSymbol>> _vfuncs;
-        for (auto& _func : _childContainers[1])
+        std::vector<ComPtr<IDiaSymbol>> vfuncs;
+        for (auto& func : childContainers[1])
         {
-            BOOL _isVirtual = FALSE;
-            if (SUCCEEDED(_func->get_virtual(&_isVirtual)) && _isVirtual)
+            BOOL isVirtual = FALSE;
+            if (SUCCEEDED(func->get_virtual(&isVirtual)) && isVirtual)
             {
-                if (m_config.m_hideCompilerGenerated && isCompilerGenerated(_func.get())) { continue; }
-                _lastAccess = emitAccessLabel(_ret, _func.get(), _lastAccess, a_nestingLevel);
-                _vfuncs.push_back(_func);
+                if (m_config.m_hideCompilerGenerated && isCompilerGenerated(func.get())) { continue; }
+                lastAccess = emitAccessLabel(ret, func.get(), lastAccess, a_nestingLevel);
+                vfuncs.push_back(func);
             }
         }
 
-        std::sort(_vfuncs.begin(), _vfuncs.end(),
+        std::sort(vfuncs.begin(), vfuncs.end(),
             [](const ComPtr<IDiaSymbol>& a, const ComPtr<IDiaSymbol>& b)
             {
-                DWORD _offsetA = 0, _offsetB = 0;
-                a->get_virtualBaseOffset(&_offsetA);
-                b->get_virtualBaseOffset(&_offsetB);
-                return _offsetA < _offsetB;
+                DWORD offsetA = 0, offsetB = 0;
+                a->get_virtualBaseOffset(&offsetA);
+                b->get_virtualBaseOffset(&offsetB);
+                return offsetA < offsetB;
             });
 
-        if (!_vfuncs.empty() && m_config.m_showInfoComment)
+        if (!vfuncs.empty() && m_config.m_showInfoComment)
         {
-            _hasContent = headerComment(_ret, L" VIRTUALS:", a_nestingLevel, _hasContent);
+            hasContent = headerComment(ret, L" VIRTUALS:", a_nestingLevel, hasContent);
         }
-        for (auto& _vfunc : _vfuncs)
+        for (auto& vfunc : vfuncs)
         {
-            _lastAccess = emitAccessLabel(_ret, _vfunc.get(), _lastAccess, a_nestingLevel);
-            _ret += dumpFunction(_vfunc.get(), a_nestingLevel);
+            lastAccess = emitAccessLabel(ret, vfunc.get(), lastAccess, a_nestingLevel);
+            ret += dumpFunction(vfunc.get(), a_nestingLevel);
             if (m_config.m_showOffset)
             {
-                DWORD _offset = 0xFFFFFFFC;
-                if (SUCCEEDED(_vfunc->get_virtualBaseOffset(&_offset)) && _offset != 0xFFFFFFFC)
+                DWORD offset = 0xFFFFFFFC;
+                if (SUCCEEDED(vfunc->get_virtualBaseOffset(&offset)) && offset != 0xFFFFFFFC)
                 {
-                    wchar_t _buf[32];
-                    swprintf_s(_buf, L" // 0x%X", _offset);
-                    _ret += _buf;
+                    wchar_t buf[32];
+                    swprintf_s(buf, L" // 0x%X", offset);
+                    ret += buf;
                 }
             }
-            _ret += L"\n";
+            ret += L"\n";
         }
 
         // Fields (SymTagData, DataIsMember) — kept in DIA declaration order.
@@ -452,208 +451,210 @@ public:
         // Bitfields: consecutive bitfield members sharing the same offset are kept
         // together in one branch naturally (their offset doesn't reset until the next
         // non-bitfield or a genuinely new union alternative).
-        std::vector<ComPtr<IDiaSymbol>> _fields;
-        for (auto& _field : _childContainers[0])
+        std::vector<ComPtr<IDiaSymbol>> fields;
+        for (auto& field : childContainers[0])
         {
             DWORD _kind = 0;
-            if (SUCCEEDED(_field->get_dataKind(&_kind)) && _kind == DataIsMember)
-                _fields.push_back(_field);
+            if (SUCCEEDED(field->get_dataKind(&_kind)) && _kind == DataIsMember)
+                fields.push_back(field);
         }
 
-        if (!_fields.empty() && m_config.m_showInfoComment)
-            _hasContent = headerComment(_ret, L" FIELDS:", a_nestingLevel, _hasContent);
+        if (!fields.empty() && m_config.m_showInfoComment)
+            hasContent = headerComment(ret, L" FIELDS:", a_nestingLevel, hasContent);
 
         // Split fields into branches.
         // A new branch starts when offset resets back (new union alternative in DIA order).
         struct FieldBranch { std::vector<ComPtr<IDiaSymbol>> fields; };
-        std::vector<FieldBranch> _branches;
+        std::vector<FieldBranch> branches;
         {
-            FieldBranch _cur;
-            LONG _maxOffsetInBranch = LONG_MIN;
+            FieldBranch cur;
+            LONG maxOffsetInBranch = LONG_MIN;
 
-            for (auto& _field : _fields)
+            for (auto& field : fields)
             {
-                LONG _off = 0;
-                _field->get_offset(&_off);
+                LONG off = 0;
+                field->get_offset(&off);
 
                 // Bitfields at the same offset as the previous field are NOT a new branch —
                 // they pack into the same storage unit. Check bitPosition to distinguish:
                 // if offset resets AND this is not a continuation bitfield → new branch.
-                bool _isBitfield = false;
-                DWORD _bitPos = 0;
+                bool isBitfield = false;
+                DWORD bitPos = 0;
                 {
-                    ULONGLONG _bitWidth = 0;
-                    if (SUCCEEDED(_field->get_bitPosition(&_bitPos)) &&
-                        SUCCEEDED(_field->get_length(&_bitWidth)) && _bitWidth < 64)
+                    ULONGLONG bitWidth = 0;
+                    if (SUCCEEDED(field->get_bitPosition(&bitPos)) &&
+                        SUCCEEDED(field->get_length(&bitWidth)) && bitWidth < 64)
                     {
                         // DIA sets bitPosition > 0 for non-first bitfields in a pack,
                         // but == 0 for the first one too. Use length < storage size as
                         // the reliable indicator that this IS a bitfield at all.
-                        // A simpler reliable check: get_bitPosition succeeds and length != 8*sizeof(field).
+                        // A simpler reliable check: getbitPosition succeeds and length != 8*sizeof(field).
                         // We just use: if the field has a non-zero bitPosition it's mid-pack.
-                        _isBitfield = (_bitPos > 0);
+                        isBitfield = (bitPos > 0);
                     }
                 }
 
-                bool _isNewBranch = !_cur.fields.empty()
-                    && (_off <= _maxOffsetInBranch)
-                    && !_isBitfield;
+                bool isNewBranch = !cur.fields.empty()
+                    && (off <= maxOffsetInBranch)
+                    && !isBitfield;
 
-                if (_isNewBranch)
+                if (isNewBranch)
                 {
-                    _branches.push_back(std::move(_cur));
-                    _cur = {};
-                    _maxOffsetInBranch = LONG_MIN;
+                    branches.push_back(std::move(cur));
+                    cur = {};
+                    maxOffsetInBranch = LONG_MIN;
                 }
 
-                _cur.fields.push_back(_field);
-                if (_off > _maxOffsetInBranch)
-                    _maxOffsetInBranch = _off;
+                cur.fields.push_back(field);
+                if (off > maxOffsetInBranch)
+                    maxOffsetInBranch = off;
             }
 
-            if (!_cur.fields.empty())
-                _branches.push_back(std::move(_cur));
+            if (!cur.fields.empty())
+                branches.push_back(std::move(cur));
         }
 
         // Helper lambda: emit one field (handles anonymous UDT inline blocks).
-        auto emitField = [&](const ComPtr<IDiaSymbol>& _field, int _level)
+        auto emitField = [&](const ComPtr<IDiaSymbol>& field, int _level)
         {
-            _lastAccess = emitAccessLabel(_ret, _field.get(), _lastAccess, _level);
+            lastAccess = emitAccessLabel(ret, field.get(), lastAccess, _level);
 
             // Check if this field's type is itself an anonymous union/struct ($HASH names).
-            ComPtr<IDiaSymbol> _fieldType;
-            bool _isAnonBlock = false;
-            if (SUCCEEDED(_field->get_type(&_fieldType)) && _fieldType)
+            ComPtr<IDiaSymbol> fieldType;
+            bool isAnonBlock = false;
+            if (SUCCEEDED(field->get_type(&fieldType)) && fieldType)
             {
-                DWORD _fieldTypeTag = SymTagNull;
-                _fieldType->get_symTag((DWORD*)&_fieldTypeTag);
-                if (_fieldTypeTag == SymTagUDT && TypeWalker::isAnonymousUDT(_fieldType.get()))
-                    _isAnonBlock = true;
+                DWORD fieldTypeTag = SymTagNull;
+                fieldType->get_symTag((DWORD*)&fieldTypeTag);
+                if (fieldTypeTag == SymTagUDT && TypeWalker::isAnonymousUDT(fieldType.get()))
+                    isAnonBlock = true;
             }
 
-            if (_isAnonBlock)
+            if (isAnonBlock)
             {
                 // dumpAnonymousUDT already emits closing "};\n"
-                _ret += dumpAnonymousUDT(_fieldType.get(), _level);
+                ret += dumpAnonymousUDT(fieldType.get(), _level);
                 return;
             }
 
-            _ret += tab(_level);
-            try { _ret += TypeWalker::resolveType(_field.get(), m_parentClassName).build(); }
-            catch (...) { _ret += L"/* <error resolving field type> */"; }
-            _ret += L";";
+            ret += tab(_level);
+            try { ret += TypeWalker::resolveType(field.get(), m_parentClassName).build(); }
+            catch (...) { ret += L"/* <error resolving field type> */"; }
+            ret += L";";
 
             if (m_config.m_showOffset)
             {
-                LONG _offset = 0xFFFFFFFC;
-                if (SUCCEEDED(_field->get_offset(&_offset)) && _offset != 0xFFFFFFFC)
+                LONG offset = 0xFFFFFFFC;
+                if (SUCCEEDED(field->get_offset(&offset)) && offset != 0xFFFFFFFC)
                 {
-                    wchar_t _buf[32];
-                    swprintf_s(_buf, L"// 0x%X", _offset);
-                    size_t _padNeeded = _ret.length() < 60 ? 60 - _ret.length() : 1;
-                    _ret.append(_padNeeded, L' ');
-                    _ret += _buf;
+                    wchar_t buf[32];
+                    swprintf_s(buf, L"// 0x%X", offset);
+                    size_t padNeeded = ret.length() < 60 ? 60 - ret.length() : 1;
+                    ret.append(padNeeded, L' ');
+                    ret += buf;
                 }
             }
-            _ret += L"\n";
+            ret += L"\n";
         };
 
-        bool _hasOverlap = _branches.size() > 1;
-
-        if (!_hasOverlap)
+        if (branches.empty())
         {
-            // Plain struct — emit fields directly at current nesting level.
-            for (auto& _field : _branches[0].fields)
-                emitField(_field, a_nestingLevel);
+            
+        }
+        else if (branches.size() == 1)
+        {
+            // Plain struct
+            for (auto& field : branches[0].fields)
+                emitField(field, a_nestingLevel);
         }
         else
         {
             // Overlapping offsets detected — reconstruct anonymous union with
             // anonymous struct branches. Each branch with >1 field wraps in struct{}.
-            _ret += tab(a_nestingLevel);
-            _ret += L"union\n";
-            _ret += tab(a_nestingLevel);
-            _ret += L"{\n";
+            ret += tab(a_nestingLevel);
+            ret += L"union\n";
+            ret += tab(a_nestingLevel);
+            ret += L"{\n";
 
-            for (auto& _branch : _branches)
+            for (auto& branch : branches)
             {
-                if (_branch.fields.size() == 1)
+                if (branch.fields.size() == 1)
                 {
                     // Single-field alternative — plain union member, no struct wrapper.
-                    emitField(_branch.fields[0], a_nestingLevel + 1);
+                    emitField(branch.fields[0], a_nestingLevel + 1);
                 }
                 else
                 {
                     // Multi-field alternative — anonymous struct inside the union.
-                    _ret += tab(a_nestingLevel + 1);
-                    _ret += L"struct\n";
-                    _ret += tab(a_nestingLevel + 1);
-                    _ret += L"{\n";
-                    for (auto& _field : _branch.fields)
-                        emitField(_field, a_nestingLevel + 2);
-                    _ret += tab(a_nestingLevel + 1);
-                    _ret += L"};\n";
+                    ret += tab(a_nestingLevel + 1);
+                    ret += L"struct\n";
+                    ret += tab(a_nestingLevel + 1);
+                    ret += L"{\n";
+                    for (auto& field : branch.fields)
+                        emitField(field, a_nestingLevel + 2);
+                    ret += tab(a_nestingLevel + 1);
+                    ret += L"};\n";
                 }
             }
 
-            _ret += tab(a_nestingLevel);
-            _ret += L"};\n";
+            ret += tab(a_nestingLevel);
+            ret += L"};\n";
         }
 
         // Non-virtual functions (filter compiler-generated like __local_vftable_ctor_closure)
-        bool _firstFunc = true;
-        for (auto& _func : _childContainers[1])
+        bool firstFunc = true;
+        for (auto& func : childContainers[1])
         {
-            BOOL _isVirtual = TRUE;
-            if (FAILED(_func->get_virtual(&_isVirtual)) || _isVirtual) { continue; }
+            BOOL isVirtual = TRUE;
+            if (FAILED(func->get_virtual(&isVirtual)) || isVirtual) { continue; }
 
             // Skip compiler-generated functions (e.g. __local_vftable_ctor_closure)
-            if (m_config.m_hideCompilerGenerated && isCompilerGenerated(_func.get())) { continue; }
+            if (m_config.m_hideCompilerGenerated && isCompilerGenerated(func.get())) { continue; }
 
-            if (_firstFunc && m_config.m_showInfoComment)
+            if (firstFunc && m_config.m_showInfoComment)
             {
-                _hasContent = headerComment(_ret, L" FUNCS:", a_nestingLevel, _hasContent);
-                _firstFunc = false;
+                hasContent = headerComment(ret, L" FUNCS:", a_nestingLevel, hasContent);
+                firstFunc = false;
             }
 
-            _ret += dumpFunction(_func.get(), a_nestingLevel);
-            _ret += L"\n";
+            ret += dumpFunction(func.get(), a_nestingLevel);
+            ret += L"\n";
         }
 
         // Static/const data members
-        bool _firstStatic = true;
-        for (auto& _field : _childContainers[0])
+        bool firstStatic = true;
+        for (auto& field : childContainers[0])
         {
-            DWORD _kind = 0;
-            if (FAILED(_field->get_dataKind(&_kind)) || _kind == DataIsMember) { continue; }
+            DWORD kind = 0;
+            if (FAILED(field->get_dataKind(&kind)) || kind == DataIsMember) { continue; }
 
-            if (_firstStatic && m_config.m_showInfoComment)
+            if (firstStatic && m_config.m_showInfoComment)
             {
-                _hasContent = headerComment(_ret, L" OTHER MEMBERS:", a_nestingLevel, _hasContent);
-                _firstStatic = false;
+                hasContent = headerComment(ret, L" OTHER MEMBERS:", a_nestingLevel, hasContent);
+                firstStatic = false;
             }
 
-            _ret += tab(a_nestingLevel);
+            ret += tab(a_nestingLevel);
 
-            switch (_kind)
+            switch (kind)
             {
-            case DataIsStaticMember: _ret += L"static "; break;
-            case DataIsConstant: _ret += L"constexpr "; break;
+            case DataIsStaticMember: ret += L"static "; break;
+            case DataIsConstant: ret += L"constexpr "; break;
             default: break;
             }
 
             try
             {
-                _ret += TypeWalker::resolveType(_field.get(), m_parentClassName).build();
+                ret += TypeWalker::resolveType(field.get(), m_parentClassName).build();
             }
             catch (...)
             {
-                _ret += L"/* <error> */";
+                ret += L"/* <error> */";
             }
-            _ret += L";\n";
+            ret += L";\n";
         }
 
-        return _ret;
+        return ret;
     }
 
     /// Register source file info for a symbol (stores for later output).
@@ -661,26 +662,26 @@ public:
     {
         if (!m_config.m_showTypeSource) return;
 
-        ComPtr<IDiaEnumLineNumbers> _enumLines;
-        ComPtr<IDiaSourceFile> _sourceFile;
-        ComPtr<IDiaLineNumber> _lineNumber;
+        ComPtr<IDiaEnumLineNumbers> enum_symbolsLines;
+        ComPtr<IDiaSourceFile> sourceFile;
+        ComPtr<IDiaLineNumber> lineNumber;
 
-        DWORD _addressSection = 0;
-        DWORD _addressOffset = 0;
+        DWORD addressSection = 0;
+        DWORD addressOffset = 0;
 
-        if (SUCCEEDED(a_symbol->get_addressSection(&_addressSection)) &&
-            SUCCEEDED(a_symbol->get_addressOffset(&_addressOffset)))
+        if (SUCCEEDED(a_symbol->get_addressSection(&addressSection)) &&
+            SUCCEEDED(a_symbol->get_addressOffset(&addressOffset)))
         {
             if (m_session && SUCCEEDED(m_session->findLinesByAddr(
-                _addressSection, _addressOffset, 1, &_enumLines)) && _enumLines)
+                addressSection, addressOffset, 1, &enum_symbolsLines)) && enum_symbolsLines)
             {
-                ULONG _celt = 0;
-                if (SUCCEEDED(_enumLines->Next(1, &_lineNumber, &_celt)) && _celt == 1)
+                ULONG celt = 0;
+                if (SUCCEEDED(enum_symbolsLines->Next(1, &lineNumber, &celt)) && celt == 1)
                 {
-                    if (SUCCEEDED(_lineNumber->get_sourceFile(&_sourceFile)) && _sourceFile)
+                    if (SUCCEEDED(lineNumber->get_sourceFile(&sourceFile)) && sourceFile)
                     {
                         BSTR _filename;
-                        if (SUCCEEDED(_sourceFile->get_fileName(&_filename)))
+                        if (SUCCEEDED(sourceFile->get_fileName(&_filename)))
                         {
                             // Convert BSTR to std::wstring immediately to avoid
                             // ownership issues (double-free, use-after-free, leaks)
@@ -699,37 +700,37 @@ public:
     {
         if (m_typeSources.empty()) return L"";
 
-        std::wstring _ret;
+        std::wstring ret;
         for (const auto& _src : m_typeSources)
         {
-            _ret += L"// ";
-            _ret += _src;
-            _ret += L"\n";
+            ret += L"// ";
+            ret += _src;
+            ret += L"\n";
         }
         m_typeSources.clear();
-        return _ret;
+        return ret;
     }
 
-    void processType(IDiaSymbol* a_symbol, std::wstring& a_output)
+    void processType(IDiaSymbol* a_symbol, std::wstring& aoutput)
     {
-        DWORD _symTag = 0;
-        if (SUCCEEDED(a_symbol->get_symTag(&_symTag)))
+        DWORD symTag = 0;
+        if (SUCCEEDED(a_symbol->get_symTag(&symTag)))
         {
-            switch (_symTag)
+            switch (symTag)
             {
-            case SymTagTypedef: a_output += dumpTypedef(a_symbol); break;
-            case SymTagUDT:    a_output += dumpClass(a_symbol); break;
-            case SymTagEnum:   a_output += dumpEnum(a_symbol); break;
+            case SymTagTypedef: aoutput += dumpTypedef(a_symbol); break;
+            case SymTagUDT:    aoutput += dumpClass(a_symbol); break;
+            case SymTagEnum:   aoutput += dumpEnum(a_symbol); break;
             case SymTagData:
             {
-                std::wstring _typeText;
-                try { _typeText = TypeWalker::resolveType(a_symbol).build(); }
-                catch (...) { _typeText = L"/* <error> */"; }
-                a_output += _typeText;
+                std::wstring typeText;
+                try { typeText = TypeWalker::resolveType(a_symbol).build(); }
+                catch (...) { typeText = L"/* <error> */"; }
+                aoutput += typeText;
                 break;
             }
             case SymTagFunction:
-                a_output += dumpFunction(a_symbol);
+                aoutput += dumpFunction(a_symbol);
                 break;
             }
         }
@@ -747,42 +748,42 @@ private:
     {
         if (!m_config.m_showSize) return L"";
 
-        ULONGLONG _len;
-        if (SUCCEEDED(a_symbol->get_length(&_len)))
+        ULONGLONG len;
+        if (SUCCEEDED(a_symbol->get_length(&len)))
         {
-            wchar_t _buf[64];
-            swprintf_s(_buf, L"// size: %llu byte\n", _len);
-            return _buf;
+            wchar_t buf[64];
+            swprintf_s(buf, L"// size: %llu byte\n", len);
+            return buf;
         }
         return L"";
     }
 
     std::wstring modPrefix(IDiaSymbol* a_symbol) const
     {
-        std::wstring _ret;
-        BOOL _isConst = FALSE;
-        BOOL _isVol = FALSE;
-        if (SUCCEEDED(a_symbol->get_constType(&_isConst)) && _isConst) _ret += L"const ";
-        if (SUCCEEDED(a_symbol->get_volatileType(&_isVol)) && _isVol) _ret += L"volatile ";
-        return _ret;
+        std::wstring ret;
+        BOOL isConst = FALSE;
+        BOOL isVol = FALSE;
+        if (SUCCEEDED(a_symbol->get_constType(&isConst)) && isConst) ret += L"const ";
+        if (SUCCEEDED(a_symbol->get_volatileType(&isVol)) && isVol) ret += L"volatile ";
+        return ret;
     }
 
     std::wstring udtKeyword(IDiaSymbol* a_symbol) const
     {
-        auto _name = TypeWalker::getUDTKindName(a_symbol);
-        if (_name)
+        auto name = TypeWalker::getUDTKindName(a_symbol);
+        if (name)
         {
-            std::wstring _ret = _name;
-            _ret += L" ";
-            return _ret;
+            std::wstring ret = name;
+            ret += L" ";
+            return ret;
         }
 
         // Check for anonymous union/struct
         if (TypeWalker::isAnonymousUDT(a_symbol))
         {
-            DWORD _udtKind = 0;
-            a_symbol->get_udtKind(&_udtKind);
-            switch (_udtKind)
+            DWORD udtKind = 0;
+            a_symbol->get_udtKind(&udtKind);
+            switch (udtKind)
             {
             case UdtStruct: return L"struct ";
             case UdtUnion:  return L"union ";
@@ -795,98 +796,98 @@ private:
 
     std::wstring classInheritance(IDiaSymbol* a_symbol) const
     {
-        std::wstring _ret;
-        ComPtr<IDiaEnumSymbols> _baseEnum;
+        std::wstring ret;
+        ComPtr<IDiaEnumSymbols> baseEnum;
 
         bool _isBegin = true;
-        if (SUCCEEDED(a_symbol->findChildren(SymTagBaseClass, nullptr, nsNone, &_baseEnum)))
+        if (SUCCEEDED(a_symbol->findChildren(SymTagBaseClass, nullptr, nsNone, &baseEnum)))
         {
-            ComPtr<IDiaSymbol> _baseSymbol;
-            ULONG _celt = 0;
-            while (SUCCEEDED(_baseEnum->Next(1, &_baseSymbol, &_celt)) && _celt == 1)
+            ComPtr<IDiaSymbol> baseSymbol;
+            ULONG celt = 0;
+            while (SUCCEEDED(baseEnum->Next(1, &baseSymbol, &celt)) && celt == 1)
             {
-                _ret += _isBegin ? L" : " : L", ";
+                ret += _isBegin ? L" : " : L", ";
                 _isBegin = false;
 
-                auto _access = TypeWalker::getAccessName(_baseSymbol.get(), m_config.m_baseAccessType);
-                if (_access) { _ret += _access; _ret += L" "; }
+                auto access = TypeWalker::getAccessName(baseSymbol.get(), m_config.m_baseAccessType);
+                if (access) { ret += access; ret += L" "; }
 
-                _ret += TypeWalker::getName(_baseSymbol.get());
+                ret += TypeWalker::getName(baseSymbol.get());
             }
         }
-        return _ret;
+        return ret;
     }
 
     std::wstring baseTypeInheritance(IDiaSymbol* a_symbol) const
     {
         // if (!m_config.m_showInfoComment) return L"";
 
-        auto _base = TypeWalker::getBaseTypeName(a_symbol, m_config.m_intStyle);
-        if (_base)
+        auto base = TypeWalker::getBaseTypeName(a_symbol, m_config.m_intStyle);
+        if (base)
         {
-            std::wstring _ret = L" : ";
-            _ret += _base;
-            return _ret;
+            std::wstring ret = L" : ";
+            ret += base;
+            return ret;
         }
         return L"";
     }
 
     std::wstring scopeBegin(int a_nestingLevel)
     {
-        std::wstring _ret;
+        std::wstring ret;
         if (m_config.m_curlyBraceNewline)
         {
-            _ret += L"\n";
-            _ret += tab(a_nestingLevel);
+            ret += L"\n";
+            ret += tab(a_nestingLevel);
         }
         else
         {
-            _ret += L" ";
+            ret += L" ";
         }
-        _ret += L"{\n";
-        return _ret;
+        ret += L"{\n";
+        return ret;
     }
 
     std::wstring scopeEnd(int a_nestingLevel)
     {
-        std::wstring _ret = tab(a_nestingLevel);
-        _ret += L"};\n";
-        return _ret;
+        std::wstring ret = tab(a_nestingLevel);
+        ret += L"};\n";
+        return ret;
     }
 
-    int dumpFunctionArgsToString(IDiaSymbol* a_symbol, std::wstring& a_out)
+    int dumpFunctionArgsToString(IDiaSymbol* a_symbol, std::wstring& aout)
     {
-        int _count = 0;
-        bool _isFirst = true;
+        int count = 0;
+        bool isFirst = true;
 
-        ComPtr<IDiaEnumSymbols> _enumParams;
-        if (SUCCEEDED(a_symbol->findChildren(SymTagData, nullptr, nsNone, &_enumParams)))
+        ComPtr<IDiaEnumSymbols> enum_symbolsParams;
+        if (SUCCEEDED(a_symbol->findChildren(SymTagData, nullptr, nsNone, &enum_symbolsParams)))
         {
-            ComPtr<IDiaSymbol> _param;
-            ULONG _fetched = 0;
-            while (SUCCEEDED(_enumParams->Next(1, &_param, &_fetched)) && _fetched == 1)
+            ComPtr<IDiaSymbol> param;
+            ULONG fetched = 0;
+            while (SUCCEEDED(enum_symbolsParams->Next(1, &param, &fetched)) && fetched == 1)
             {
                 DWORD _kind = 0;
-                if (SUCCEEDED(_param->get_dataKind(&_kind)) && _kind == DataIsParam)
+                if (SUCCEEDED(param->get_dataKind(&_kind)) && _kind == DataIsParam)
                 {
-                    ++_count;
-                    if (!_isFirst) { a_out += L", "; }
+                    ++count;
+                    if (!isFirst) { aout += L", "; }
 
                     try
                     {
-                        a_out += TypeWalker::resolveType(_param.get(), m_parentClassName).build();
+                        aout += TypeWalker::resolveType(param.get(), m_parentClassName).build();
                     }
                     catch (...)
                     {
-                        a_out += L"/* <error> */";
+                        aout += L"/* <error> */";
                     }
 
-                    _isFirst = false;
+                    isFirst = false;
                 }
             }
         }
 
-        return _count;
+        return count;
     }
 
     std::wstring enumMemberValue(IDiaSymbol* a_symbol) const
@@ -895,75 +896,75 @@ private:
         VariantInit(&v);
         if (SUCCEEDED(a_symbol->get_value(&v)))
         {
-            std::wstring _ret;
+            std::wstring ret;
             if (m_config.m_showEnumHex)
             {
-                wchar_t _buf[32];
-                swprintf_s(_buf, L" = 0x%llX", v.llVal); 
-                _ret = _buf;
+                wchar_t buf[32];
+                swprintf_s(buf, L" = 0x%llX", v.llVal); 
+                ret = buf;
             }
             else
             {
                 switch (v.vt)
                 {
-                case VT_I4:  { wchar_t _buf[32]; swprintf_s(_buf, L" = %d", v.lVal);   _ret = _buf; break; }
-                case VT_UI4: { wchar_t _buf[32]; swprintf_s(_buf, L" = %u", v.ulVal);  _ret = _buf; break; }
-                case VT_I2:  { wchar_t _buf[32]; swprintf_s(_buf, L" = %d", v.iVal);   _ret = _buf; break; }
-                case VT_UI2: { wchar_t _buf[32]; swprintf_s(_buf, L" = %u", v.uiVal);  _ret = _buf; break; }
-                case VT_I1:  { wchar_t _buf[32]; swprintf_s(_buf, L" = %d", v.bVal);   _ret = _buf; break; }
-                case VT_UI1: { wchar_t _buf[32]; swprintf_s(_buf, L" = %u", v.bVal);   _ret = _buf; break; }
+                case VT_I4:  { wchar_t buf[32]; swprintf_s(buf, L" = %d", v.lVal);   ret = buf; break; }
+                case VT_UI4: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.ulVal);  ret = buf; break; }
+                case VT_I2:  { wchar_t buf[32]; swprintf_s(buf, L" = %d", v.iVal);   ret = buf; break; }
+                case VT_UI2: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.uiVal);  ret = buf; break; }
+                case VT_I1:  { wchar_t buf[32]; swprintf_s(buf, L" = %d", v.bVal);   ret = buf; break; }
+                case VT_UI1: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.bVal);   ret = buf; break; }
                 default: break;
                 }
             }
             VariantClear(&v);
-            return _ret;
+            return ret;
         }
         return L"";
     }
 
-    bool headerComment(std::wstring& a_out, const wchar_t* a_label, int a_nesting, bool a_hasContent)
+    bool headerComment(std::wstring& aout, const wchar_t* a_label, int a_nesting, bool ahasContent)
     {
-        if (a_hasContent) { a_out += L"\n"; }
-        a_out += tab(a_nesting);
-        a_out += L"///";
-        a_out += a_label;
-        a_out += L"\n";
+        if (ahasContent) { aout += L"\n"; }
+        aout += tab(a_nesting);
+        aout += L"///";
+        aout += a_label;
+        aout += L"\n";
         return true;
     }
 
     static const wchar_t* getVirtualName(IDiaSymbol* a_symbol)
     {
-        BOOL _isVirt;
-        return SUCCEEDED(a_symbol->get_virtual(&_isVirt)) && _isVirt ? L"virtual" : nullptr;
+        BOOL isVirt;
+        return SUCCEEDED(a_symbol->get_virtual(&isVirt)) && isVirt ? L"virtual" : nullptr;
     }
 
     static const wchar_t* getStaticName(IDiaSymbol* a_symbol)
     {
-        BOOL _isStatic;
-        return SUCCEEDED(a_symbol->get_isStatic(&_isStatic)) && _isStatic ? L"static" : nullptr;
+        BOOL isStatic;
+        return SUCCEEDED(a_symbol->get_isStatic(&isStatic)) && isStatic ? L"static" : nullptr;
     }
 
     static ComPtr<IDiaSymbol> getTypeCom(IDiaSymbol* a_symbol)
     {
-        ComPtr<IDiaSymbol> _type;
-        if (SUCCEEDED(a_symbol->get_type(&_type))) return _type;
+        ComPtr<IDiaSymbol> type;
+        if (SUCCEEDED(a_symbol->get_type(&type))) return type;
         return ComPtr<IDiaSymbol>();
     }
 
     static DWORD countChildren(IDiaSymbol* a_symbol, enum SymTagEnum a_tag)
     {
-        DWORD _count = 0;
-        ComPtr<IDiaEnumSymbols> _enum;
-        if (SUCCEEDED(a_symbol->findChildren(a_tag, nullptr, nsNone, &_enum)) && _enum)
+        DWORD count = 0;
+        ComPtr<IDiaEnumSymbols> enum_symbols;
+        if (SUCCEEDED(a_symbol->findChildren(a_tag, nullptr, nsNone, &enum_symbols)) && enum_symbols)
         {
-            ComPtr<IDiaSymbol> _child;
-            ULONG _celt = 0;
-            while (SUCCEEDED(_enum->Next(1, &_child, &_celt)) && _celt == 1)
+            ComPtr<IDiaSymbol> child;
+            ULONG celt = 0;
+            while (SUCCEEDED(enum_symbols->Next(1, &child, &celt)) && celt == 1)
             {
-                ++_count;
+                ++count;
             }
         }
-        return _count;
+        return count;
     }
 
     DumpConfig m_config;

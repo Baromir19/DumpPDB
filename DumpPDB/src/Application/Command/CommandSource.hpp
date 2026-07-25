@@ -2,7 +2,7 @@
 
 #include <Core\PdbToolset.hpp>
 #include <Application\Command\ICommand.hpp>
-#include <Application\Console\ConsoleManager.hpp>
+#include <Application\IO\ConsoleManager.hpp>
 
 class CommandSource : public ICommand
 {
@@ -16,9 +16,9 @@ public:
 
 	virtual bool execute(const std::wstring a_commandArgs[]) override
 	{
-		auto _text = PdbToolset::instance().dumpSourceFiles();
-		if (_text.empty()) return false;
-		ConsoleManager::print(_text.c_str());
+		auto text = PdbToolset::instance().dumpSourceFiles();
+		if (text.empty()) return false;
+		ConsoleManager::print(text.c_str());
 		return true;
 	}
 };

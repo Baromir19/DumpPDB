@@ -89,9 +89,9 @@ public:
 
     /// Release and re-query.
     template<typename U>
-    HRESULT As(IID a_iid, ComPtr<U>& a_out) const noexcept
+    HRESULT As(IID a_iid, ComPtr<U>& aout) const noexcept
     {
-        return m_ptr ? m_ptr->QueryInterface(a_iid, reinterpret_cast<void**>(&a_out)) : E_POINTER;
+        return m_ptr ? m_ptr->QueryInterface(a_iid, reinterpret_cast<void**>(&aout)) : E_POINTER;
     }
 
 protected:

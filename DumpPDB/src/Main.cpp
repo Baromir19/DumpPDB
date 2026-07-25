@@ -2,7 +2,7 @@
 
 #include <Application\Application.hpp>
 #include <Application\Save\SaveManager.hpp>
-#include <Application\Console\ConsoleManager.hpp>
+#include <Application\IO\ConsoleManager.hpp>
 
 #include <Util\Error\DumpError.hpp>
 

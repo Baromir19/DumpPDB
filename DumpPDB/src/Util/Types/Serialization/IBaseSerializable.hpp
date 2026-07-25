@@ -4,34 +4,39 @@
 
 #include <Application\String\StringManager.hpp>
 
-#define SERIALIZABLE(type_name, parent_name, var_name, base_value) \
-	type_name ## Serializable var_name = type_name ## Serializable(base_value, HashManager::crc32(#parent_name "::" #var_name), #parent_name "::" #var_name);
+#define SERIALIZABLE(typename, parent_name, var_name, basevalue) \
+	typename ## Serializable var_name = typename ## Serializable(basevalue, HashManager::crc32(#parent_name "::" #var_name), #parent_name "::" #var_name);
 
 template<typename T>
 class IBaseSerializable : public IBaseSerializableBase
 {
 protected:
-	// T m_value;
+	// T mvalue;
 	// const size_t m_size = sizeof(T);
 	// const std::wstring m_name;
 	SaveManager::Entry<T> m_entry;
 	const char* m_name;
 
 public:
-	IBaseSerializable(T _baseValue, SaveManager::TypeId _typeId, const unsigned __int32 m_hash, const char* _name = "")
-		:	m_entry{ _typeId, m_hash, _baseValue },
-			m_name(_name)
+	IBaseSerializable(
+		T a_baseValue,
+		SaveManager::TypeId a_typeId, 
+		const unsigned __int32 a_hash,
+		const char* name = ""
+	)
+		:	m_entry{ a_typeId, a_hash, a_baseValue },
+			m_name(name)
 	{
 		load();
 		m_instances.push_back(this);
 	};
 
-	IBaseSerializable(T _baseValue, SaveManager::TypeId _typeId, const char* _name = "")
-		: IBaseSerializable(_baseValue, _typeId, HashManager::crc32(_name), _name) { };
+	IBaseSerializable(T a_baseValue, SaveManager::TypeId a_typeId, const char* a_name = "")
+		: IBaseSerializable(a_baseValue, a_typeId, HashManager::crc32(a_name), a_name) { };
 
-	T getValue() const { return m_entry.m_value; }
-	// void setValue(T a_newValue) { m_entry.m_value = a_newValue; } // specially for mngr
-	void setValue(int a_newValue) override { m_entry.m_value = a_newValue; }
+	T getValue() const { return m_entry.mvalue; }
+	// void setValue(T a_newValue) { m_entry.mvalue = a_newValue; } // specially for mngr
+	void setValue(int a_newValue) override { m_entry.mvalue = a_newValue; }
 
 	unsigned __int32 getHash() const override { return m_entry.m_hash; }
 
@@ -39,7 +44,7 @@ public:
 	{ 
 		ConsoleManager::print(L"    %-45s (value: %u, type: 0x%X)\n",
 			StringManager::convertCharToWChar(m_name).c_str(),
-			m_entry.m_value,
+			m_entry.mvalue,
 			m_entry.m_typeId);
 	}
 
@@ -56,7 +61,7 @@ public:
 		return true;
 	}
 
-	operator T() const { return m_entry.m_value; }
+	operator T() const { return m_entry.mvalue; }
 
 	~IBaseSerializable()
 	{

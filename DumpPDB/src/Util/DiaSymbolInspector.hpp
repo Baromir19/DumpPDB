@@ -19,8 +19,8 @@ public:
             return;
         }
 
-        DWORD _symTag = 0;
-        a_symbol->get_symTag(&_symTag);
+        DWORD symTag = 0;
+        a_symbol->get_symTag(&symTag);
 
         printIndent(a_indent);
         wprintf(
@@ -32,8 +32,8 @@ public:
 
         printIndent(a_indent);
         wprintf(L"  symTag:        %lu (%s)\n",
-            _symTag,
-            symTagName(_symTag));
+            symTag,
+            symTagName(symTag));
 
         dumpName(a_symbol, a_indent);
         dumpType(a_symbol, a_indent);
@@ -142,9 +142,9 @@ private:
         }
     }
 
-    static const wchar_t* accessName(DWORD a_access)
+    static const wchar_t* accessName(DWORD aaccess)
     {
-        switch (a_access)
+        switch (aaccess)
         {
         case CV_private:   return L"private";
         case CV_protected: return L"protected";
@@ -155,14 +155,14 @@ private:
 
     static void dumpName(IDiaSymbol* a_symbol, int a_indent)
     {
-        BSTR _name = nullptr;
+        BSTR name = nullptr;
 
-        if (SUCCEEDED(a_symbol->get_name(&_name)) && _name)
+        if (SUCCEEDED(a_symbol->get_name(&name)) && name)
         {
             printIndent(a_indent);
-            wprintf(L"name:           \"%s\"\n", _name);
+            wprintf(L"name:           \"%s\"\n", name);
 
-            SysFreeString(_name);
+            SysFreeString(name);
         }
         else
         {
@@ -180,19 +180,19 @@ private:
             DWORD _tag = 0;
             _type->get_symTag(&_tag);
 
-            BSTR _name = nullptr;
-            _type->get_name(&_name);
+            BSTR name = nullptr;
+            _type->get_name(&name);
 
             printIndent(a_indent);
             wprintf(
                 L"type:           tag=%lu (%s), name=\"%s\"\n",
                 _tag,
                 symTagName(_tag),
-                _name ? _name : L"<none>"
+                name ? name : L"<none>"
             );
 
-            if (_name)
-                SysFreeString(_name);
+            if (name)
+                SysFreeString(name);
         }
         else
         {
@@ -207,17 +207,17 @@ private:
 
         if (SUCCEEDED(a_symbol->get_classParent(&_parent)) && _parent)
         {
-            BSTR _name = nullptr;
-            _parent->get_name(&_name);
+            BSTR name = nullptr;
+            _parent->get_name(&name);
 
             printIndent(a_indent);
             wprintf(
                 L"classParent:    \"%s\"\n",
-                _name ? _name : L"<anonymous>"
+                name ? name : L"<anonymous>"
             );
 
-            if (_name)
-                SysFreeString(_name);
+            if (name)
+                SysFreeString(name);
         }
         else
         {
@@ -229,17 +229,17 @@ private:
 
         if (SUCCEEDED(a_symbol->get_lexicalParent(&_parent)) && _parent)
         {
-            BSTR _name = nullptr;
-            _parent->get_name(&_name);
+            BSTR name = nullptr;
+            _parent->get_name(&name);
 
             printIndent(a_indent);
             wprintf(
                 L"lexicalParent:  \"%s\"\n",
-                _name ? _name : L"<anonymous>"
+                name ? name : L"<anonymous>"
             );
 
-            if (_name)
-                SysFreeString(_name);
+            if (name)
+                SysFreeString(name);
         }
         else
         {
@@ -250,27 +250,27 @@ private:
 
     static void dumpData(IDiaSymbol* a_symbol, int a_indent)
     {
-        DWORD _kind = 0;
+        DWORD kind = 0;
 
-        if (SUCCEEDED(a_symbol->get_dataKind(&_kind)))
+        if (SUCCEEDED(a_symbol->get_dataKind(&kind)))
         {
             printIndent(a_indent);
             wprintf(
                 L"dataKind:       %lu (%s)\n",
-                _kind,
-                dataKindName(_kind)
+                kind,
+                dataKindName(kind)
             );
         }
 
-        DWORD _access = 0;
+        DWORD access = 0;
 
-        if (SUCCEEDED(a_symbol->get_access(&_access)))
+        if (SUCCEEDED(a_symbol->get_access(&access)))
         {
             printIndent(a_indent);
             wprintf(
                 L"access:         %lu (%s)\n",
-                _access,
-                accessName(_access)
+                access,
+                accessName(access)
             );
         }
 
@@ -285,234 +285,234 @@ private:
             );
         }
 
-        BOOL _isConst = FALSE;
+        BOOL isConst = FALSE;
 
-        if (SUCCEEDED(a_symbol->get_constType(&_isConst)))
+        if (SUCCEEDED(a_symbol->get_constType(&isConst)))
         {
             printIndent(a_indent);
             wprintf(
                 L"isConst:        %s\n",
-                _isConst ? L"true" : L"false"
+                isConst ? L"true" : L"false"
             );
         }
 
-        BOOL _isVolatile = FALSE;
+        BOOL isVolatile = FALSE;
 
-        if (SUCCEEDED(a_symbol->get_volatileType(&_isVolatile)))
+        if (SUCCEEDED(a_symbol->get_volatileType(&isVolatile)))
         {
             printIndent(a_indent);
             wprintf(
                 L"isVolatile:     %s\n",
-                _isVolatile ? L"true" : L"false"
+                isVolatile ? L"true" : L"false"
             );
         }
     }
 
     static void dumpLocation(IDiaSymbol* a_symbol, int a_indent)
     {
-        DWORD _locationType = 0;
+        DWORD locationType = 0;
 
-        if (SUCCEEDED(a_symbol->get_locationType(&_locationType)))
+        if (SUCCEEDED(a_symbol->get_locationType(&locationType)))
         {
             printIndent(a_indent);
             wprintf(
                 L"locationType:   %lu (%s)\n",
-                _locationType,
-                locationTypeName(_locationType)
+                locationType,
+                locationTypeName(locationType)
             );
         }
 
-        LONG _offset = 0;
+        LONG offset = 0;
 
-        if (SUCCEEDED(a_symbol->get_offset(&_offset)))
+        if (SUCCEEDED(a_symbol->get_offset(&offset)))
         {
             printIndent(a_indent);
             wprintf(
                 L"offset:         %ld (0x%lX)\n",
-                _offset,
-                _offset
+                offset,
+                offset
             );
         }
 
-        DWORD _bitPosition = 0;
+        DWORD bitPosition = 0;
 
-        if (SUCCEEDED(a_symbol->get_bitPosition(&_bitPosition)))
+        if (SUCCEEDED(a_symbol->get_bitPosition(&bitPosition)))
         {
             printIndent(a_indent);
             wprintf(
                 L"bitPosition:    %lu (0x%lX)\n",
-                _bitPosition,
-                _bitPosition
+                bitPosition,
+                bitPosition
             );
         }
 
-        ULONGLONG _length = 0;
+        ULONGLONG length = 0;
 
-        if (SUCCEEDED(a_symbol->get_length(&_length)))
+        if (SUCCEEDED(a_symbol->get_length(&length)))
         {
             printIndent(a_indent);
             wprintf(
                 L"length:         %llu bytes\n",
-                _length
+                length
             );
         }
     }
 
     static void dumpLayout(IDiaSymbol* a_symbol, int a_indent)
     {
-        DWORD _rank = 0;
+        DWORD rank = 0;
 
-        if (SUCCEEDED(a_symbol->get_rank(&_rank)))
+        if (SUCCEEDED(a_symbol->get_rank(&rank)))
         {
             printIndent(a_indent);
-            wprintf(L"rank:           %lu\n", _rank);
+            wprintf(L"rank:           %lu\n", rank);
         }
 
-        DWORD _count = 0;
+        DWORD count = 0;
 
-        if (SUCCEEDED(a_symbol->get_count(&_count)))
+        if (SUCCEEDED(a_symbol->get_count(&count)))
         {
             printIndent(a_indent);
-            wprintf(L"count:          %lu\n", _count);
+            wprintf(L"count:          %lu\n", count);
         }
 
-        DWORD _stride = 0;
+        DWORD stride = 0;
 
-        if (SUCCEEDED(a_symbol->get_stride(&_stride)))
+        if (SUCCEEDED(a_symbol->get_stride(&stride)))
         {
             printIndent(a_indent);
-            wprintf(L"stride:         %lu\n", _stride);
+            wprintf(L"stride:         %lu\n", stride);
         }
     }
 
     static void dumpFlags(IDiaSymbol* a_symbol, int a_indent)
     {
-        BOOL _isVirtual = FALSE;
+        BOOL isVirtual = FALSE;
 
-        if (SUCCEEDED(a_symbol->get_virtual(&_isVirtual)))
+        if (SUCCEEDED(a_symbol->get_virtual(&isVirtual)))
         {
             printIndent(a_indent);
             wprintf(
                 L"isVirtual:      %s\n",
-                _isVirtual ? L"true" : L"false"
+                isVirtual ? L"true" : L"false"
             );
         }
 
-        BOOL _isPure = FALSE;
+        BOOL isPure = FALSE;
 
-        if (SUCCEEDED(a_symbol->get_pure(&_isPure)))
+        if (SUCCEEDED(a_symbol->get_pure(&isPure)))
         {
             printIndent(a_indent);
             wprintf(
                 L"isPure:         %s\n",
-                _isPure ? L"true" : L"false"
+                isPure ? L"true" : L"false"
             );
         }
 
-        BOOL _isIntroVirtual = FALSE;
+        BOOL isIntroVirtual = FALSE;
 
-        if (SUCCEEDED(a_symbol->get_intro(&_isIntroVirtual)))
+        if (SUCCEEDED(a_symbol->get_intro(&isIntroVirtual)))
         {
             printIndent(a_indent);
             wprintf(
                 L"isIntroVirtual: %s\n",
-                _isIntroVirtual ? L"true" : L"false"
+                isIntroVirtual ? L"true" : L"false"
             );
         }
     }
 
     static void dumpFunction(IDiaSymbol* a_symbol, int a_indent)
     {
-        DWORD _vtableOffset = 0;
+        DWORD vtableOffset = 0;
 
-        if (SUCCEEDED(a_symbol->get_virtualBaseOffset(&_vtableOffset)))
+        if (SUCCEEDED(a_symbol->get_virtualBaseOffset(&vtableOffset)))
         {
             printIndent(a_indent);
             wprintf(
                 L"virtualOffset:  0x%lX\n",
-                _vtableOffset
+                vtableOffset
             );
         }
     }
 
     static void dumpUDT(IDiaSymbol* a_symbol, int a_indent)
     {
-        DWORD _udtKind = 0;
+        DWORD udtKind = 0;
 
-        if (SUCCEEDED(a_symbol->get_udtKind(&_udtKind)))
+        if (SUCCEEDED(a_symbol->get_udtKind(&udtKind)))
         {
             printIndent(a_indent);
             wprintf(
                 L"udtKind:        %lu (%s)\n",
-                _udtKind,
-                udtKindName(_udtKind)
+                udtKind,
+                udtKindName(udtKind)
             );
         }
 
-        BOOL _isNested = FALSE;
+        BOOL isNested = FALSE;
 
-        if (SUCCEEDED(a_symbol->get_nested(&_isNested)))
+        if (SUCCEEDED(a_symbol->get_nested(&isNested)))
         {
             printIndent(a_indent);
             wprintf(
                 L"isNested:       %s\n",
-                _isNested ? L"true" : L"false"
+                isNested ? L"true" : L"false"
             );
         }
     }
 
     static void dumpValue(IDiaSymbol* a_symbol, int a_indent)
     {
-        VARIANT _value;
-        VariantInit(&_value);
+        VARIANT value;
+        VariantInit(&value);
 
-        if (SUCCEEDED(a_symbol->get_value(&_value)))
+        if (SUCCEEDED(a_symbol->get_value(&value)))
         {
             printIndent(a_indent);
             wprintf(L"value:          ");
 
-            switch (_value.vt)
+            switch (value.vt)
             {
             case VT_I1:
-                wprintf(L"%d", _value.cVal);
+                wprintf(L"%d", value.cVal);
                 break;
 
             case VT_UI1:
-                wprintf(L"%u", _value.bVal);
+                wprintf(L"%u", value.bVal);
                 break;
 
             case VT_I2:
-                wprintf(L"%d", _value.iVal);
+                wprintf(L"%d", value.iVal);
                 break;
 
             case VT_UI2:
-                wprintf(L"%u", _value.uiVal);
+                wprintf(L"%u", value.uiVal);
                 break;
 
             case VT_I4:
-                wprintf(L"%ld", _value.lVal);
+                wprintf(L"%ld", value.lVal);
                 break;
 
             case VT_UI4:
-                wprintf(L"%lu", _value.ulVal);
+                wprintf(L"%lu", value.ulVal);
                 break;
 
             case VT_I8:
-                wprintf(L"%lld", _value.llVal);
+                wprintf(L"%lld", value.llVal);
                 break;
 
             case VT_UI8:
-                wprintf(L"%llu", _value.ullVal);
+                wprintf(L"%llu", value.ullVal);
                 break;
 
             default:
-                wprintf(L"<VARIANT type %u>", _value.vt);
+                wprintf(L"<VARIANT type %u>", value.vt);
                 break;
             }
 
             wprintf(L"\n");
 
-            VariantClear(&_value);
+            VariantClear(&value);
         }
     }
 };

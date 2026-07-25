@@ -19,5 +19,5 @@ public:
 	static inline SERIALIZABLE(Bool, GlobalSettings, s_typeSource, true)
 	static inline SERIALIZABLE(Bool, GlobalSettings, s_infoComment, true)
 	static inline SERIALIZABLE(Bool, GlobalSettings, s_isTabulation, true)
-	static inline SERIALIZABLE(UInt32, GlobalSettings, s_baseAccessType, 0) // CV_access_e
+	static inline SERIALIZABLE(UInt32, GlobalSettings, s_baseAccessType, 0) // CVaccess_e
 };

@@ -5,19 +5,29 @@
 class HashManager
 {
 public:
-	static constexpr unsigned __int32 crc32(const unsigned __int8* a_data, unsigned int a_beginValue = 0xFFFFFFFF)
+	static constexpr uint32_t crc32(
+		const uint8_t* a_data,
+		unsigned int a_beginValue = 0xFFFFFFFF
+	)
 	{
 		return crc32(a_data, strlen((const char*)a_data), a_beginValue);
 	}
 
-	static constexpr unsigned __int32 crc32(const __int8* a_data, unsigned int a_beginValue = 0xFFFFFFFF)
+	static constexpr uint32_t crc32(
+		const char* a_data,
+		unsigned int a_beginValue = 0xFFFFFFFF
+	)
 	{
-		return crc32((const unsigned __int8*)a_data, strlen((const char*)a_data), a_beginValue);
+		return crc32((const uint8_t*)a_data, strlen((const char*)a_data), a_beginValue);
 	}
 
-	static constexpr unsigned __int32 crc32(const unsigned __int8* a_data, unsigned int a_size, unsigned int a_beginValue = 0xFFFFFFFF)
+	static constexpr uint32_t crc32(
+		const uint8_t* a_data,
+		unsigned int a_size, 
+		unsigned int a_beginValue = 0xFFFFFFFF
+	)
 	{
-		unsigned __int32 _crc = a_beginValue;
+		uint32_t _crc = a_beginValue;
 
 		for (auto _iter = 0; _iter < a_size; ++_iter)
 		{

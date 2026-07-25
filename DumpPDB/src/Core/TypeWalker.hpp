@@ -22,14 +22,14 @@ public:
     /// Get the base type name for a SymTagBaseType symbol.
     static const wchar_t* getBaseTypeName(IDiaSymbol* a_symbol, IntStyle a_intStyle = IntStyle::MsvcNative)
     {
-        DWORD _baseType = 0;
-        ULONGLONG _length = 0;
+        DWORD baseType = 0;
+        ULONGLONG length = 0;
 
-        if (SUCCEEDED(a_symbol->get_baseType(&_baseType)))
+        if (SUCCEEDED(a_symbol->get_baseType(&baseType)))
         {
-            a_symbol->get_length(&_length);
+            a_symbol->get_length(&length);
 
-            switch (_baseType)
+            switch (baseType)
             {
             case btCurrency: return L"CY";
             case btDate: return L"DATE";
@@ -45,7 +45,7 @@ public:
             case btVoid: return L"void";
 
             case btFloat:
-                switch (_length)
+                switch (length)
                 {
                 case 4: return L"float";
                 case 8: return L"double";
@@ -58,7 +58,7 @@ public:
             case btWChar: return L"wchar_t";
 
             case btInt:
-                switch (_length)
+                switch (length)
                 {
                 case 1: return a_intStyle == IntStyle::Cstdint ? L"int8_t"  : L"__int8";
                 case 2: return a_intStyle == IntStyle::Cstdint ? L"int16_t" : L"__int16";
@@ -68,7 +68,7 @@ public:
                 }
 
             case btUInt:
-                switch (_length)
+                switch (length)
                 {
                 case 1: return a_intStyle == IntStyle::Cstdint ? L"uint8_t"  : L"unsigned __int8";
                 case 2: return a_intStyle == IntStyle::Cstdint ? L"uint16_t" : L"unsigned __int16";
@@ -116,107 +116,107 @@ public:
         bool a_stripScope = true
     )
     {
-        TypeBuilder _builder;
+        TypeBuilder builder;
 
-        if (!a_symbol) return _builder;
+        if (!a_symbol) return builder;
 
-        DWORD _symTag = SymTagNull;
-        a_symbol->get_symTag((DWORD*)&_symTag);
+        DWORD symTag = SymTagNull;
+        a_symbol->get_symTag((DWORD*)&symTag);
 
         // Get qualifiers
-        BOOL _isConst = FALSE;
-        BOOL _isVolatile = FALSE;
-        a_symbol->get_constType(&_isConst);
-        a_symbol->get_volatileType(&_isVolatile);
+        BOOL isConst = FALSE;
+        BOOL isVolatile = FALSE;
+        a_symbol->get_constType(&isConst);
+        a_symbol->get_volatileType(&isVolatile);
 
         // Get name (strip scope based on a_stripScope parameter)
-        std::wstring _name = getName(a_symbol, a_parentClassName, a_stripScope);
+        std::wstring name = getName(a_symbol, a_parentClassName, a_stripScope);
 
         // Get sub-type (recursive)
-        ComPtr<IDiaSymbol> _subType;
-        if (SUCCEEDED(a_symbol->get_type(&_subType)))
+        ComPtr<IDiaSymbol> subType;
+        if (SUCCEEDED(a_symbol->get_type(&subType)))
         {
             // For pointer/array, const/volatile apply to the pointed-to type
-            if (_symTag == SymTagPointerType || _symTag == SymTagArrayType)
+            if (symTag == SymTagPointerType || symTag == SymTagArrayType)
             {
-                if (_isConst) _builder.constPointed();
+                if (isConst) builder.constPointed();
                 // Don't set const/volatile on the pointer itself
             }
             else
             {
-                if (_isConst) _builder.constQual();
-                if (_isVolatile) _builder.volatileQual();
+                if (isConst) builder.constQual();
+                if (isVolatile) builder.volatileQual();
             }
 
-            TypeBuilder _subBuilder = resolveType(_subType.get(), a_parentClassName, a_stripScope);
+            TypeBuilder subBuilder = resolveType(subType.get(), a_parentClassName, a_stripScope);
             // Merge sub-builder into this one
-            _builder = std::move(_subBuilder);
+            builder = std::move(subBuilder);
         }
         else
         {
             // No sub-type: this is the base
-            if (_isConst) _builder.constQual();
-            if (_isVolatile) _builder.volatileQual();
+            if (isConst) builder.constQual();
+            if (isVolatile) builder.volatileQual();
         }
 
         // Apply this symbol's modifier
-        switch (_symTag)
+        switch (symTag)
         {
         case SymTagBaseType:
-            if (auto _baseName = getBaseTypeName(a_symbol))
+            if (auto baseName = getBaseTypeName(a_symbol))
             {
-                _builder.base(_baseName);
+                builder.base(baseName);
             }
             break;
 
         case SymTagPointerType:
         {
-            BOOL _isRef = FALSE;
-            a_symbol->get_reference(&_isRef);
-            if (_isRef)
+            BOOL isRef = FALSE;
+            a_symbol->get_reference(&isRef);
+            if (isRef)
             {
-                _builder.reference();
+                builder.reference();
             }
             else
             {
-                _builder.pointer();
+                builder.pointer();
             }
             break;
         }
 
         case SymTagArrayType:
         {
-            DWORD _count = 0;
-            if (SUCCEEDED(a_symbol->get_count(&_count)) && _count != 0xFFFFFFFC)
+            DWORD count = 0;
+            if (SUCCEEDED(a_symbol->get_count(&count)) && count != 0xFFFFFFFC)
             {
-                _builder.array(_count);
+                builder.array(count);
             }
             else
             {
-                _builder.array(0);
+                builder.array(0);
             }
             break;
         }
 
         case SymTagFunctionType:
         {
-            std::wstring _args = getFuncArgsString(a_symbol, a_stripScope);
-            _builder.function(std::move(_args));
+            std::wstring args = getFuncArgsString(a_symbol, a_stripScope);
+            builder.function(std::move(args));
             break;
         }
 
         case SymTagData:
         {
-            if (!_name.empty()) { _builder.name(_name); }
+            if (!name.empty()) { builder.name(name); }
 
             // Bit field
-            DWORD _bitPos = 0;
-            ULONGLONG _bitLen = 0;
-            if (SUCCEEDED(a_symbol->get_bitPosition(&_bitPos)) &&
-                SUCCEEDED(a_symbol->get_length(&_bitLen)) &&
-                _bitLen > 0 && _bitLen != MAXULONGLONG)
+            DWORD bitPos = 0;
+            ULONGLONG bitLen = 0;
+            if (SUCCEEDED(a_symbol->get_bitPosition(&bitPos)) &&
+                SUCCEEDED(a_symbol->get_length(&bitLen)) &&
+                bitLen > 0 && bitLen != MAXULONGLONG)
             {
-                _builder.bitField(_bitPos, _bitLen);
+                builder.bitField(bitPos, bitLen);
             }
             break;
         }
@@ -224,13 +224,13 @@ public:
         case SymTagUDT:
         case SymTagEnum:
         {
-            if (!_name.empty()) { _builder.base(_name); }
+            if (!name.empty()) { builder.base(name); }
             break;
         }
 
         case SymTagTypedef:
         {
-            if (!_name.empty()) { _builder.base(_name); }
+            if (!name.empty()) { builder.base(name); }
             break;
         }
 
@@ -238,33 +238,33 @@ public:
             break;
         }
 
-        return _builder;
+        return builder;
     }
 
     /// Get function arguments as a comma-separated string.
     static std::wstring getFuncArgsString(IDiaSymbol* a_symbol, bool a_stripScope = true)
     {
-        std::wstring _result;
-        bool _isFirst = true;
+        std::wstring result;
+        bool isFirst = true;
 
-        ComPtr<IDiaEnumSymbols> _enumParams;
-        if (SUCCEEDED(a_symbol->findChildren(SymTagFunctionArgType, nullptr, nsNone, &_enumParams)) && _enumParams)
+        ComPtr<IDiaEnumSymbols> enum_symbolsParams;
+        if (SUCCEEDED(a_symbol->findChildren(SymTagFunctionArgType, nullptr, nsNone, &enum_symbolsParams)) && enum_symbolsParams)
         {
-            ComPtr<IDiaSymbol> _child;
-            ULONG _celt = 0;
-            while (SUCCEEDED(_enumParams->Next(1, &_child, &_celt)) && _celt == 1)
+            ComPtr<IDiaSymbol> child;
+            ULONG celt = 0;
+            while (SUCCEEDED(enum_symbolsParams->Next(1, &child, &celt)) && celt == 1)
             {
                 ComPtr<IDiaSymbol> _argType;
-                if (SUCCEEDED(_child->get_type(&_argType)) && _argType)
+                if (SUCCEEDED(child->get_type(&_argType)) && _argType)
                 {
-                    if (!_isFirst) { _result += L", "; }
-                    _result += resolveType(_argType.get(), L"", a_stripScope).build();
-                    _isFirst = false;
+                    if (!isFirst) { result += L", "; }
+                    result += resolveType(_argType.get(), L"", a_stripScope).build();
+                    isFirst = false;
                 }
             }
         }
 
-        return _result;
+        return result;
     }
 
     /// Check if a name is a compiler-generated synthetic name (anonymous or hash-based).
@@ -288,28 +288,28 @@ public:
         bool a_stripScope = true
     )
     {
-        BSTR _bstrName = nullptr;
-        if (SUCCEEDED(a_symbol->get_name(&_bstrName)) && _bstrName)
+        BSTR bstrName = nullptr;
+        if (SUCCEEDED(a_symbol->get_name(&bstrName)) && bstrName)
         {
-            std::wstring _ret(_bstrName);
-            SysFreeString(_bstrName);
+            std::wstring ret(bstrName);
+            SysFreeString(bstrName);
 
             if (a_stripScope)
             {
-                bool _isCleanIdentifier = !_ret.empty() &&
-                    _ret.find_first_of(L"<>*&()[] ") == std::wstring::npos;
+                bool isCleanIdentifier = !ret.empty() &&
+                    ret.find_first_of(L"<>*&()[] ") == std::wstring::npos;
 
-                if (_isCleanIdentifier)
+                if (isCleanIdentifier)
                 {
-                    auto _pos = _ret.rfind(L"::");
-                    if (_pos != std::wstring::npos)
+                    auto pos = ret.rfind(L"::");
+                    if (pos != std::wstring::npos)
                     {
-                        _ret = _ret.substr(_pos + 2);
+                        ret = ret.substr(pos + 2);
                     }
                 }
             }
 
-            return _ret;
+            return ret;
         }
         return L"";
     }
@@ -318,40 +318,40 @@ public:
     /// or has a compiler-generated synthetic name.
     static bool isAnonymousUDT(IDiaSymbol* a_symbol)
     {
-        BSTR _bstrName = nullptr;
-        std::wstring _name;
-        bool _gotName = SUCCEEDED(a_symbol->get_name(&_bstrName)) && _bstrName;
-        if (_gotName)
+        BSTR bstrName = nullptr;
+        std::wstring name;
+        bool gotName = SUCCEEDED(a_symbol->get_name(&bstrName)) && bstrName;
+        if (gotName)
         {
-            _name = _bstrName;
-            SysFreeString(_bstrName);
+            name = bstrName;
+            SysFreeString(bstrName);
         }
 
         // Check for synthetic/anonymous names
-        if (!_gotName || isSyntheticName(_name))
+        if (!gotName || isSyntheticName(name))
         {
-            DWORD _symTag = SymTagNull;
-            a_symbol->get_symTag((DWORD*)&_symTag);
+            DWORD symTag = SymTagNull;
+            a_symbol->get_symTag((DWORD*)&symTag);
 
-            if (_symTag != SymTagUDT) return false;
+            if (symTag != SymTagUDT) return false;
 
-            DWORD _udtKind = 0;
-            a_symbol->get_udtKind(&_udtKind);
-            return (_udtKind == UdtStruct || _udtKind == UdtUnion);
+            DWORD udtKind = 0;
+            a_symbol->get_udtKind(&udtKind);
+            return (udtKind == UdtStruct || udtKind == UdtUnion);
         }
 
         return false;
     }
 
     /// Get the access specifier as a string.
-    static const wchar_t* getAccessName(IDiaSymbol* a_symbol, DWORD a_baseAccessType = 0)
+    static const wchar_t* getAccessName(IDiaSymbol* a_symbol, DWORD abaseAccessType = 0)
     {
-        DWORD _access = 0;
-        if (SUCCEEDED(a_symbol->get_access(&_access)))
+        DWORD access = 0;
+        if (SUCCEEDED(a_symbol->get_access(&access)))
         {
-            if (a_baseAccessType) { _access = a_baseAccessType; }
+            if (abaseAccessType) { access = abaseAccessType; }
 
-            switch (_access)
+            switch (access)
             {
             case CV_private:   return L"private";
             case CV_protected: return L"protected";

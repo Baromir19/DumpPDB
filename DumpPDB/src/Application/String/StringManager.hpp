@@ -3,11 +3,11 @@
 #include <windows.h>
 #include <string>
 
-#define LANGUAGE_STRING_PREFIX STR_
+#define LANGUAGE_STRINGprefix STR_
 
-#define GENERATE_STRING(id, val_c) StringLanguageSytnax _CONCAT(LANGUAGE_STRING_PREFIX, id) = StringLanguageSytnax(L ## # id, val_c);
+#define GENERATE_STRING(id, val_c) StringLanguageSytnax _CONCAT(LANGUAGE_STRINGprefix, id) = StringLanguageSytnax(L ## # id, val_c);
 #define GENERATE_STATIC_STRING(id, val_c) static inline GENERATE_STRING(id, val_c)
-#define GET_STRING(id) StringManager::Table:: ## _CONCAT(LANGUAGE_STRING_PREFIX, id) ## .getValue()
+#define GET_STRING(id) StringManager::Table:: ## _CONCAT(LANGUAGE_STRINGprefix, id) ## .getValue()
 
 class StringManager
 {
@@ -16,26 +16,26 @@ public:
     {
         if (!a_string) return "";
 
-        int _sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, a_string, -1, nullptr, 0, nullptr, nullptr);
-        if (_sizeNeeded <= 0) return "";
+        int size = WideCharToMultiByte(CP_UTF8, 0, a_string, -1, nullptr, 0, nullptr, nullptr);
+        if (size <= 0) return "";
 
-        std::string _result(_sizeNeeded - 1, 0); // -1 to remove null terminator
-        WideCharToMultiByte(CP_UTF8, 0, a_string, -1, &_result[0], _sizeNeeded, nullptr, nullptr);
+        std::string result(size - 1, 0); // -1 to remove null terminator
+        WideCharToMultiByte(CP_UTF8, 0, a_string, -1, &result[0], size, nullptr, nullptr);
 
-        return _result;
+        return result;
     }
 
     static std::wstring convertCharToWChar(const char* a_string)
     {
         if (!a_string) return L"";
 
-        int _sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, a_string, -1, nullptr, 0);
-        if (_sizeNeeded <= 0) return L"";
+        int size = MultiByteToWideChar(CP_UTF8, 0, a_string, -1, nullptr, 0);
+        if (size <= 0) return L"";
 
-        std::wstring _result(_sizeNeeded - 1, 0); // -1 to remove null terminator
-        MultiByteToWideChar(CP_UTF8, 0, a_string, -1, &_result[0], _sizeNeeded);
+        std::wstring result(size - 1, 0); // -1 to remove null terminator
+        MultiByteToWideChar(CP_UTF8, 0, a_string, -1, &result[0], size);
 
-        return _result;
+        return result;
     }
 
     template<typename T>
@@ -52,12 +52,12 @@ public:
         {
         private:
             const wchar_t* m_id;
-            const wchar_t* m_valueC = L"";
+            const wchar_t* mvalueC = L"";
 
         public:
             // StringLanguageSytnax() : m_id(0) {}
             StringLanguageSytnax(const wchar_t* a_id, const wchar_t* a_valC)
-                : m_id(a_id), m_valueC(a_valC) { }
+                : m_id(a_id), mvalueC(a_valC) { }
 
             const wchar_t* getId() const { return m_id; }
 
@@ -68,7 +68,7 @@ public:
                 switch (s_languageSyntax)
                 {
                 case LanguageSyntax::LANGUAGE_ID: return m_id;
-                case LanguageSyntax::LANGUAGE_C: return m_valueC;
+                case LanguageSyntax::LANGUAGE_C: return mvalueC;
                 default: break;
                 }
                 return L"";

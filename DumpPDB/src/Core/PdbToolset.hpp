@@ -57,120 +57,120 @@ public:
     /// if no exact matches found
     std::wstring dumpTypeByName(const wchar_t* a_name, bool a_caseSensitive)
     {
-        std::wstring _out;
-        if (!a_name) return _out;
+        std::wstring out;
+        if (!a_name) return out;
 
         // Step 1: Search by exact name across all symbol types
-        auto _matches = SymbolFinder::findAll(m_session.globalScope(), SymTagNull, a_name, a_caseSensitive);
-        for (auto& _sym : _matches)
+        auto matches = SymbolFinder::findAll(m_session.globalScope(), SymTagNull, a_name, a_caseSensitive);
+        for (auto& sym : matches)
         {
-            m_dumper.processType(_sym.get(), _out);
+            m_dumper.processType(sym.get(), out);
         }
 
         // Step 2: Fallback to namespace prefix search (like old displayTypePrefixed)
-        if (_matches.empty())
+        if (matches.empty())
         {
-            auto _prefixed = SymbolFinder::findByNamespacePrefix(m_session.globalScope(), a_name, a_caseSensitive);
-            for (auto& _sym : _prefixed)
+            auto prefixed = SymbolFinder::findByNamespacePrefix(m_session.globalScope(), a_name, a_caseSensitive);
+            for (auto& sym : prefixed)
             {
-                m_dumper.processType(_sym.get(), _out);
+                m_dumper.processType(sym.get(), out);
             }
         }
 
-        return _out;
+        return out;
     }
 
     /// Dump a class/enum/typedef by name using findFirst (return first match only).
     /// This mirrors the old displayClass(name)/displayEnum(name)/displayTypedef(name) behavior.
     std::wstring dumpClassByName(const wchar_t* a_name, bool a_caseSensitive)
     {
-        std::wstring _out;
-        if (!a_name) return _out;
+        std::wstring out;
+        if (!a_name) return out;
 
         auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagUDT, a_name, a_caseSensitive);
         if (_sym)
         {
-            _out += m_dumper.dumpClass(_sym.get());
+            out += m_dumper.dumpClass(_sym.get());
         }
-        return _out;
+        return out;
     }
 
     std::wstring dumpEnumByName(const wchar_t* a_name, bool a_caseSensitive)
     {
-        std::wstring _out;
-        if (!a_name) return _out;
+        std::wstring out;
+        if (!a_name) return out;
 
         auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagEnum, a_name, a_caseSensitive);
         if (_sym)
         {
-            _out += m_dumper.dumpEnum(_sym.get());
+            out += m_dumper.dumpEnum(_sym.get());
         }
-        return _out;
+        return out;
     }
 
     std::wstring dumpTypedefByName(const wchar_t* a_name, bool a_caseSensitive)
     {
-        std::wstring _out;
-        if (!a_name) return _out;
+        std::wstring out;
+        if (!a_name) return out;
 
         auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagTypedef, a_name, a_caseSensitive);
         if (_sym)
         {
-            _out += m_dumper.dumpTypedef(_sym.get());
+            out += m_dumper.dumpTypedef(_sym.get());
         }
-        return _out;
+        return out;
     }
 
     // Dump all compilands
     std::wstring dumpCompilands()
     {
-        std::wstring _out;
+        std::wstring out;
 
-        ComPtr<IDiaEnumSymbols> _enumSymbols;
-        if (FAILED(m_session.globalScope()->findChildren(SymTagCompiland, nullptr, nsNone, &_enumSymbols)) || !_enumSymbols)
-            return _out;
+        ComPtr<IDiaEnumSymbols> enum_symbolsSymbols;
+        if (FAILED(m_session.globalScope()->findChildren(SymTagCompiland, nullptr, nsNone, &enum_symbolsSymbols)) || !enum_symbolsSymbols)
+            return out;
 
-        ComPtr<IDiaSymbol> _compiland;
-        ULONG _celt = 0;
-        while (SUCCEEDED(_enumSymbols->Next(1, &_compiland, &_celt)) && _celt == 1)
+        ComPtr<IDiaSymbol> compiland;
+        ULONG celt = 0;
+        while (SUCCEEDED(enum_symbolsSymbols->Next(1, &compiland, &celt)) && celt == 1)
         {
-            BSTR _name = nullptr;
-            if (SUCCEEDED(_compiland->get_name(&_name)) && _name)
+            BSTR name = nullptr;
+            if (SUCCEEDED(compiland->get_name(&name)) && name)
             {
-                _out += _name;
-                _out += L"\n";
-                SysFreeString(_name);
+                out += name;
+                out += L"\n";
+                SysFreeString(name);
             }
-            _compiland.Release();
+            compiland.Release();
         }
 
-        return _out;
+        return out;
     }
 
     // Dump compilands with environment details
     std::wstring dumpCompilandsEnv()
     {
-        std::wstring _out;
+        std::wstring out;
 
-        ComPtr<IDiaEnumSymbols> _enum;
-        if (FAILED(m_session.globalScope()->findChildren(SymTagCompiland, nullptr, nsNone, &_enum)) || !_enum)
-            return _out;
+        ComPtr<IDiaEnumSymbols> enum_symbols;
+        if (FAILED(m_session.globalScope()->findChildren(SymTagCompiland, nullptr, nsNone, &enum_symbols)) || !enum_symbols)
+            return out;
 
-        ComPtr<IDiaSymbol> _compiland;
-        ULONG _celt = 0;
-        while (SUCCEEDED(_enum->Next(1, &_compiland, &_celt)) && _celt == 1)
+        ComPtr<IDiaSymbol> compiland;
+        ULONG celt = 0;
+        while (SUCCEEDED(enum_symbols->Next(1, &compiland, &celt)) && celt == 1)
         {
-            std::wstring _name = TypeWalker::getName(_compiland.get());
-            _out += L"[OBJ] ";
-            _out += _name;
-            _out += L"\n";
+            std::wstring name = TypeWalker::getName(compiland.get());
+            out += L"[OBJ] ";
+            out += name;
+            out += L"\n";
 
             // Compiland details
             ComPtr<IDiaEnumSymbols> _details;
-            if (SUCCEEDED(_compiland->findChildren(SymTagCompilandDetails, nullptr, nsNone, &_details)) && _details)
+            if (SUCCEEDED(compiland->findChildren(SymTagCompilandDetails, nullptr, nsNone, &_details)) && _details)
             {
                 ComPtr<IDiaSymbol> _detail;
-                while (SUCCEEDED(_details->Next(1, &_detail, &_celt)) && _celt == 1)
+                while (SUCCEEDED(_details->Next(1, &_detail, &celt)) && celt == 1)
                 {
                     DWORD _platform = 0, _language = 0;
                     _detail->get_platform(&_platform);
@@ -182,69 +182,69 @@ public:
                     BOOL _isDebug = FALSE;
                     _detail->get_hasDebugInfo(&_isDebug);
 
-                    wchar_t _buf[256];
-                    swprintf_s(_buf, L"[ABOUT] Compiler: %s; Language: %u; Platform: %u; Debug: %s\n",
+                    wchar_t buf[256];
+                    swprintf_s(buf, L"[ABOUT] Compiler: %s; Language: %u; Platform: %u; Debug: %s\n",
                         _compilerName ? _compilerName : L"unknown", _language, _platform, _isDebug ? L"true" : L"false");
-                    _out += _buf;
+                    out += buf;
                     if (_compilerName) SysFreeString(_compilerName);
                 }
             }
 
             // Compiland environment
-            ComPtr<IDiaEnumSymbols> _env;
-            if (SUCCEEDED(_compiland->findChildren(SymTagCompilandEnv, nullptr, nsNone, &_env)) && _env)
+            ComPtr<IDiaEnumSymbols> env;
+            if (SUCCEEDED(compiland->findChildren(SymTagCompilandEnv, nullptr, nsNone, &env)) && env)
             {
-                ComPtr<IDiaSymbol> _envSym;
-                while (SUCCEEDED(_env->Next(1, &_envSym, &_celt)) && _celt == 1)
+                ComPtr<IDiaSymbol> envSym;
+                while (SUCCEEDED(env->Next(1, &envSym, &celt)) && celt == 1)
                 {
-                    std::wstring _envName = TypeWalker::getName(_envSym.get());
+                    std::wstring envName = TypeWalker::getName(envSym.get());
 
-                    VARIANT _val;
-                    VariantInit(&_val);
-                    if (SUCCEEDED(_envSym->get_value(&_val)) && _val.bstrVal && _val.vt == VT_BSTR)
+                    VARIANT val;
+                    VariantInit(&val);
+                    if (SUCCEEDED(envSym->get_value(&val)) && val.bstrVal && val.vt == VT_BSTR)
                     {
-                        _out += L"[ENV] ";
-                        _out += _envName;
-                        _out += L" = ";
-                        _out += _val.bstrVal;
-                        _out += L"\n";
-                        VariantClear(&_val);
+                        out += L"[ENV] ";
+                        out += envName;
+                        out += L" = ";
+                        out += val.bstrVal;
+                        out += L"\n";
+                        VariantClear(&val);
                     }
                     else
                     {
-                        _out += L"[ENV] ";
-                        _out += _envName;
-                        _out += L"\n";
+                        out += L"[ENV] ";
+                        out += envName;
+                        out += L"\n";
                     }
                 }
             }
         }
 
-        return _out;
+        return out;
     }
 
     // Dump all source files
     std::wstring dumpSourceFiles()
     {
-        std::wstring _out;
+        std::wstring out;
 
-        ComPtr<IDiaEnumSourceFiles> _enumSourceFiles;
-        if (FAILED(m_session.session()->findFile(nullptr, nullptr, nsNone, &_enumSourceFiles)) || !_enumSourceFiles)
-            return _out;
+        ComPtr<IDiaEnumSourceFiles> enumSourceFiles;
+        if (FAILED(m_session.session()->findFile(nullptr, nullptr, nsNone, &enumSourceFiles)) || !enumSourceFiles)
+            return out;
 
-        ComPtr<IDiaSourceFile> _sourceFile;
-        ULONG _celt = 0;
-        while (SUCCEEDED(_enumSourceFiles->Next(1, &_sourceFile, &_celt)) && _celt == 1)
+        ComPtr<IDiaSourceFile> sourceFile;
+        ULONG celt = 0;
+        while (SUCCEEDED(enumSourceFiles->Next(1, &sourceFile, &celt)) && celt == 1)
         {
-            BSTR _fileName = nullptr;
-            if (SUCCEEDED(_sourceFile->get_fileName(&_fileName)) && _fileName)
+            BSTR fileName = nullptr;
+            if (SUCCEEDED(sourceFile->get_fileName(&fileName)) && fileName)
             {
-                _out += _fileName;
-                _out += L"\n";
-                SysFreeString(_fileName);
+                out += fileName;
+                out += L"\n";
+                SysFreeString(fileName);
             }
         }
 
-        return _out;
+        return out;
     }
 };

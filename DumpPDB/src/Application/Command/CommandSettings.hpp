@@ -28,11 +28,11 @@ public:
 			return true;
 		}
 
-		auto _value = StringManager::convertWCharToInt<int>(a_commandArgs[1].c_str());
+		auto value = StringManager::convertWCharToInt<int>(a_commandArgs[1].c_str());
 		
 		IBaseSerializableBase::setInstance(
 			StringManager::convertWCharToChar(a_commandArgs[0].c_str()).c_str(), 
-			_value);
+			value);
 
 		return true; 
 	}

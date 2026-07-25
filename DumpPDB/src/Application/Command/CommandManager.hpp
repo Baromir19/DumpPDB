@@ -2,7 +2,7 @@
 
 #include <Util\Container\Singleton.hpp>
 
-#include <Application\Console\ConsoleManager.hpp>
+#include <Application\IO\ConsoleManager.hpp>
 
 #include <Application\Command\ICommand.hpp>
 #include <Application\Command\CommandType.hpp>
@@ -24,7 +24,7 @@ public:
 		static bool initState = false;
 		if (initState) return true;
 
-		m_commands.push_back(new CommandType());
+		m_commands.push_back(new CommandType(true)); /// NOTE: USE CLIPBOARD - SETTINGS DEPENDENCY INJECTION ????
 		m_commands.push_back(new CommandHelp());
 		m_commands.push_back(new CommandCompiland());
 		m_commands.push_back(new CommandSource());
@@ -41,24 +41,24 @@ public:
 
 		/// TODO: get cmd size before ":"
 
-		for (const auto& _command : m_commands)
+		for (const auto& command : m_commands)
 		{
 			ConsoleManager::print(L"  ");
 
-			const auto& _names = _command->getCommandNames();
+			const auto& names = command->getCommandNames();
 
-			for (auto i = 0; i < _names.size(); ++i)
+			for (auto i = 0; i < names.size(); ++i)
 			{
-				ConsoleManager::print(L"%s", _names[i]);
+				ConsoleManager::print(L"%s", names[i]);
 
-				if (i < _names.size() - 1) ConsoleManager::print(L", ");
+				if (i < names.size() - 1) ConsoleManager::print(L", ");
 			}
 
 			ConsoleManager::setCursor(20);
-			ConsoleManager::print(L" %s", _command->getArgHelp());
+			ConsoleManager::print(L" %s", command->getArgHelp());
 
 			ConsoleManager::setCursor(44);
-			ConsoleManager::print(L" : %s\n", _command->getUsageHelp());
+			ConsoleManager::print(L" : %s\n", command->getUsageHelp());
 		}
 
 		exit(EXIT_SUCCESS);
@@ -66,13 +66,13 @@ public:
 
 	ICommand* getCommand(const wchar_t* a_commandString) const
 	{
-		for (const auto& _command : m_commands)
+		for (const auto& command : m_commands)
 		{
-			for (const auto& _name : _command->getCommandNames())
+			for (const auto& name : command->getCommandNames())
 			{
-				if (!wcscmp(_name, a_commandString))
+				if (!wcscmp(name, a_commandString))
 				{
-					return _command;
+					return command;
 				}
 			}
 		}
@@ -83,18 +83,18 @@ public:
 
 	ICommand* getCommand(const wchar_t* a_commandString, int a_userMessageSize) const
 	{
-		auto _ret = getCommand(a_commandString);
+		auto ret = getCommand(a_commandString);
 
-		auto _count = _ret->getArgCount();
-		auto _type = _ret->getType();
+		auto count = ret->getArgCount();
+		auto type = ret->getType();
 
-		_count += _type & _ret->s_executableMask ? 1 : 0; // is it need name of .pdb?
+		count += type & ret->s_executableMask ? 1 : 0; // is it need name of .pdb?
 
-		_count += 2; // executable path + command name
+		count += 2; // executable path + command name
 
-		if (a_userMessageSize - _count >= 0) { return _ret; }
+		if (a_userMessageSize - count >= 0) { return ret; }
 
-		ConsoleManager::printError(L"Command size (%u) is less than minimum (%u) \n", a_userMessageSize, _count);
+		ConsoleManager::printError(L"Command size (%u) is less than minimum (%u) \n", a_userMessageSize, count);
 	}
 
 	void executeCommand(ICommand* a_command)

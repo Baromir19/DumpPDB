@@ -25,22 +25,22 @@ public:
 
 	static void displayInstancesInfo()
 	{
-		for (auto _instance : m_instances) { _instance->displayInfo(); }
+		for (auto instance : m_instances) { instance->displayInfo(); }
 	}
 
-	static void setInstance(const char* a_name, int a_value)
+	static void setInstance(const char* a_name, int avalue)
 	{
 		// DebugManager::WaitDebugger();
 
-		auto _hash = HashManager::crc32(a_name);
+		auto hash = HashManager::crc32(a_name);
 
-		for (auto _instance : m_instances)
+		for (auto instance : m_instances)
 		{
-			if (_instance->getHash() == _hash)
+			if (instance->getHash() == hash)
 			{
-				_instance->setValue(a_value);
-				_instance->save();
-				ConsoleManager::print(L"Written value %i to setting %s \n", a_value, StringManager::convertCharToWChar(a_name).c_str());
+				instance->setValue(avalue);
+				instance->save();
+				ConsoleManager::print(L"Written value %i to setting %s \n", avalue, StringManager::convertCharToWChar(a_name).c_str());
 				return;
 			}
 		}

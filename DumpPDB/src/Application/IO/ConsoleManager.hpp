@@ -66,29 +66,33 @@ public:
 
 	static inline void print(const wchar_t* a_format, ...)
 	{
-		va_list _args;
-		va_start(_args, a_format);
-		print(a_format, _args);
-		va_end(_args);
+		va_list args;
+		va_start(args, a_format);
+		print(a_format, args);
+		va_end(args);
 	}
 
 	static void printError(const wchar_t* a_format, ...)
 	{
-		wchar_t _buffer[0x2000];
-		_buffer[0] = L'\0';
+		wchar_t buffer[0x2000];
+		buffer[0] = L'\0';
 
-		va_list _args;
-		va_start(_args, a_format);
-		vswprintf(_buffer, 0x2000, a_format, _args);
-		va_end(_args);
+		va_list args;
+		va_start(args, a_format);
+		vswprintf(buffer, 0x2000, a_format, args);
+		va_end(args);
 
-		std::wstring _msg = L"Error: ";
-		_msg += _buffer;
+		std::wstring msg = L"Error: ";
+		msg += buffer;
 
-		throw DumpError(_msg);
+		throw DumpError(msg);
 	}
 
-	static bool setCursorNoDiscard(int a_pos, unsigned int a_repeatTime = -1, bool a_tabulation = true)
+	static bool setCursorNoDiscard(
+		int a_pos, 
+		unsigned int a_repeatTime = -1, 
+		bool a_tabulation = true
+	)
 	{
 		while (!setCursor(a_pos, a_tabulation) && a_repeatTime--)
 		{
@@ -102,49 +106,50 @@ public:
 	{
 		if (!a_tabulation) { return true; }
 
-		int _ret = false;
+		int ret = false;
 
-		CONSOLE_SCREEN_BUFFER_INFO _csbi;
-		GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &_csbi);
-		SHORT _currentX = _csbi.dwCursorPosition.X;
+		CONSOLE_SCREEN_BUFFER_INFO csbi;
+		GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+		SHORT currentX = csbi.dwCursorPosition.X;
 
-		COORD _newPos = _csbi.dwCursorPosition;
+		COORD newPos = csbi.dwCursorPosition;
 
-		const SHORT _padTo = max(a_pos, _currentX + 1);
-		_newPos.X = _padTo;
+		const SHORT padTo = max(a_pos, currentX + 1);
+		newPos.X = padTo;
 
-		if (_padTo == a_pos) { _ret = true; }
+		if (padTo == a_pos) { ret = true; }
 
-		SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), _newPos);
+		SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), newPos);
 
-		return _ret;
+		return ret;
 	}
 
 	const std::wstring& getPath()
 	{
 		if (!m_path.empty()) { return m_path; }
 
-		if (!m_arguments.empty() && verifyArgumentsNumber(m_arguments.size(), s_minArgPathSize))
+		if (!m_arguments.empty() 
+			&& verifyArgumentsNumber(m_arguments.size(), s_minArgPathSize))
 		{ 
 			m_path =  m_arguments.back();
 
 			if (m_path.size() < 2 || m_path[1] != L':')
 			{
-				WCHAR _currentDir[MAX_PATH];
-				auto _currentDirLen = GetCurrentDirectoryW(MAX_PATH, (LPWSTR)_currentDir);
+				WCHAR currentDir[MAX_PATH];
+				auto currentDirLen = GetCurrentDirectoryW(MAX_PATH, (LPWSTR)currentDir);
 
-				if (_currentDirLen == 0 || _currentDirLen >= MAX_PATH)
+				if (currentDirLen == 0 || currentDirLen >= MAX_PATH)
 				{
-					printError(L"Failed to get current directory (path size: \"%u\")! \n", _currentDirLen);
+					printError(L"Failed to get current directory (path size: \"%u\")! \n", currentDirLen);
 				}
 
-				if (_currentDir[_currentDirLen - 1] != L'\\') 
+				if (currentDir[currentDirLen - 1] != L'\\') 
 				{
-					m_path = std::wstring(_currentDir) + L'\\' + m_path;
+					m_path = std::wstring(currentDir) + L'\\' + m_path;
 				}
 				else 
 				{
-					m_path = std::wstring(_currentDir) + m_path;
+					m_path = std::wstring(currentDir) + m_path;
 				}
 				
 				if (GetFileAttributesW(m_path.c_str()) == INVALID_FILE_ATTRIBUTES)
@@ -196,20 +201,20 @@ public:
 	{
 		if (s_bufferPointer >= s_bufferSize) { return; }
 
-		int _written = vswprintf(s_lineBuffer + s_bufferPointer,
+		int written = vswprintf(s_lineBuffer + s_bufferPointer,
 			s_bufferSize - s_bufferPointer,
 			a_format,
 			a_args);
 
-		if (_written > 0) { s_bufferPointer += _written; }
+		if (written > 0) { s_bufferPointer += written; }
 	}
 
 	static void appendToLine(const wchar_t* a_format, ...)
 	{
-		va_list _args;
-		va_start(_args, a_format);
-		appendToLine(a_format, _args);
-		va_end(_args);
+		va_list args;
+		va_start(args, a_format);
+		appendToLine(a_format, args);
+		va_end(args);
 	}
 
 protected:
@@ -217,7 +222,11 @@ protected:
 	{
 		if (a_argc < a_minimum)
 		{
-			printError(L"Argument count (%u) is less than the minimum (%u)!", a_argc, s_minArgPathSize);
+			printError(
+				L"Argument count (%u) is less than the minimum (%u)!", 
+				a_argc, 
+				s_minArgPathSize
+			);
 		}
 
 		return true;
@@ -225,21 +234,30 @@ protected:
 
 	static inline bool verifyFormat(const std::wstring& a_path)
 	{
-		auto _size = a_path.size();
+		auto size = a_path.size();
 
-		if (_size >= 4 && wcscmp(&a_path.end()[-4], s_pdbFormat) == 0)
+		if (size >= 4 && wcscmp(&a_path.end()[-4], s_pdbFormat) == 0)
 		{
 			return true;
 		}
 
-		auto _begin = a_path.c_str();
+		auto begin = a_path.c_str();
 
 		for (auto i = a_path.size(); i > 0; --i)
 		{
-			if (_begin[i] == L'.') { printError(L"Extension \"%s\" must be \".pdb\"! \n", &(_begin[i])); }
+			if (begin[i] == L'.') 
+			{ 
+				printError(
+					L"Extension \"%s\" must be \".pdb\"! \n", 
+					&(begin[i])
+				); 
+			}
 		}
 
-		printError(L"No extension for \"%s\" (must be \".pdb\")!\n ", a_path.c_str());
+		printError(
+			L"No extension for \"%s\" (must be \".pdb\")!\n ",
+			a_path.c_str()
+		);
 	}
 
 public:

@@ -33,7 +33,7 @@ class TypeBuilder
 public:
     TypeBuilder& base(std::wstring_view a_type)
     {
-        m_baseType = a_type;
+        mbaseType = a_type;
         return *this;
     }
 
@@ -61,9 +61,9 @@ public:
         return *this;
     }
 
-    TypeBuilder& array(size_t a_count)
+    TypeBuilder& array(size_t acount)
     {
-        m_chain.push_back({ ModifierKind::Array, a_count });
+        m_chain.push_back({ ModifierKind::Array, acount });
         return *this;
     }
 
@@ -81,19 +81,19 @@ public:
 
     TypeBuilder& constQual()
     {
-        m_isConst = true;
+        misConst = true;
         return *this;
     }
 
     TypeBuilder& volatileQual()
     {
-        m_isVolatile = true;
+        misVolatile = true;
         return *this;
     }
 
     TypeBuilder& constPointed()
     {
-        m_isConstPointed = true;
+        misConstPointed = true;
         return *this;
     }
 
@@ -102,60 +102,60 @@ public:
     /// applying modifiers in the correct C++ declaration order.
     std::wstring build() const
     {
-        std::wstring _result;
+        std::wstring result;
 
         // 1. Leading qualifiers (const, volatile) for the base type.
-        //    m_isConstPointed means the pointed-to type is const (e.g. const int*),
+        //    misConstPointed means the pointed-to type is const (e.g. const int*),
         //    which goes before the base type, not after the pointer.
-        if (m_isVolatile) { _result += L"volatile "; }
-        if (m_isConst || m_isConstPointed) { _result += L"const "; }
+        if (misVolatile) { result += L"volatile "; }
+        if (misConst || misConstPointed) { result += L"const "; }
 
         // 2. Base type
-        if (!m_baseType.empty()) { _result += m_baseType; }
+        if (!mbaseType.empty()) { result += mbaseType; }
 
         // 3. Build prefix (before name) and postfix (after name) from the modifier chain.
         //    Walk from inner (begin) to outer (end) to correctly handle C++ declarators.
         //    When a postfix modifier (Function/Array) wraps a prefix modifier (Pointer/Ref),
         //    we need parentheses around the prefix: e.g. int (*)(float) not int*(float).
-        std::wstring _prefix;
-        std::wstring _postfix;
-        bool _seenPostfix = false;
-        bool _needsParen = false;
+        std::wstring prefix;
+        std::wstring postfix;
+        bool seenPostfix = false;
+        bool needsParen = false;
 
         for (auto it = m_chain.begin(); it != m_chain.end(); ++it)
         {
             switch (it->kind)
             {
             case ModifierKind::Pointer:
-                if (_seenPostfix) { _needsParen = true; }
-                _prefix += L"*";
+                if (seenPostfix) { needsParen = true; }
+                prefix += L"*";
                 break;
 
             case ModifierKind::Reference:
-                if (_seenPostfix) { _needsParen = true; }
-                _prefix += L"&";
+                if (seenPostfix) { needsParen = true; }
+                prefix += L"&";
                 break;
 
             case ModifierKind::RValueReference:
-                if (_seenPostfix) { _needsParen = true; }
-                _prefix += L"&&";
+                if (seenPostfix) { needsParen = true; }
+                prefix += L"&&";
                 break;
 
             case ModifierKind::Array:
-                _postfix += L"[";
+                postfix += L"[";
                 if (it->arrayCount > 0)
                 {
-                    _postfix += std::to_wstring(it->arrayCount);
+                    postfix += std::to_wstring(it->arrayCount);
                 }
-                _postfix += L"]";
-                _seenPostfix = true;
+                postfix += L"]";
+                seenPostfix = true;
                 break;
 
             case ModifierKind::Function:
-                _postfix += L"(";
-                _postfix += it->functionArgs;
-                _postfix += L")";
-                _seenPostfix = true;
+                postfix += L"(";
+                postfix += it->functionArgs;
+                postfix += L")";
+                seenPostfix = true;
                 break;
 
             case ModifierKind::BitField:
@@ -167,52 +167,52 @@ public:
         //    The name is placed inside the parentheses (or right after prefix if no parens)
         //    to correctly handle the spiral rule for pointers to arrays/functions.
         //    e.g. int (*arr)[10] not int (*)[10] arr
-        if (_needsParen)
+        if (needsParen)
         {
-            _result += L" (";
-            _result += _prefix;
-            if (!m_name.empty()) { _result += L" "; _result += m_name; }
-            _result += L")";
+            result += L" (";
+            result += prefix;
+            if (!m_name.empty()) { result += L" "; result += m_name; }
+            result += L")";
         }
         else
         {
-            _result += _prefix;
-            if (!m_name.empty()) { _result += L" "; _result += m_name; }
+            result += prefix;
+            if (!m_name.empty()) { result += L" "; result += m_name; }
         }
 
         // 5. Postfix (function args, array dimensions)
-        _result += _postfix;
+        result += postfix;
 
         // 7. Bitfield
         for (auto it = m_chain.begin(); it != m_chain.end(); ++it)
         {
             if (it->kind == ModifierKind::BitField && it->bitLength > 0)
             {
-                wchar_t _buf[64];
-                swprintf_s(_buf, L" : %llu", it->bitLength);
-                _result += _buf;
+                wchar_t buf[64];
+                swprintf_s(buf, L" : %llu", it->bitLength);
+                result += buf;
             }
         }
 
-        return _result;
+        return result;
     }
 
     /// Reset builder state for reuse.
     void reset()
     {
         m_chain.clear();
-        m_baseType.clear();
+        mbaseType.clear();
         m_name.clear();
-        m_isConst = false;
-        m_isVolatile = false;
-        m_isConstPointed = false;
+        misConst = false;
+        misVolatile = false;
+        misConstPointed = false;
     }
 
 private:
     std::vector<Modifier> m_chain;  // inner (closest to base) to outer
-    std::wstring          m_baseType;
+    std::wstring          mbaseType;
     std::wstring          m_name;
-    bool                  m_isConst = false;
-    bool                  m_isVolatile = false;
-    bool                  m_isConstPointed = false;
+    bool                  misConst = false;
+    bool                  misVolatile = false;
+    bool                  misConstPointed = false;
 };

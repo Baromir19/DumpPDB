@@ -5,7 +5,7 @@
 #include <windows.h>
 #include <ShlObj.h>
 
-#include <Application\Console\ConsoleManager.hpp>
+#include <Application\IO\ConsoleManager.hpp>
 #include <Application\Debug\DebugManager.hpp>
 
 #include <Util\Container\Singleton.hpp>
@@ -60,7 +60,7 @@ public:
 	{
 		TypeId m_typeId;
 		unsigned __int32 m_hash;
-		T m_value;
+		T mvalue;
 	};
 
 	static int __fastcall getEntrySize(TypeId a_type)
@@ -136,20 +136,20 @@ public:
 
 		m_cursor = s_entriesBegin;
 
-		int _entryIter = m_entriesCount;
+		int entryIter = m_entriesCount;
 
-		while (_entryIter-- > 0 && m_cursor + sizeof(Entry<T>) <= s_bufferSize)
+		while (entryIter-- > 0 && m_cursor + sizeof(Entry<T>) <= s_bufferSize)
 		{
-			auto _entry = *(Entry<T>*)(&m_saveBuffer[m_cursor]);
+			auto entry = *(Entry<T>*)(&m_saveBuffer[m_cursor]);
 
-			if (_entry.m_typeId == a_data.m_typeId 
-				&& _entry.m_hash == a_data.m_hash)
+			if (entry.m_typeId == a_data.m_typeId 
+				&& entry.m_hash == a_data.m_hash)
 			{
-				a_data.m_value =  _entry.m_value;
+				a_data.mvalue =  entry.mvalue;
 				return;
 			}
 
-			m_cursor += getEntrySize(_entry.m_typeId);
+			m_cursor += getEntrySize(entry.m_typeId);
 		}
 
 		appendEntry(a_data);
@@ -162,20 +162,20 @@ public:
 
 		m_cursor = s_entriesBegin;
 
-		int _entryIter = m_entriesCount;
+		int entryIter = m_entriesCount;
 
-		while (_entryIter-- > 0 && m_cursor + sizeof(Entry<T>) <= s_bufferSize)
+		while (entryIter-- > 0 && m_cursor + sizeof(Entry<T>) <= s_bufferSize)
 		{
-			auto& _entry = *(Entry<T>*)(&m_saveBuffer[m_cursor]);
+			auto& entry = *(Entry<T>*)(&m_saveBuffer[m_cursor]);
 
-			if (_entry.m_typeId == a_data.m_typeId
-				&& _entry.m_hash == a_data.m_hash)
+			if (entry.m_typeId == a_data.m_typeId
+				&& entry.m_hash == a_data.m_hash)
 			{
-				_entry.m_value = a_data.m_value;
+				entry.mvalue = a_data.mvalue;
 				return;
 			}
 
-			m_cursor += getEntrySize(_entry.m_typeId);
+			m_cursor += getEntrySize(entry.m_typeId);
 		}
 
 		appendEntry(a_data);
@@ -184,11 +184,11 @@ public:
 protected:
 	std::wstring getDocumentsPath()
 	{
-		wchar_t _path[MAX_PATH] = { 0 };
+		wchar_t path[MAX_PATH] = { 0 };
 
-		if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_PERSONAL, nullptr, 0, _path)))
+		if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_PERSONAL, nullptr, 0, path)))
 		{
-			return std::wstring(_path);
+			return std::wstring(path);
 		}
 		else
 		{
@@ -198,15 +198,18 @@ protected:
 
 	void save()
 	{
-		errno_t _err;
+		errno_t err;
 
-		if (!m_file) { _err = _wfopen_s(&m_file, m_fullPath.c_str(), L"wb"); }
+		if (!m_file) { err = _wfopen_s(&m_file, m_fullPath.c_str(), L"wb"); }
 
-		if (!m_file) { ConsoleManager::printError(L"File creation error: %i\n", _err); }
+		if (!m_file) { ConsoleManager::printError(L"File creation error: %i\n", err); }
 
-		size_t _written = fwrite(m_saveBuffer, 1, sizeof(m_saveBuffer), m_file);
+		size_t written = fwrite(m_saveBuffer, 1, sizeof(m_saveBuffer), m_file);
 
-		if (_written != sizeof(m_saveBuffer)) { ConsoleManager::printError(L"File size error: %i\n", _written); }
+		if (written != sizeof(m_saveBuffer)) 
+		{ 
+			ConsoleManager::printError(L"File size error: %i\n", written); 
+		}
 
 		if (m_file) { fclose(m_file); }
 		m_file = nullptr;
@@ -235,15 +238,15 @@ protected:
 protected:
 	SaveManager()
 	{
-		wchar_t _buffer[MAX_PATH];
+		wchar_t buffer[MAX_PATH];
 
 		m_fullPath = getDocumentsPath();
 
 		if (m_fullPath.empty())
 		{
-			DWORD _length = GetCurrentDirectoryW(MAX_PATH, _buffer);
-			if (_length <= 0 || _length >= MAX_PATH) { throw DumpError(L"Failed to get current directory"); }
-			m_fullPath = _buffer;
+			DWORD length = GetCurrentDirectoryW(MAX_PATH, buffer);
+			if (length <= 0 || length >= MAX_PATH) { throw DumpError(L"Failed to get current directory"); }
+			m_fullPath = buffer;
 		}
 		else
 		{
@@ -252,10 +255,10 @@ protected:
 
 			if (!CreateDirectoryW(m_fullPath.c_str(), nullptr))
 			{
-				DWORD _err = GetLastError();
-				if (_err != ERROR_ALREADY_EXISTS)
+				DWORD err = GetLastError();
+				if (err != ERROR_ALREADY_EXISTS)
 				{
-					ConsoleManager::printError(L"Folder creation error: %i\n", _err);
+					ConsoleManager::printError(L"Folder creation error: %i\n", err);
 				}
 			}
 		}
@@ -263,11 +266,11 @@ protected:
 		m_fullPath += L"\\";
 		m_fullPath += s_filename;
 
-		DWORD _attr = GetFileAttributesW(m_fullPath.c_str());
+		DWORD attr = GetFileAttributesW(m_fullPath.c_str());
 
 		// ConsoleManager::print(m_fullPath.c_str());
 
-		if (_attr == INVALID_FILE_ATTRIBUTES || (_attr & FILE_ATTRIBUTE_DIRECTORY))
+		if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY))
 		{
 			initHeader();
 			save();

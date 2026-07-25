@@ -2,7 +2,7 @@
 
 #include <Core\PdbToolset.hpp>
 #include <Application\Command\ICommand.hpp>
-#include <Application\Console\ConsoleManager.hpp>
+#include <Application\IO\ConsoleManager.hpp>
 
 class CommandCompiland : public ICommand
 {
@@ -19,20 +19,20 @@ public:
 			return false;
 		}
 
-		std::wstring _text;
-		auto _fullInfo = wcscmp(a_commandArgs[0].c_str(), L"true"); /// ATTENTION
+		std::wstring text;
+		auto fullInfo = wcscmp(a_commandArgs[0].c_str(), L"true"); /// ATTENTION
 
-		if (!_fullInfo)
+		if (!fullInfo)
 		{
-			_text = PdbToolset::instance().dumpCompilandsEnv();
+			text = PdbToolset::instance().dumpCompilandsEnv();
 		}
 		else
 		{
-			_text = PdbToolset::instance().dumpCompilands();
+			text = PdbToolset::instance().dumpCompilands();
 		}
 
-		if (_text.empty()) return false;
-		ConsoleManager::print(_text.c_str());
+		if (text.empty()) return false;
+		ConsoleManager::print(text.c_str());
 		return true;
 	}
 };
