@@ -17,12 +17,14 @@ struct DumpConfig
     bool showSize        = true;
     bool showOffset      = true;
     bool showAccess      = true;
-    bool showInfoComment = true;
+    bool showInfoComment = false;
     bool showNonScoped   = true;
     bool showEnumHex     = false;
     bool showTypeSource  = true;
     bool curlyBraceNewline = true;
+    bool hideCompilerGenerated = true; // hide __local_vftable_ctor_closure, etc.
     DWORD baseAccessType = 0; // override access type
+    IntStyle intStyle = IntStyle::Cstdint; // __int32 vs int32_t
 };
 
 /// Produces formatted C++ declaration strings from DIA symbols.
@@ -88,8 +90,15 @@ public:
 
         _ret += tab(a_nestingLevel);
         _ret += modPrefix(a_symbol);
-        _ret += L"enum ";
-        _ret += TypeWalker::getName(a_symbol, L"", m_config.showNonScoped);
+        _ret += L"enum";
+
+        // Filter synthetic names like <unnamed-tag> or $HASH names
+        std::wstring _enumName = TypeWalker::getName(a_symbol, L"", m_config.showNonScoped);
+        if (!TypeWalker::isSyntheticName(_enumName))
+        {
+            _ret += L" ";
+            _ret += _enumName;
+        }
 
         _ret += baseTypeInheritance(a_symbol);
         _ret += scopeBegin(a_nestingLevel);
@@ -212,11 +221,18 @@ public:
         _ret += TypeWalker::getName(a_symbol, m_parentClassName);
         _ret += L"(";
 
-        // Named parameters
+        // Named parameters (searched on SymTagFunction itself)
         auto _namedArgCount = dumpFunctionArgsToString(a_symbol, _ret);
 
-        // If there are unnamed parameters, append from function type
-        if (!_funtionType) { /* skip */ }
+        // If named arg count doesn't match the actual function type arg count,
+        // fall back to the function type's args (which may have unnamed params).
+        // This fixes constructors/copy-constructors where params are on FunctionType
+        // but not directly on the Function symbol.
+        if (_funtionType && _namedArgCount != (int)_argCount)
+        {
+            if (_namedArgCount > 0) { _ret += L", "; }
+            _ret += TypeWalker::getFuncArgsString(_funtionType.get(), m_config.showNonScoped);
+        }
 
         _ret += L")";
 
@@ -235,6 +251,48 @@ public:
         registerTypeSource(a_symbol);
 
         return _ret;
+    }
+
+    /// Check if a function symbol is compiler-generated (starts with __).
+    static bool isCompilerGenerated(IDiaSymbol* a_symbol)
+    {
+        BSTR _bstrName = nullptr;
+        if (SUCCEEDED(a_symbol->get_name(&_bstrName)) && _bstrName)
+        {
+            std::wstring _name(_bstrName);
+            SysFreeString(_bstrName);
+            return _name.size() >= 2 && _name[0] == L'_' && _name[1] == L'_';
+        }
+        return false;
+    }
+
+    /// Emit access specifier label if access has changed.
+    /// Returns the new lastAccess value.
+    DWORD emitAccessLabel(std::wstring& a_out, IDiaSymbol* a_symbol, DWORD a_lastAccess, int a_nestingLevel) const
+    {
+        if (!m_config.showAccess) return a_lastAccess;
+
+        DWORD _access = 0;
+        if (SUCCEEDED(a_symbol->get_access(&_access)) && _access != a_lastAccess)
+        {
+            a_lastAccess = _access;
+            a_out += tab(a_nestingLevel - 1);
+            const wchar_t* _accessName = nullptr;
+            if (m_config.baseAccessType) { _access = m_config.baseAccessType; }
+            switch (_access)
+            {
+            case CV_private:   _accessName = L"private"; break;
+            case CV_protected: _accessName = L"protected"; break;
+            case CV_public:    _accessName = L"public"; break;
+            case 0:            _accessName = L"public"; break; // undefined !!!
+            }
+            if (_accessName)
+            {
+                a_out += _accessName;
+                a_out += L":\n";
+            }
+        }
+        return a_lastAccess;
     }
 
     std::wstring dumpMembers(IDiaSymbol* a_symbol, int a_nestingLevel)
@@ -276,6 +334,7 @@ public:
         }
 
         bool _hasContent = false;
+        DWORD _lastAccess = (DWORD)-1; // sentinel value - no previous access
 
         // Friends
         if (!_childContainers[6].empty() && m_config.showInfoComment)
@@ -284,6 +343,7 @@ public:
         }
         for (auto& _friend : _childContainers[6])
         {
+            _lastAccess = emitAccessLabel(_ret, _friend.get(), _lastAccess, a_nestingLevel);
             _ret += dumpFriend(_friend.get(), a_nestingLevel);
         }
 
@@ -294,6 +354,7 @@ public:
         }
         for (auto& _enum : _childContainers[3])
         {
+            _lastAccess = emitAccessLabel(_ret, _enum.get(), _lastAccess, a_nestingLevel);
             _ret += dumpEnum(_enum.get(), a_nestingLevel);
         }
 
@@ -304,6 +365,7 @@ public:
         }
         for (auto& _typedef : _childContainers[4])
         {
+            _lastAccess = emitAccessLabel(_ret, _typedef.get(), _lastAccess, a_nestingLevel);
             _ret += dumpTypedef(_typedef.get(), a_nestingLevel);
         }
 
@@ -314,16 +376,19 @@ public:
         }
         for (auto& _class : _childContainers[2])
         {
+            _lastAccess = emitAccessLabel(_ret, _class.get(), _lastAccess, a_nestingLevel);
             _ret += dumpClass(_class.get(), a_nestingLevel);
         }
 
-        // Virtual functions (sorted by vtable offset)
+        // Virtual functions (sorted by vtable offset, filter compiler-generated)
         std::vector<ComPtr<IDiaSymbol>> _vfuncs;
         for (auto& _func : _childContainers[1])
         {
             BOOL _isVirtual = FALSE;
             if (SUCCEEDED(_func->get_virtual(&_isVirtual)) && _isVirtual)
             {
+                if (m_config.hideCompilerGenerated && isCompilerGenerated(_func.get())) { continue; }
+                _lastAccess = emitAccessLabel(_ret, _func.get(), _lastAccess, a_nestingLevel);
                 _vfuncs.push_back(_func);
             }
         }
@@ -343,6 +408,7 @@ public:
         }
         for (auto& _vfunc : _vfuncs)
         {
+            _lastAccess = emitAccessLabel(_ret, _vfunc.get(), _lastAccess, a_nestingLevel);
             _ret += dumpFunction(_vfunc.get(), a_nestingLevel);
             if (m_config.showOffset)
             {
@@ -358,8 +424,6 @@ public:
         }
 
         // Fields (SymTagData, DataIsMember, sorted by offset)
-        // Track access specifiers per field and emit labels when they change
-        DWORD _lastAccess = (DWORD)-1; // sentinel value meaning "no previous access"
         std::vector<ComPtr<IDiaSymbol>> _fields;
         for (auto& _field : _childContainers[0])
         {
@@ -385,29 +449,7 @@ public:
         }
         for (auto& _field : _fields)
         {
-            // Emit access specifier label when showAccess is enabled and access changes
-            if (m_config.showAccess)
-            {
-                DWORD _access = 0;
-                if (SUCCEEDED(_field->get_access(&_access)) && _access != _lastAccess)
-                {
-                    _lastAccess = _access;
-                    _ret += tab(a_nestingLevel);
-                    const wchar_t* _accessName = nullptr;
-                    if (m_config.baseAccessType) { _access = m_config.baseAccessType; }
-                    switch (_access)
-                    {
-                    case CV_private:   _accessName = L"private"; break;
-                    case CV_protected: _accessName = L"protected"; break;
-                    case CV_public:    _accessName = L"public"; break;
-                    }
-                    if (_accessName)
-                    {
-                        _ret += _accessName;
-                        _ret += L":\n";
-                    }
-                }
-            }
+            _lastAccess = emitAccessLabel(_ret, _field.get(), _lastAccess, a_nestingLevel);
 
             _ret += tab(a_nestingLevel);
             try
@@ -436,12 +478,15 @@ public:
             _ret += L"\n";
         }
 
-        // Non-virtual functions
+        // Non-virtual functions (filter compiler-generated like __local_vftable_ctor_closure)
         bool _firstFunc = true;
         for (auto& _func : _childContainers[1])
         {
             BOOL _isVirtual = TRUE;
             if (FAILED(_func->get_virtual(&_isVirtual)) || _isVirtual) { continue; }
+
+            // Skip compiler-generated functions (e.g. __local_vftable_ctor_closure)
+            if (m_config.hideCompilerGenerated && isCompilerGenerated(_func.get())) { continue; }
 
             if (_firstFunc && m_config.showInfoComment)
             {
@@ -652,7 +697,7 @@ private:
 
     std::wstring baseTypeInheritance(IDiaSymbol* a_symbol) const
     {
-        if (!m_config.showInfoComment) return L"";
+        // if (!m_config.showInfoComment) return L"";
 
         auto _base = TypeWalker::getBaseTypeName(a_symbol);
         if (_base)
@@ -732,7 +777,7 @@ private:
             if (m_config.showEnumHex)
             {
                 wchar_t _buf[32];
-                swprintf_s(_buf, L" = 0x%X", v.llVal);
+                swprintf_s(_buf, L" = 0x%Xll", v.llVal);
                 _ret = _buf;
             }
             else

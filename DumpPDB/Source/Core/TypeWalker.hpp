@@ -7,6 +7,13 @@
 #include <Util/Com/ComPtr.hpp>
 #include <Core/TypeBuilder.hpp>
 
+/// Integer style for base type names.
+enum class IntStyle
+{
+    MsvcNative,  // __int32, __int64, etc.
+    Cstdint      // int32_t, int64_t, etc.
+};
+
 /// Walks IDiaSymbol trees and builds TypeBuilder chains.
 /// Separated from DiaManager: this class only knows about DIA symbols and TypeBuilder.
 /// It does NOT know about ConsoleManager, output, or formatting.
@@ -15,7 +22,7 @@ class TypeWalker
 {
 public:
     /// Get the base type name for a SymTagBaseType symbol.
-    static const wchar_t* getBaseTypeName(IDiaSymbol* a_symbol)
+    static const wchar_t* getBaseTypeName(IDiaSymbol* a_symbol, IntStyle a_intStyle = IntStyle::MsvcNative)
     {
         DWORD _baseType = 0;
         ULONGLONG _length = 0;
@@ -55,20 +62,20 @@ public:
             case btInt:
                 switch (_length)
                 {
-                case 1: return L"__int8";
-                case 2: return L"__int16";
-                case 4: return L"__int32";
-                case 8: return L"__int64";
+                case 1: return a_intStyle == IntStyle::Cstdint ? L"int8_t"  : L"__int8";
+                case 2: return a_intStyle == IntStyle::Cstdint ? L"int16_t" : L"__int16";
+                case 4: return a_intStyle == IntStyle::Cstdint ? L"int32_t" : L"__int32";
+                case 8: return a_intStyle == IntStyle::Cstdint ? L"int64_t" : L"__int64";
                 default: return L"int";
                 }
 
             case btUInt:
                 switch (_length)
                 {
-                case 1: return L"unsigned __int8";
-                case 2: return L"unsigned __int16";
-                case 4: return L"unsigned __int32";
-                case 8: return L"unsigned __int64";
+                case 1: return a_intStyle == IntStyle::Cstdint ? L"uint8_t"        : L"unsigned __int8";
+                case 2: return a_intStyle == IntStyle::Cstdint ? L"uint16_t"       : L"unsigned __int16";
+                case 4: return a_intStyle == IntStyle::Cstdint ? L"uint32_t"       : L"unsigned __int32";
+                case 8: return a_intStyle == IntStyle::Cstdint ? L"uint64_t"       : L"unsigned __int64";
                 default: return L"unsigned int";
                 }
 
@@ -259,6 +266,14 @@ public:
         return _result;
     }
 
+    /// Check if a name is a compiler-generated synthetic name (anonymous or hash-based).
+    static bool isSyntheticName(const std::wstring& a_name)
+    {
+        return a_name.empty()
+            || a_name == L"<unnamed-tag>"
+            || (a_name.size() > 0 && a_name[0] == L'$');
+    }
+
     /// Get the name of a symbol, optionally stripping the parent scope.
     /// @param a_symbol        The DIA symbol to get the name from.
     /// @param a_parentClassName If non-empty, scopes the lookup (used for children).
@@ -266,8 +281,11 @@ public:
     ///                         Controls the "showNonScoped" behavior: when true, only the
     ///                         short/non-scoped name is returned. When false, the full scoped
     ///                         name (e.g. "ParentClass::Child") is preserved.
-    static std::wstring getName(IDiaSymbol* a_symbol, const std::wstring& a_parentClassName = L"",
-                                 bool a_stripScope = true)
+    static std::wstring getName(
+        IDiaSymbol* a_symbol, 
+        const std::wstring& a_parentClassName = L"",
+        bool a_stripScope = true
+    )
     {
         BSTR _bstrName = nullptr;
         if (SUCCEEDED(a_symbol->get_name(&_bstrName)) && _bstrName)
@@ -275,10 +293,19 @@ public:
             std::wstring _ret(_bstrName);
             SysFreeString(_bstrName);
 
-            // Strip parent scope if requested (showNonScoped behavior)
-            if (a_stripScope && !a_parentClassName.empty() && _ret.find(a_parentClassName + L"::") == 0)
+            if (a_stripScope)
             {
-                _ret = _ret.substr(a_parentClassName.size() + 2);
+                bool _isCleanIdentifier = !_ret.empty() &&
+                    _ret.find_first_of(L"<>*&()[] ") == std::wstring::npos;
+
+                if (_isCleanIdentifier)
+                {
+                    auto _pos = _ret.rfind(L"::");
+                    if (_pos != std::wstring::npos)
+                    {
+                        _ret = _ret.substr(_pos + 2);
+                    }
+                }
             }
 
             return _ret;
@@ -286,23 +313,33 @@ public:
         return L"";
     }
 
-    /// Check if a symbol is an anonymous union/struct (empty name + UDT kind).
+    /// Check if a symbol is an anonymous union/struct (empty name + UDT kind)
+    /// or has a compiler-generated synthetic name.
     static bool isAnonymousUDT(IDiaSymbol* a_symbol)
     {
         BSTR _bstrName = nullptr;
-        bool _hasName = SUCCEEDED(a_symbol->get_name(&_bstrName)) && _bstrName && wcslen(_bstrName) > 0;
-        if (_bstrName) SysFreeString(_bstrName);
+        std::wstring _name;
+        bool _gotName = SUCCEEDED(a_symbol->get_name(&_bstrName)) && _bstrName;
+        if (_gotName)
+        {
+            _name = _bstrName;
+            SysFreeString(_bstrName);
+        }
 
-        if (_hasName) return false;
+        // Check for synthetic/anonymous names
+        if (!_gotName || isSyntheticName(_name))
+        {
+            DWORD _symTag = SymTagNull;
+            a_symbol->get_symTag((DWORD*)&_symTag);
 
-        DWORD _symTag = SymTagNull;
-        a_symbol->get_symTag((DWORD*)&_symTag);
+            if (_symTag != SymTagUDT) return false;
 
-        if (_symTag != SymTagUDT) return false;
+            DWORD _udtKind = 0;
+            a_symbol->get_udtKind(&_udtKind);
+            return (_udtKind == UdtStruct || _udtKind == UdtUnion);
+        }
 
-        DWORD _udtKind = 0;
-        a_symbol->get_udtKind(&_udtKind);
-        return (_udtKind == UdtStruct || _udtKind == UdtUnion);
+        return false;
     }
 
     /// Get the access specifier as a string.
