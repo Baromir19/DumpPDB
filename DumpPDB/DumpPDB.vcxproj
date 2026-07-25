@@ -184,6 +184,7 @@
     <ClInclude Include="Source\Core\TypeBuilder.hpp" />
     <ClInclude Include="Source\Core\TypeWalker.hpp" />
     <ClInclude Include="Source\Util\Com\ComPtr.hpp" />
+    <ClInclude Include="Source\Util\DiaSymbolInspector.hpp" />
     <ClInclude Include="Source\Util\Error\DumpError.hpp" />
     <ClInclude Include="Source\Application\Application.hpp" />
     <ClInclude Include="Source\Application\Command\CommandCompiland.hpp" />

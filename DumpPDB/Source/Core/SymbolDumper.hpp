@@ -8,29 +8,27 @@
 #include <dia2.h>
 
 #include <Util/Com/ComPtr.hpp>
+#include <Util\DiaSymbolInspector.hpp>
 #include <Core/TypeWalker.hpp>
 #include <Core/TypeBuilder.hpp>
 
 /// Configuration for dumping output.
 struct DumpConfig
 {
-    bool showSize        = true;
-    bool showOffset      = true;
-    bool showAccess      = true;
-    bool showInfoComment = false;
-    bool showNonScoped   = true;
-    bool showEnumHex     = false;
-    bool showTypeSource  = true;
-    bool curlyBraceNewline = true;
-    bool hideCompilerGenerated = true; // hide __local_vftable_ctor_closure, etc.
-    DWORD baseAccessType = 0; // override access type
-    IntStyle intStyle = IntStyle::Cstdint; // __int32 vs int32_t
+    bool m_showSize        = true;
+    bool m_showOffset      = true;
+    bool m_showAccess      = true;
+    bool m_showInfoComment = false;
+    bool m_showNonScoped   = true;
+    bool m_showEnumHex     = false;
+    bool m_showTypeSource  = true;
+    bool m_curlyBraceNewline = true;
+    bool m_hideCompilerGenerated = true; // hide __local_vftable_ctor_closure, etc.
+    DWORD m_baseAccessType = 0; // override access type
+    IntStyle m_intStyle = IntStyle::Cstdint; // __int32 vs int32_t
 };
 
 /// Produces formatted C++ declaration strings from DIA symbols.
-/// This class replaces the display* methods from the old DiaManager.
-/// It has NO dependency on ConsoleManager or any output mechanism.
-/// All output is returned as std::wstring.
 
 class SymbolDumper
 {
@@ -49,7 +47,7 @@ public:
     {
         std::wstring _ret;
         std::wstring _prevParent = m_parentClassName;
-        m_parentClassName = TypeWalker::getName(a_symbol, L"", m_config.showNonScoped);
+        m_parentClassName = TypeWalker::getName(a_symbol, L"", m_config.m_showNonScoped);
         
         _ret += tab(a_nestingLevel);
         _ret += sizeComment(a_symbol);
@@ -61,7 +59,7 @@ public:
         std::wstring _typeText;
         try
         {
-            _typeText = TypeWalker::resolveType(a_symbol, _prevParent, m_config.showNonScoped).build();
+            _typeText = TypeWalker::resolveType(a_symbol, _prevParent, m_config.m_showNonScoped).build();
         }
         catch (...)
         {
@@ -81,6 +79,25 @@ public:
         return _ret;
     }
 
+    /// Dump an anonymous UDT (union/struct) as an inline block, without a name.
+    /// Used when a data member's type is itself an anonymous union/struct
+    /// (e.g. compiler-generated $HASH types wrapping bitfields).
+    /// Emits "struct { ... };" or "union { ... };" with no variable name.
+    std::wstring dumpAnonymousUDT(IDiaSymbol* a_udtSymbol, int a_nestingLevel)
+    {
+        std::wstring _ret;
+
+        _ret += tab(a_nestingLevel);
+        _ret += modPrefix(a_udtSymbol);
+        _ret += udtKeyword(a_udtSymbol); // "struct " / "union " — no name follows
+
+        _ret += scopeBegin(a_nestingLevel);
+        _ret += dumpMembers(a_udtSymbol, a_nestingLevel + 1);
+        _ret += scopeEnd(a_nestingLevel);
+
+        return _ret;
+    }
+
     std::wstring dumpEnum(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
         std::wstring _ret;
@@ -93,7 +110,7 @@ public:
         _ret += L"enum";
 
         // Filter synthetic names like <unnamed-tag> or $HASH names
-        std::wstring _enumName = TypeWalker::getName(a_symbol, L"", m_config.showNonScoped);
+        std::wstring _enumName = TypeWalker::getName(a_symbol, L"", m_config.m_showNonScoped);
         if (!TypeWalker::isSyntheticName(_enumName))
         {
             _ret += L" ";
@@ -231,7 +248,7 @@ public:
         if (_funtionType && _namedArgCount != (int)_argCount)
         {
             if (_namedArgCount > 0) { _ret += L", "; }
-            _ret += TypeWalker::getFuncArgsString(_funtionType.get(), m_config.showNonScoped);
+            _ret += TypeWalker::getFuncArgsString(_funtionType.get(), m_config.m_showNonScoped);
         }
 
         _ret += L")";
@@ -270,7 +287,7 @@ public:
     /// Returns the new lastAccess value.
     DWORD emitAccessLabel(std::wstring& a_out, IDiaSymbol* a_symbol, DWORD a_lastAccess, int a_nestingLevel) const
     {
-        if (!m_config.showAccess) return a_lastAccess;
+        if (!m_config.m_showAccess) return a_lastAccess;
 
         DWORD _access = 0;
         if (SUCCEEDED(a_symbol->get_access(&_access)) && _access != a_lastAccess)
@@ -278,7 +295,7 @@ public:
             a_lastAccess = _access;
             a_out += tab(a_nestingLevel - 1);
             const wchar_t* _accessName = nullptr;
-            if (m_config.baseAccessType) { _access = m_config.baseAccessType; }
+            if (m_config.m_baseAccessType) { _access = m_config.m_baseAccessType; }
             switch (_access)
             {
             case CV_private:   _accessName = L"private"; break;
@@ -337,7 +354,7 @@ public:
         DWORD _lastAccess = (DWORD)-1; // sentinel value - no previous access
 
         // Friends
-        if (!_childContainers[6].empty() && m_config.showInfoComment)
+        if (!_childContainers[6].empty() && m_config.m_showInfoComment)
         {
             _hasContent = headerComment(_ret, L" FRIENDS:", a_nestingLevel, _hasContent);
         }
@@ -348,7 +365,7 @@ public:
         }
 
         // Enums
-        if (!_childContainers[3].empty() && m_config.showInfoComment)
+        if (!_childContainers[3].empty() && m_config.m_showInfoComment)
         {
             _hasContent = headerComment(_ret, L" ENUMS:", a_nestingLevel, _hasContent);
         }
@@ -359,7 +376,7 @@ public:
         }
 
         // Typedefs
-        if (!_childContainers[4].empty() && m_config.showInfoComment)
+        if (!_childContainers[4].empty() && m_config.m_showInfoComment)
         {
             _hasContent = headerComment(_ret, L" TYPEDEFS:", a_nestingLevel, _hasContent);
         }
@@ -370,7 +387,7 @@ public:
         }
 
         // Nested classes
-        if (!_childContainers[2].empty() && m_config.showInfoComment)
+        if (!_childContainers[2].empty() && m_config.m_showInfoComment)
         {
             _hasContent = headerComment(_ret, L" CLASSES:", a_nestingLevel, _hasContent);
         }
@@ -387,7 +404,7 @@ public:
             BOOL _isVirtual = FALSE;
             if (SUCCEEDED(_func->get_virtual(&_isVirtual)) && _isVirtual)
             {
-                if (m_config.hideCompilerGenerated && isCompilerGenerated(_func.get())) { continue; }
+                if (m_config.m_hideCompilerGenerated && isCompilerGenerated(_func.get())) { continue; }
                 _lastAccess = emitAccessLabel(_ret, _func.get(), _lastAccess, a_nestingLevel);
                 _vfuncs.push_back(_func);
             }
@@ -402,7 +419,7 @@ public:
                 return _offsetA < _offsetB;
             });
 
-        if (!_vfuncs.empty() && m_config.showInfoComment)
+        if (!_vfuncs.empty() && m_config.m_showInfoComment)
         {
             _hasContent = headerComment(_ret, L" VIRTUALS:", a_nestingLevel, _hasContent);
         }
@@ -410,7 +427,7 @@ public:
         {
             _lastAccess = emitAccessLabel(_ret, _vfunc.get(), _lastAccess, a_nestingLevel);
             _ret += dumpFunction(_vfunc.get(), a_nestingLevel);
-            if (m_config.showOffset)
+            if (m_config.m_showOffset)
             {
                 DWORD _offset = 0xFFFFFFFC;
                 if (SUCCEEDED(_vfunc->get_virtualBaseOffset(&_offset)) && _offset != 0xFFFFFFFC)
@@ -423,59 +440,164 @@ public:
             _ret += L"\n";
         }
 
-        // Fields (SymTagData, DataIsMember, sorted by offset)
+        // Fields (SymTagData, DataIsMember) — kept in DIA declaration order.
+        // DIA already returns members in declaration order via IDiaEnumSymbols::Next.
+        // We do NOT sort by offset — that destroys union layout.
+        //
+        // Union detection: if the next field's offset "resets" (is <= the max offset
+        // seen in the current branch), it means a new union alternative is starting.
+        // Each branch is rendered as an anonymous struct inside an anonymous union.
+        // A branch with a single field is rendered as a plain union member (no struct).
+        //
+        // Bitfields: consecutive bitfield members sharing the same offset are kept
+        // together in one branch naturally (their offset doesn't reset until the next
+        // non-bitfield or a genuinely new union alternative).
         std::vector<ComPtr<IDiaSymbol>> _fields;
         for (auto& _field : _childContainers[0])
         {
             DWORD _kind = 0;
             if (SUCCEEDED(_field->get_dataKind(&_kind)) && _kind == DataIsMember)
-            {
                 _fields.push_back(_field);
-            }
         }
 
-        std::sort(_fields.begin(), _fields.end(),
-            [](const ComPtr<IDiaSymbol>& a, const ComPtr<IDiaSymbol>& b)
-            {
-                LONG _offsetA = 0, _offsetB = 0;
-                a->get_offset(&_offsetA);
-                b->get_offset(&_offsetB);
-                return _offsetA < _offsetB;
-            });
-
-        if (!_fields.empty() && m_config.showInfoComment)
-        {
+        if (!_fields.empty() && m_config.m_showInfoComment)
             _hasContent = headerComment(_ret, L" FIELDS:", a_nestingLevel, _hasContent);
-        }
-        for (auto& _field : _fields)
+
+        // Split fields into branches.
+        // A new branch starts when offset resets back (new union alternative in DIA order).
+        struct FieldBranch { std::vector<ComPtr<IDiaSymbol>> fields; };
+        std::vector<FieldBranch> _branches;
         {
-            _lastAccess = emitAccessLabel(_ret, _field.get(), _lastAccess, a_nestingLevel);
+            FieldBranch _cur;
+            LONG _maxOffsetInBranch = LONG_MIN;
 
-            _ret += tab(a_nestingLevel);
-            try
+            for (auto& _field : _fields)
             {
-                _ret += TypeWalker::resolveType(_field.get(), m_parentClassName).build();
-            }
-            catch (...)
-            {
-                _ret += L"/* <error resolving field type> */";
-            }
-            _ret += L"; ";
+                LONG _off = 0;
+                _field->get_offset(&_off);
 
-            if (m_config.showOffset)
+                // Bitfields at the same offset as the previous field are NOT a new branch —
+                // they pack into the same storage unit. Check bitPosition to distinguish:
+                // if offset resets AND this is not a continuation bitfield → new branch.
+                bool _isBitfield = false;
+                DWORD _bitPos = 0;
+                {
+                    ULONGLONG _bitWidth = 0;
+                    if (SUCCEEDED(_field->get_bitPosition(&_bitPos)) &&
+                        SUCCEEDED(_field->get_length(&_bitWidth)) && _bitWidth < 64)
+                    {
+                        // DIA sets bitPosition > 0 for non-first bitfields in a pack,
+                        // but == 0 for the first one too. Use length < storage size as
+                        // the reliable indicator that this IS a bitfield at all.
+                        // A simpler reliable check: get_bitPosition succeeds and length != 8*sizeof(field).
+                        // We just use: if the field has a non-zero bitPosition it's mid-pack.
+                        _isBitfield = (_bitPos > 0);
+                    }
+                }
+
+                bool _isNewBranch = !_cur.fields.empty()
+                    && (_off <= _maxOffsetInBranch)
+                    && !_isBitfield;
+
+                if (_isNewBranch)
+                {
+                    _branches.push_back(std::move(_cur));
+                    _cur = {};
+                    _maxOffsetInBranch = LONG_MIN;
+                }
+
+                _cur.fields.push_back(_field);
+                if (_off > _maxOffsetInBranch)
+                    _maxOffsetInBranch = _off;
+            }
+
+            if (!_cur.fields.empty())
+                _branches.push_back(std::move(_cur));
+        }
+
+        // Helper lambda: emit one field (handles anonymous UDT inline blocks).
+        auto emitField = [&](const ComPtr<IDiaSymbol>& _field, int _level)
+        {
+            _lastAccess = emitAccessLabel(_ret, _field.get(), _lastAccess, _level);
+
+            // Check if this field's type is itself an anonymous union/struct ($HASH names).
+            ComPtr<IDiaSymbol> _fieldType;
+            bool _isAnonBlock = false;
+            if (SUCCEEDED(_field->get_type(&_fieldType)) && _fieldType)
+            {
+                DWORD _fieldTypeTag = SymTagNull;
+                _fieldType->get_symTag((DWORD*)&_fieldTypeTag);
+                if (_fieldTypeTag == SymTagUDT && TypeWalker::isAnonymousUDT(_fieldType.get()))
+                    _isAnonBlock = true;
+            }
+
+            if (_isAnonBlock)
+            {
+                // dumpAnonymousUDT already emits closing "};\n"
+                _ret += dumpAnonymousUDT(_fieldType.get(), _level);
+                return;
+            }
+
+            _ret += tab(_level);
+            try { _ret += TypeWalker::resolveType(_field.get(), m_parentClassName).build(); }
+            catch (...) { _ret += L"/* <error resolving field type> */"; }
+            _ret += L";";
+
+            if (m_config.m_showOffset)
             {
                 LONG _offset = 0xFFFFFFFC;
                 if (SUCCEEDED(_field->get_offset(&_offset)) && _offset != 0xFFFFFFFC)
                 {
                     wchar_t _buf[32];
                     swprintf_s(_buf, L"// 0x%X", _offset);
-                    // Padding to column 60
                     size_t _padNeeded = _ret.length() < 60 ? 60 - _ret.length() : 1;
                     _ret.append(_padNeeded, L' ');
                     _ret += _buf;
                 }
             }
             _ret += L"\n";
+        };
+
+        bool _hasOverlap = _branches.size() > 1;
+
+        if (!_hasOverlap)
+        {
+            // Plain struct — emit fields directly at current nesting level.
+            for (auto& _field : _branches[0].fields)
+                emitField(_field, a_nestingLevel);
+        }
+        else
+        {
+            // Overlapping offsets detected — reconstruct anonymous union with
+            // anonymous struct branches. Each branch with >1 field wraps in struct{}.
+            _ret += tab(a_nestingLevel);
+            _ret += L"union\n";
+            _ret += tab(a_nestingLevel);
+            _ret += L"{\n";
+
+            for (auto& _branch : _branches)
+            {
+                if (_branch.fields.size() == 1)
+                {
+                    // Single-field alternative — plain union member, no struct wrapper.
+                    emitField(_branch.fields[0], a_nestingLevel + 1);
+                }
+                else
+                {
+                    // Multi-field alternative — anonymous struct inside the union.
+                    _ret += tab(a_nestingLevel + 1);
+                    _ret += L"struct\n";
+                    _ret += tab(a_nestingLevel + 1);
+                    _ret += L"{\n";
+                    for (auto& _field : _branch.fields)
+                        emitField(_field, a_nestingLevel + 2);
+                    _ret += tab(a_nestingLevel + 1);
+                    _ret += L"};\n";
+                }
+            }
+
+            _ret += tab(a_nestingLevel);
+            _ret += L"};\n";
         }
 
         // Non-virtual functions (filter compiler-generated like __local_vftable_ctor_closure)
@@ -486,9 +608,9 @@ public:
             if (FAILED(_func->get_virtual(&_isVirtual)) || _isVirtual) { continue; }
 
             // Skip compiler-generated functions (e.g. __local_vftable_ctor_closure)
-            if (m_config.hideCompilerGenerated && isCompilerGenerated(_func.get())) { continue; }
+            if (m_config.m_hideCompilerGenerated && isCompilerGenerated(_func.get())) { continue; }
 
-            if (_firstFunc && m_config.showInfoComment)
+            if (_firstFunc && m_config.m_showInfoComment)
             {
                 _hasContent = headerComment(_ret, L" FUNCS:", a_nestingLevel, _hasContent);
                 _firstFunc = false;
@@ -505,7 +627,7 @@ public:
             DWORD _kind = 0;
             if (FAILED(_field->get_dataKind(&_kind)) || _kind == DataIsMember) { continue; }
 
-            if (_firstStatic && m_config.showInfoComment)
+            if (_firstStatic && m_config.m_showInfoComment)
             {
                 _hasContent = headerComment(_ret, L" OTHER MEMBERS:", a_nestingLevel, _hasContent);
                 _firstStatic = false;
@@ -537,7 +659,7 @@ public:
     /// Register source file info for a symbol (stores for later output).
     void registerTypeSource(IDiaSymbol* a_symbol)
     {
-        if (!m_config.showTypeSource) return;
+        if (!m_config.m_showTypeSource) return;
 
         ComPtr<IDiaEnumLineNumbers> _enumLines;
         ComPtr<IDiaSourceFile> _sourceFile;
@@ -623,7 +745,7 @@ private:
 
     std::wstring sizeComment(IDiaSymbol* a_symbol) const
     {
-        if (!m_config.showSize) return L"";
+        if (!m_config.m_showSize) return L"";
 
         ULONGLONG _len;
         if (SUCCEEDED(a_symbol->get_length(&_len)))
@@ -686,7 +808,7 @@ private:
                 _ret += _isBegin ? L" : " : L", ";
                 _isBegin = false;
 
-                auto _access = TypeWalker::getAccessName(_baseSymbol.get(), m_config.baseAccessType);
+                auto _access = TypeWalker::getAccessName(_baseSymbol.get(), m_config.m_baseAccessType);
                 if (_access) { _ret += _access; _ret += L" "; }
 
                 _ret += TypeWalker::getName(_baseSymbol.get());
@@ -697,9 +819,9 @@ private:
 
     std::wstring baseTypeInheritance(IDiaSymbol* a_symbol) const
     {
-        // if (!m_config.showInfoComment) return L"";
+        // if (!m_config.m_showInfoComment) return L"";
 
-        auto _base = TypeWalker::getBaseTypeName(a_symbol);
+        auto _base = TypeWalker::getBaseTypeName(a_symbol, m_config.m_intStyle);
         if (_base)
         {
             std::wstring _ret = L" : ";
@@ -712,7 +834,7 @@ private:
     std::wstring scopeBegin(int a_nestingLevel)
     {
         std::wstring _ret;
-        if (m_config.curlyBraceNewline)
+        if (m_config.m_curlyBraceNewline)
         {
             _ret += L"\n";
             _ret += tab(a_nestingLevel);
@@ -774,10 +896,10 @@ private:
         if (SUCCEEDED(a_symbol->get_value(&v)))
         {
             std::wstring _ret;
-            if (m_config.showEnumHex)
+            if (m_config.m_showEnumHex)
             {
                 wchar_t _buf[32];
-                swprintf_s(_buf, L" = 0x%Xll", v.llVal);
+                swprintf_s(_buf, L" = 0x%llX", v.llVal); 
                 _ret = _buf;
             }
             else

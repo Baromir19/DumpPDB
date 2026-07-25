@@ -14,10 +14,6 @@
 /// solving the lifetime problem from Application::initialize where DiaSession
 /// was a local variable destroyed at the end of the if-block.
 ///
-/// This is the replacement for the old DiaManager singleton.
-/// Unlike DiaManager, the SymbolDumper has NO dependency on ConsoleManager.
-/// Printing is the responsibility of command implementations, not this class.
-///
 /// Usage (Variant A - Singleton):
 ///   if (!PdbToolset::instance().initialize(pdbPath)) { /* error */ }
 ///   auto text = PdbToolset::instance().dumpTypeByName(L"MyClass", false);
@@ -58,7 +54,7 @@ public:
 
     /// Dump all types matching the given name.
     /// Searches by exact name first (all tags), then falls back to namespace prefix search
-    /// if no exact matches found (mirroring old DiaManager::displayType behavior).
+    /// if no exact matches found
     std::wstring dumpTypeByName(const wchar_t* a_name, bool a_caseSensitive)
     {
         std::wstring _out;

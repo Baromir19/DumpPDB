@@ -7,9 +7,6 @@
 #include <Util/Com/ComPtr.hpp>
 
 /// Searches for DIA symbols by name within a given scope.
-/// Replaces the name-based search functionality from the old DiaManager
-/// (displayClass(name), displayEnum(name), displayTypedef(name), displayType(name), displayTypePrefixed).
-/// This class has NO dependency on ConsoleManager or any output mechanism.
 
 class SymbolFinder
 {

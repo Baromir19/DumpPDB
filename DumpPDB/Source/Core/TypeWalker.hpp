@@ -15,8 +15,6 @@ enum class IntStyle
 };
 
 /// Walks IDiaSymbol trees and builds TypeBuilder chains.
-/// Separated from DiaManager: this class only knows about DIA symbols and TypeBuilder.
-/// It does NOT know about ConsoleManager, output, or formatting.
 
 class TypeWalker
 {
@@ -72,10 +70,10 @@ public:
             case btUInt:
                 switch (_length)
                 {
-                case 1: return a_intStyle == IntStyle::Cstdint ? L"uint8_t"        : L"unsigned __int8";
-                case 2: return a_intStyle == IntStyle::Cstdint ? L"uint16_t"       : L"unsigned __int16";
-                case 4: return a_intStyle == IntStyle::Cstdint ? L"uint32_t"       : L"unsigned __int32";
-                case 8: return a_intStyle == IntStyle::Cstdint ? L"uint64_t"       : L"unsigned __int64";
+                case 1: return a_intStyle == IntStyle::Cstdint ? L"uint8_t"  : L"unsigned __int8";
+                case 2: return a_intStyle == IntStyle::Cstdint ? L"uint16_t" : L"unsigned __int16";
+                case 4: return a_intStyle == IntStyle::Cstdint ? L"uint32_t" : L"unsigned __int32";
+                case 8: return a_intStyle == IntStyle::Cstdint ? L"uint64_t" : L"unsigned __int64";
                 default: return L"unsigned int";
                 }
 
@@ -111,9 +109,12 @@ public:
     /// Build a TypeBuilder chain by recursively walking the DIA type tree.
     /// Returns a TypeBuilder populated with the full type chain.
     /// @param a_stripScope Controls whether parent scope prefix is stripped from names
-    ///                     (corresponds to DumpConfig::showNonScoped).
-    static TypeBuilder resolveType(IDiaSymbol* a_symbol, const std::wstring& a_parentClassName = L"",
-                                    bool a_stripScope = true)
+    ///                     (corresponds to DumpConfig::m_showNonScoped).
+    static TypeBuilder resolveType(
+        IDiaSymbol* a_symbol, 
+        const std::wstring& a_parentClassName = L"",
+        bool a_stripScope = true
+    )
     {
         TypeBuilder _builder;
 
@@ -278,7 +279,7 @@ public:
     /// @param a_symbol        The DIA symbol to get the name from.
     /// @param a_parentClassName If non-empty, scopes the lookup (used for children).
     /// @param a_stripScope    If true (default), strips the parent scope prefix from the name.
-    ///                         Controls the "showNonScoped" behavior: when true, only the
+    ///                         Controls the "m_showNonScoped" behavior: when true, only the
     ///                         short/non-scoped name is returned. When false, the full scoped
     ///                         name (e.g. "ParentClass::Child") is preserved.
     static std::wstring getName(
