@@ -3,6 +3,7 @@
 #include <Util\Container\Singleton.hpp>
 
 #include <Application\IO\ConsoleManager.hpp>
+#include <Application\Save\IniSerializer.hpp>
 
 #include <Application\Command\ICommand.hpp>
 #include <Application\Command\CommandType.hpp>
@@ -19,12 +20,12 @@ protected:
 	std::vector<ICommand*> m_commands;
 
 public:
-	bool initialize()
+	bool initialize(const CommandConfig& a_config, const DumpConfig& a_dumpConfig)
 	{
 		static bool initState = false;
 		if (initState) return true;
 
-		m_commands.push_back(new CommandType(true)); /// NOTE: USE CLIPBOARD - SETTINGS DEPENDENCY INJECTION ????
+		m_commands.push_back(new CommandType(a_config.m_useClipboard, a_dumpConfig));
 		m_commands.push_back(new CommandHelp());
 		m_commands.push_back(new CommandCompiland());
 		m_commands.push_back(new CommandSource());

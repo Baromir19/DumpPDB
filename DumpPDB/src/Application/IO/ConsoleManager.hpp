@@ -188,6 +188,12 @@ public:
 		return nullptr;
 	}
 
+	int getCommandArgumentCount() const
+	{
+		const int total = static_cast<int>(m_arguments.size());
+		return total > s_cmdArgsOffset ? total - s_cmdArgsOffset : 0;
+	}
+
 	/// Line Tools
 
 	static void printLine()

@@ -3,6 +3,7 @@
 #include <Core\PdbToolset.hpp>
 
 #include <Application\Command\CommandManager.hpp>
+#include <Application\Save\SaveManager.hpp>
 #include <Application\Debug\DebugManager.hpp>
 #include <Application\IO\ConsoleManager.hpp>
 
@@ -20,12 +21,20 @@ public:
         static bool initState = false;
         if (initState) return true;
         
+        if (!SaveManager::instance().initialize())
+        {
+            ConsoleManager::printError(L"Save system is not initialized!\n");
+        }
+
         if (!ConsoleManager::instance().initialize(a_argc, a_argv))
         {
             ConsoleManager::printError(L"Console is not initialized!\n");
         }
 
-        if (!CommandManager::instance().initialize())
+        if (!CommandManager::instance().initialize(
+                SaveManager::instance().commandConfig(), 
+                SaveManager::instance().dumpConfig()
+        ))
         {
             ConsoleManager::printError(L"Commands is not initialized!\n");
         }

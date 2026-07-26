@@ -14,6 +14,12 @@ enum class IntStyle
     Cstdint      // int32_t, int64_t, etc.
 };
 
+inline bool isValidIntStyle(long a_value) noexcept
+{
+    return a_value >= static_cast<long>(IntStyle::MsvcNative)
+        && a_value <= static_cast<long>(IntStyle::Cstdint);
+}
+
 /// Walks IDiaSymbol trees and builds TypeBuilder chains.
 
 class TypeWalker
@@ -113,7 +119,8 @@ public:
     static TypeBuilder resolveType(
         IDiaSymbol* a_symbol, 
         const std::wstring& a_parentClassName = L"",
-        bool a_stripScope = true
+        bool a_stripScope = true,
+        IntStyle a_intStyle = IntStyle::MsvcNative
     )
     {
         TypeBuilder builder;
@@ -148,7 +155,12 @@ public:
                 if (isVolatile) builder.volatileQual();
             }
 
-            TypeBuilder subBuilder = resolveType(subType.get(), a_parentClassName, a_stripScope);
+            TypeBuilder subBuilder = resolveType(
+                subType.get(), 
+                a_parentClassName, 
+                a_stripScope,
+                a_intStyle
+            );
             // Merge sub-builder into this one
             builder = std::move(subBuilder);
         }
@@ -163,7 +175,7 @@ public:
         switch (symTag)
         {
         case SymTagBaseType:
-            if (auto baseName = getBaseTypeName(a_symbol))
+            if (auto baseName = getBaseTypeName(a_symbol, a_intStyle))
             {
                 builder.base(baseName);
             }
@@ -242,7 +254,11 @@ public:
     }
 
     /// Get function arguments as a comma-separated string.
-    static std::wstring getFuncArgsString(IDiaSymbol* a_symbol, bool a_stripScope = true)
+    static std::wstring getFuncArgsString(
+        IDiaSymbol* a_symbol, 
+        bool a_stripScope = true, 
+        IntStyle a_intStyle = IntStyle::MsvcNative
+    )
     {
         std::wstring result;
         bool isFirst = true;
@@ -258,7 +274,7 @@ public:
                 if (SUCCEEDED(child->get_type(&_argType)) && _argType)
                 {
                     if (!isFirst) { result += L", "; }
-                    result += resolveType(_argType.get(), L"", a_stripScope).build();
+                    result += resolveType(_argType.get(), L"", a_stripScope, a_intStyle).build();
                     isFirst = false;
                 }
             }

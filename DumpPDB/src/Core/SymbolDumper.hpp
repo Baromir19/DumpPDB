@@ -58,7 +58,7 @@ public:
         std::wstring typeText;
         try
         {
-            typeText = TypeWalker::resolveType(a_symbol, prevParent, m_config.m_showNonScoped).build();
+            typeText = TypeWalker::resolveType(a_symbol, prevParent, m_config.m_showNonScoped, m_config.m_intStyle).build();
         }
         catch (...)
         {
@@ -128,7 +128,7 @@ public:
             {
                 ret += tab(a_nestingLevel + 1);
                 ret += TypeWalker::getName(member.get());
-                ret += enumMemberValue(member.get());
+                ret += constantValueSuffix(member.get());
                 ret += L",\n";
             }
         }
@@ -156,7 +156,12 @@ public:
             if (SUCCEEDED(a_symbol->get_type(&underlyingType)) && underlyingType)
             {
                 // Build the underlying type's full declaration
-                TypeBuilder builder = TypeWalker::resolveType(underlyingType.get(), m_parentClassName);
+                TypeBuilder builder = TypeWalker::resolveType(
+                    underlyingType.get(), 
+                    m_parentClassName, 
+                    true, 
+                    m_config.m_intStyle
+                );
                 // Set the typedef name as the "variable name" in the declaration
                 builder.name(typedefName);
                 typeText = builder.build();
@@ -186,7 +191,12 @@ public:
         std::wstring typeText;
         try
         {
-            typeText = TypeWalker::resolveType(a_symbol, m_parentClassName).build();
+            typeText = TypeWalker::resolveType(
+                a_symbol, 
+                m_parentClassName, 
+                true, 
+                m_config.m_intStyle
+            ).build();
         }
         catch (...)
         {
@@ -215,7 +225,13 @@ public:
         }
 
         // Return type
-        if (funtionType)
+        std::wstring funcName = TypeWalker::getName(a_symbol, m_parentClassName);
+        BOOL isCtor = FALSE;
+        a_symbol->get_constructor(&isCtor);
+        bool isDtor = !funcName.empty() && funcName[0] == L'~';
+
+        // Return type — skipped for constructors/destructors
+        if (!isCtor && !isDtor && funtionType)
         {
             ComPtr<IDiaSymbol> retType;
             if (SUCCEEDED(funtionType->get_type(&retType)) && retType)
@@ -223,7 +239,12 @@ public:
                 std::wstring retTypeStr;
                 try
                 {
-                    retTypeStr = TypeWalker::resolveType(retType.get()).build();
+                    retTypeStr = TypeWalker::resolveType(
+                        retType.get(), 
+                        L"", 
+                        m_config.m_showNonScoped, 
+                        m_config.m_intStyle
+                    ).build();
                 }
                 catch (...)
                 {
@@ -234,7 +255,7 @@ public:
             }
         }
 
-        ret += TypeWalker::getName(a_symbol, m_parentClassName);
+        ret += funcName;
         ret += L"(";
 
         // Named parameters (searched on SymTagFunction itself)
@@ -247,7 +268,7 @@ public:
         if (funtionType && namedArgCount != (int)argCount)
         {
             if (namedArgCount > 0) { ret += L", "; }
-            ret += TypeWalker::getFuncArgsString(funtionType.get(), m_config.m_showNonScoped);
+            ret += TypeWalker::getFuncArgsString(funtionType.get(), m_config.m_showNonScoped, m_config.m_intStyle);
         }
 
         ret += L")";
@@ -262,6 +283,25 @@ public:
             }
         }
 
+        BOOL isVirtual = FALSE;
+        a_symbol->get_virtual(&isVirtual);
+        if (isVirtual)
+        {
+            BOOL isIntro = TRUE;  // TRUE = new, FALSE = old one
+            a_symbol->get_intro(&isIntro);
+
+            BOOL isSealed = FALSE;
+            a_symbol->get_sealed(&isSealed);
+
+            if (!isIntro) { ret += L" override"; }
+            if (isSealed) { ret += L" final"; }
+
+            // pure virtual
+            BOOL isPure = FALSE;
+            a_symbol->get_pure(&isPure);
+            if (isPure) { ret += L" = 0"; }
+        }
+
         ret += L";";
 
         registerTypeSource(a_symbol);
@@ -272,13 +312,18 @@ public:
     /// Check if a function symbol is compiler-generated (starts with __).
     static bool isCompilerGenerated(IDiaSymbol* a_symbol)
     {
+        BOOL isGen = FALSE;
+        if (SUCCEEDED(a_symbol->get_compilerGenerated(&isGen)) && isGen)
+            return true;
+
+        /*
         BSTR bstrName = nullptr;
         if (SUCCEEDED(a_symbol->get_name(&bstrName)) && bstrName)
         {
             std::wstring name(bstrName);
             SysFreeString(bstrName);
             return name.size() >= 2 && name[0] == L'_' && name[1] == L'_';
-        }
+        }*/
         return false;
     }
 
@@ -404,7 +449,7 @@ public:
             if (SUCCEEDED(func->get_virtual(&isVirtual)) && isVirtual)
             {
                 if (m_config.m_hideCompilerGenerated && isCompilerGenerated(func.get())) { continue; }
-                lastAccess = emitAccessLabel(ret, func.get(), lastAccess, a_nestingLevel);
+                // lastAccess = emitAccessLabel(ret, func.get(), lastAccess, a_nestingLevel);
                 vfuncs.push_back(func);
             }
         }
@@ -439,18 +484,7 @@ public:
             ret += L"\n";
         }
 
-        // Fields (SymTagData, DataIsMember) — kept in DIA declaration order.
-        // DIA already returns members in declaration order via IDiaEnumSymbols::Next.
-        // We do NOT sort by offset — that destroys union layout.
-        //
-        // Union detection: if the next field's offset "resets" (is <= the max offset
-        // seen in the current branch), it means a new union alternative is starting.
-        // Each branch is rendered as an anonymous struct inside an anonymous union.
-        // A branch with a single field is rendered as a plain union member (no struct).
-        //
-        // Bitfields: consecutive bitfield members sharing the same offset are kept
-        // together in one branch naturally (their offset doesn't reset until the next
-        // non-bitfield or a genuinely new union alternative).
+        // Fields (SymTagData, DataIsMember)
         std::vector<ComPtr<IDiaSymbol>> fields;
         for (auto& field : childContainers[0])
         {
@@ -462,8 +496,6 @@ public:
         if (!fields.empty() && m_config.m_showInfoComment)
             hasContent = headerComment(ret, L" FIELDS:", a_nestingLevel, hasContent);
 
-        // Split fields into branches.
-        // A new branch starts when offset resets back (new union alternative in DIA order).
         struct FieldBranch { std::vector<ComPtr<IDiaSymbol>> fields; };
         std::vector<FieldBranch> branches;
         {
@@ -475,9 +507,6 @@ public:
                 LONG off = 0;
                 field->get_offset(&off);
 
-                // Bitfields at the same offset as the previous field are NOT a new branch —
-                // they pack into the same storage unit. Check bitPosition to distinguish:
-                // if offset resets AND this is not a continuation bitfield → new branch.
                 bool isBitfield = false;
                 DWORD bitPos = 0;
                 {
@@ -485,11 +514,6 @@ public:
                     if (SUCCEEDED(field->get_bitPosition(&bitPos)) &&
                         SUCCEEDED(field->get_length(&bitWidth)) && bitWidth < 64)
                     {
-                        // DIA sets bitPosition > 0 for non-first bitfields in a pack,
-                        // but == 0 for the first one too. Use length < storage size as
-                        // the reliable indicator that this IS a bitfield at all.
-                        // A simpler reliable check: getbitPosition succeeds and length != 8*sizeof(field).
-                        // We just use: if the field has a non-zero bitPosition it's mid-pack.
                         isBitfield = (bitPos > 0);
                     }
                 }
@@ -538,7 +562,7 @@ public:
             }
 
             ret += tab(_level);
-            try { ret += TypeWalker::resolveType(field.get(), m_parentClassName).build(); }
+            try { ret += TypeWalker::resolveType(field.get(), m_parentClassName, true, m_config.m_intStyle).build(); }
             catch (...) { ret += L"/* <error resolving field type> */"; }
             ret += L";";
 
@@ -617,6 +641,7 @@ public:
                 firstFunc = false;
             }
 
+            lastAccess = emitAccessLabel(ret, func.get(), lastAccess, a_nestingLevel);
             ret += dumpFunction(func.get(), a_nestingLevel);
             ret += L"\n";
         }
@@ -634,6 +659,8 @@ public:
                 firstStatic = false;
             }
 
+            lastAccess = emitAccessLabel(ret, field.get(), lastAccess, a_nestingLevel);
+
             ret += tab(a_nestingLevel);
 
             switch (kind)
@@ -645,12 +672,20 @@ public:
 
             try
             {
-                ret += TypeWalker::resolveType(field.get(), m_parentClassName).build();
+                ret += TypeWalker::resolveType(
+                    field.get(), 
+                    m_parentClassName, 
+                    true,
+                    m_config.m_intStyle
+                ).build();
             }
             catch (...)
             {
                 ret += L"/* <error> */";
             }
+
+            // ret += constantValueSuffix(field.get());
+
             ret += L";\n";
         }
 
@@ -724,7 +759,7 @@ public:
             case SymTagData:
             {
                 std::wstring typeText;
-                try { typeText = TypeWalker::resolveType(a_symbol).build(); }
+                try { typeText = TypeWalker::resolveType(a_symbol, L"", true, m_config.m_intStyle).build(); }
                 catch (...) { typeText = L"/* <error> */"; }
                 aoutput += typeText;
                 break;
@@ -812,6 +847,10 @@ private:
                 auto access = TypeWalker::getAccessName(baseSymbol.get(), m_config.m_baseAccessType);
                 if (access) { ret += access; ret += L" "; }
 
+                BOOL isVirtualBase = FALSE;
+                baseSymbol->get_virtualBaseClass(&isVirtualBase); // get_indirectVirtualBaseClass
+                if (isVirtualBase) ret += L"virtual ";
+
                 ret += TypeWalker::getName(baseSymbol.get());
             }
         }
@@ -875,7 +914,7 @@ private:
 
                     try
                     {
-                        aout += TypeWalker::resolveType(param.get(), m_parentClassName).build();
+                        aout += TypeWalker::resolveType(param.get(), m_parentClassName, true, m_config.m_intStyle).build();
                     }
                     catch (...)
                     {
@@ -890,7 +929,7 @@ private:
         return count;
     }
 
-    std::wstring enumMemberValue(IDiaSymbol* a_symbol) const
+    std::wstring constantValueSuffix(IDiaSymbol* a_symbol) const
     {
         VARIANT v;
         VariantInit(&v);
@@ -913,7 +952,10 @@ private:
                 case VT_UI2: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.uiVal);  ret = buf; break; }
                 case VT_I1:  { wchar_t buf[32]; swprintf_s(buf, L" = %d", v.bVal);   ret = buf; break; }
                 case VT_UI1: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.bVal);   ret = buf; break; }
-                default: break;
+                case VT_R4:  { wchar_t buf[32]; swprintf_s(buf, L" = %ff", v.fltVal); ret = buf; break; }
+                case VT_R8:  { wchar_t buf[32]; swprintf_s(buf, L" = %f", v.dblVal); ret = buf; break; }
+                case VT_BSTR: if (v.bstrVal) { ret = L" = L\""; ret += v.bstrVal; ret += L"\""; } break;
+                default: /*printf("VALUE: Undefined type : %d", v.vt);*/ break;
                 }
             }
             VariantClear(&v);

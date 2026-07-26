@@ -9,12 +9,14 @@ class CommandType : public ICommand
 {
 private:
 	bool m_useClipboard = false;
+	DumpConfig m_dumpConfig;
 
 public:
-	CommandType(bool a_useClipboard) 
+	CommandType(bool a_useClipboard, const DumpConfig& config) 
 		: ICommand(1, COMMAND_EXECUTE) 
 	{ 
 		m_useClipboard = a_useClipboard;
+		m_dumpConfig = config;
 		m_names.push_back(L"-type"); 
 	}
 
@@ -30,7 +32,11 @@ public:
 			return false;
 		}
 
-		auto text = PdbToolset::instance().dumpTypeByName(a_commandArgs[0].c_str(), false);
+		auto& toolset = PdbToolset::instance();
+
+		toolset.dumper().setConfig(m_dumpConfig);
+
+		auto text = toolset.dumpTypeByName(a_commandArgs[0].c_str(), false);
 		if (text.empty()) return false;
 
 		if (m_useClipboard && !ClipboardManager::copy(text))
