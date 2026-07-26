@@ -28,31 +28,55 @@ TEST(TypeBuilderTest, Reference)
     EXPECT_EQ(builder.build(), L"int&");
 }
 
+TEST(TypeBuilderTest, ConstBaseType)
+{
+    // const int
+    TypeBuilder builder;
+    builder.base(L"int")
+           .constQual();
+    EXPECT_EQ(builder.build(), L"const int");
+}
+
 TEST(TypeBuilderTest, ConstPointer)
 {
+    // int* const  — const pointer to int
     TypeBuilder builder;
     builder.base(L"int")
            .pointer()
-           .constQual();
-    EXPECT_EQ(builder.build(), L"const int*");
+           .constPointer();
+    EXPECT_EQ(builder.build(), L"int* const");
 }
 
 TEST(TypeBuilderTest, PointerToConst)
 {
+    // const int*  — pointer to const int
     TypeBuilder builder;
     builder.base(L"int")
-           .constPointed()
+           .constQual()
            .pointer();
     EXPECT_EQ(builder.build(), L"const int*");
 }
 
-TEST(TypeBuilderTest, PointerToPointer)
+TEST(TypeBuilderTest, ConstPointerToConst)
 {
+    // const int* const  — const pointer to const int
     TypeBuilder builder;
     builder.base(L"int")
+           .constQual()
            .pointer()
-           .pointer();
-    EXPECT_EQ(builder.build(), L"int**");
+           .constPointer();
+    EXPECT_EQ(builder.build(), L"const int* const");
+}
+
+TEST(TypeBuilderTest, ConstReference)
+{
+    // const int&  — reference to const int
+    // (const on the referenced type, not the reference itself)
+    TypeBuilder builder;
+    builder.base(L"int")
+           .constQual()
+           .reference();
+    EXPECT_EQ(builder.build(), L"const int&");
 }
 
 TEST(TypeBuilderTest, ReferenceToPointer)
@@ -108,14 +132,15 @@ TEST(TypeBuilderTest, FunctionReturningPointer)
     EXPECT_EQ(builder.build(), L"int*(float)");
 }
 
-TEST(TypeBuilderTest, ConstMethodPointer)
+TEST(TypeBuilderTest, ConstQualifierOnPointer)
 {
+    // const on the pointer level: void (*const)(int)
     TypeBuilder builder;
     builder.base(L"void")
            .function(L"int")
            .pointer()
-           .constQual();
-    EXPECT_EQ(builder.build(), L"const void (*)(int)");
+           .constPointer();
+    EXPECT_EQ(builder.build(), L"void (* const)(int)");
 }
 
 TEST(TypeBuilderTest, BitField)
@@ -164,15 +189,13 @@ TEST(TypeBuilderTest, Reset)
     EXPECT_EQ(builder.build(), L"");
 }
 
-TEST(TypeBuilderTest, ComplexDeclaration)
+TEST(TypeBuilderTest, PointerToPointerToConst)
 {
-    // const int** — pointer to pointer to const int
-    // (constQual after pointer applies to pointed-to type)
+    // pointer to pointer to const int
     TypeBuilder builder;
     builder.base(L"int")
            .constQual()
            .pointer()
-           .constQual()
            .pointer();
     EXPECT_EQ(builder.build(), L"const int**");
 }
@@ -201,4 +224,39 @@ TEST(TypeBuilderTest, MultiDimensionalArray)
            .array(3)
            .array(4);
     EXPECT_EQ(builder.build(), L"int[3][4]");
+}
+
+TEST(TypeBuilderTest, ConstPointerToConstPointerToConst)
+{
+    // const int* const* const
+    TypeBuilder builder;
+    builder.base(L"int")
+           .constQual()       // const int (base)
+           .pointer()          // * (pointer level 1, pointed-to is const int)
+           .constPointer()     // * const (pointer level 1 itself is const)
+           .pointer()          // * (pointer level 2, pointed-to is const int* const)
+           .constPointer();    // * const (pointer level 2 itself is const)
+    EXPECT_EQ(builder.build(), L"const int* const* const");
+}
+
+TEST(TypeBuilderTest, VolatilePointer)
+{
+    // int* volatile
+    TypeBuilder builder;
+    builder.base(L"int")
+           .pointer()
+           .volatilePointer();
+    EXPECT_EQ(builder.build(), L"int* volatile");
+}
+
+TEST(TypeBuilderTest, ConstVolatilePointer)
+{
+    // const int* const volatile
+    TypeBuilder builder;
+    builder.base(L"int")
+           .constQual()
+           .pointer()
+           .constPointer()
+           .volatilePointer();
+    EXPECT_EQ(builder.build(), L"const int* const volatile");
 }

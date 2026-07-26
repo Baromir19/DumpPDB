@@ -33,9 +33,10 @@ struct ScopeContext
 
     void pop()
     {
-        if (!m_parts.empty())
-            m_parts.pop_back();
+        if (!m_parts.empty()) { m_parts.pop_back(); }
     }
+
+    std::wstring top() const { return m_parts.empty() ? L"" : m_parts.back(); }
 
     std::wstring full() const
     {
@@ -177,60 +178,54 @@ public:
         // Get name (strip scope based on a_stripScope parameter)
         std::wstring name = getName(a_symbol, a_scope, a_stripScope);
 
-        // Get sub-type (recursive)
+        // Recurse into sub-type first (inner types are built first)
         ComPtr<IDiaSymbol> subType;
         if (SUCCEEDED(a_symbol->get_type(&subType)))
         {
-            // For pointer/array, const/volatile apply to the pointed-to type
-            if (symTag == SymTagPointerType || symTag == SymTagArrayType)
-            {
-                if (isConst) builder.constPointed();
-                // Don't set const/volatile on the pointer itself
-            }
-            else
-            {
-                if (isConst) builder.constQual();
-                if (isVolatile) builder.volatileQual();
-            }
-
             TypeBuilder subBuilder = resolveType(
                 subType.get(), 
                 a_scope, 
                 a_stripScope,
                 a_intStyle
             );
-            // Merge sub-builder into this one
+            // Merge sub-builder into this one (inner type becomes the builder state)
             builder = std::move(subBuilder);
         }
-        else
-        {
-            // No sub-type: this is the base
-            if (isConst) builder.constQual();
-            if (isVolatile) builder.volatileQual();
-        }
 
-        // Apply this symbol's modifier
+        // Apply this symbol's modifier and qualifiers.
+        // Since we recurse first, we build from inner to outer:
+        //   recursion builds the inner type, then we add the outer modifier.
         switch (symTag)
         {
         case SymTagBaseType:
+        {
             if (auto baseName = getBaseTypeName(a_symbol, a_intStyle))
             {
                 builder.base(baseName);
             }
+
+            // const/volatile on BaseType applies to the base type itself
+            // e.g. const int, volatile int
+            if (isConst)
+                builder.constQual();
+            if (isVolatile)
+                builder.volatileQual();
             break;
+        }
 
         case SymTagPointerType:
         {
             BOOL isRef = FALSE;
+            BOOL isRVRef = FALSE;
             a_symbol->get_reference(&isRef);
-            if (isRef)
-            {
-                builder.reference();
-            }
-            else
-            {
-                builder.pointer();
-            }
+            a_symbol->get_RValueReference(&isRVRef);
+
+            if (isRVRef)    { builder.rvalueReference(); }
+            else if (isRef) { builder.reference(); }
+            else            { builder.pointer(); }
+
+            if (isConst)    { builder.constPointer(); }
+            if (isVolatile) { builder.volatilePointer(); }
             break;
         }
 
@@ -275,12 +270,16 @@ public:
         case SymTagEnum:
         {
             if (!name.empty()) { builder.base(name); }
+            if (isConst) { builder.constQual(); }
+            if (isVolatile) { builder.volatileQual(); }
             break;
         }
 
         case SymTagTypedef:
         {
             if (!name.empty()) { builder.base(name); }
+            if (isConst) { builder.constQual(); }
+            if (isVolatile) { builder.volatileQual(); }
             break;
         }
 
@@ -364,6 +363,12 @@ public:
             return name;
         }
         return L"";
+    }
+
+    static std::wstring leafName(const std::wstring& a_qualifiedName)
+    {
+        auto pos = a_qualifiedName.rfind(L"::");
+        return (pos == std::wstring::npos) ? a_qualifiedName : a_qualifiedName.substr(pos + 2);
     }
 
     /// Check if a symbol is an anonymous union/struct (empty name + UDT kind)

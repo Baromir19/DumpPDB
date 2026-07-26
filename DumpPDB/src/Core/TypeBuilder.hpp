@@ -20,13 +20,21 @@ enum class ModifierKind : uint8_t
     BitField
 };
 
+/// Qualifiers (const/volatile) that can be attached to a type level.
+struct TypeQualifier
+{
+    bool isConst = false;
+    bool isVolatile = false;
+};
+
 struct Modifier
 {
-    ModifierKind kind;
-    size_t       arrayCount = 0;     // for Array
-    std::wstring functionArgs;       // for Function
-    DWORD        bitPosition = 0;    // for BitField
-    ULONGLONG    bitLength = 0;      // for BitField
+    ModifierKind  kind;
+    TypeQualifier qualifier;
+    size_t        arrayCount = 0;     // for Array
+    std::wstring  functionArgs;       // for Function
+    DWORD         bitPosition = 0;    // for BitField
+    ULONGLONG     bitLength = 0;      // for BitField
 };
 
 class TypeBuilder
@@ -64,52 +72,63 @@ public:
 
     TypeBuilder& array(size_t acount)
     {
-        m_chain.push_back({ ModifierKind::Array, acount });
+        m_chain.push_back({ ModifierKind::Array, {}, acount });
         return *this;
     }
 
     TypeBuilder& function(std::wstring a_args)
     {
-        m_chain.push_back({ ModifierKind::Function, 0, std::move(a_args) });
+        m_chain.push_back({ ModifierKind::Function, {}, 0, std::move(a_args) });
         return *this;
     }
 
     TypeBuilder& bitField(DWORD a_pos, ULONGLONG a_len)
     {
-        m_chain.push_back({ ModifierKind::BitField, 0, L"", a_pos, a_len });
+        m_chain.push_back({ ModifierKind::BitField, {}, 0, L"", a_pos, a_len });
         return *this;
     }
 
+    /// Set const qualifier on the base type (e.g. const int).
     TypeBuilder& constQual()
     {
-        misConst = true;
+        m_baseQualifier.isConst = true;
         return *this;
     }
 
+    /// Set volatile qualifier on the base type (e.g. volatile int).
     TypeBuilder& volatileQual()
     {
-        misVolatile = true;
+        m_baseQualifier.isVolatile = true;
         return *this;
     }
 
-    TypeBuilder& constPointed()
+    /// Set const qualifier on the last modifier (e.g. pointer) in the chain.
+    /// For pointers: int* const  (const pointer)
+    TypeBuilder& constPointer()
     {
-        misConstPointed = true;
+        if (!m_chain.empty())
+            m_chain.back().qualifier.isConst = true;
+        return *this;
+    }
+
+    /// Set volatile qualifier on the last modifier (e.g. pointer) in the chain.
+    TypeBuilder& volatilePointer()
+    {
+        if (!m_chain.empty())
+            m_chain.back().qualifier.isVolatile = true;
         return *this;
     }
 
     /// Build the type string using spiral/right-left rule.
-    /// The chain is traversed from outer to inner (back to front),
+    /// The chain is traversed from inner to outer (begin to end),
     /// applying modifiers in the correct C++ declaration order.
     std::wstring build() const
     {
         std::wstring result;
 
-        // 1. Leading qualifiers (const, volatile) for the base type.
-        //    misConstPointed means the pointed-to type is const (e.g. const int*),
-        //    which goes before the base type, not after the pointer.
-        if (misVolatile) { result += L"volatile "; }
-        if (misConst || misConstPointed) { result += L"const "; }
+        // 1. Base qualifiers (const, volatile) belong before the base type.
+        if (m_baseQualifier.isVolatile) { result += L"volatile "; }
+        if (m_baseQualifier.isConst)    { result += L"const "; }
 
         // 2. Base type
         if (!mbaseType.empty()) { result += mbaseType; }
@@ -130,16 +149,22 @@ public:
             case ModifierKind::Pointer:
                 if (seenPostfix) { needsParen = true; }
                 prefix += L"*";
+                if (it->qualifier.isConst)    { prefix += L" const"; }
+                if (it->qualifier.isVolatile) { prefix += L" volatile"; }
                 break;
 
             case ModifierKind::Reference:
                 if (seenPostfix) { needsParen = true; }
                 prefix += L"&";
+                if (it->qualifier.isConst)    { prefix += L" const"; }
+                if (it->qualifier.isVolatile) { prefix += L" volatile"; }
                 break;
 
             case ModifierKind::RValueReference:
                 if (seenPostfix) { needsParen = true; }
                 prefix += L"&&";
+                if (it->qualifier.isConst)    { prefix += L" const"; }
+                if (it->qualifier.isVolatile) { prefix += L" volatile"; }
                 break;
 
             case ModifierKind::Array:
@@ -184,7 +209,7 @@ public:
         // 5. Postfix (function args, array dimensions)
         result += postfix;
 
-        // 7. Bitfield
+        // 6. Bitfield
         for (auto it = m_chain.begin(); it != m_chain.end(); ++it)
         {
             if (it->kind == ModifierKind::BitField && it->bitLength > 0)
@@ -204,16 +229,12 @@ public:
         m_chain.clear();
         mbaseType.clear();
         m_name.clear();
-        misConst = false;
-        misVolatile = false;
-        misConstPointed = false;
+        m_baseQualifier = TypeQualifier{};
     }
 
 private:
     std::vector<Modifier> m_chain;  // inner (closest to base) to outer
     std::wstring          mbaseType;
     std::wstring          m_name;
-    bool                  misConst = false;
-    bool                  misVolatile = false;
-    bool                  misConstPointed = false;
+    TypeQualifier         m_baseQualifier;
 };

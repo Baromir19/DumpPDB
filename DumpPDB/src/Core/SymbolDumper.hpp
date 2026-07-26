@@ -209,12 +209,12 @@ public:
         const wchar_t* names[] = { getVirtualName(a_symbol), getStaticName(a_symbol) };
         for (auto name : names) { if (name) { ret += name; ret += L" "; } }
 
-        auto funtionType = getTypeCom(a_symbol); // SymTagFunctionType
+        auto functionType = getTypeCom(a_symbol); // SymTagFunctionType
 
         DWORD argCount = 0;
-        if (funtionType)
+        if (functionType)
         {
-            argCount = countChildren(funtionType.get(), SymTagFunctionArgType);
+            argCount = countChildren(functionType.get(), SymTagFunctionArgType);
         }
 
         // Return type
@@ -223,11 +223,18 @@ public:
         a_symbol->get_constructor(&isCtor);
         bool isDtor = !funcName.empty() && funcName[0] == L'~';
 
+        if (!isCtor && !m_scope.empty() && funcName == TypeWalker::leafName(m_scope.top()))
+        {
+            isCtor = TRUE;
+        }
+
+        // printf("%s\n", isCtor ? "true" : "false");
+
         // Return type — skipped for constructors/destructors
-        if (!isCtor && !isDtor && funtionType)
+        if (!isCtor && !isDtor && functionType)
         {
             ComPtr<IDiaSymbol> retType;
-            if (SUCCEEDED(funtionType->get_type(&retType)) && retType)
+            if (SUCCEEDED(functionType->get_type(&retType)) && retType)
             {
                 std::wstring retTypeStr;
                 try
@@ -258,11 +265,11 @@ public:
         // fall back to the function type's args (which may have unnamed params).
         // This fixes constructors/copy-constructors where params are on FunctionType
         // but not directly on the Function symbol.
-        if (funtionType && namedArgCount != (int)argCount)
+        if (functionType && namedArgCount != (int)argCount)
         {
             if (namedArgCount > 0) { ret += L", "; }
             ret += TypeWalker::getFuncArgsString(
-                funtionType.get(), 
+                functionType.get(), 
                 m_scope, 
                 m_config.m_showNonScoped,
                 m_config.m_intStyle
@@ -272,12 +279,33 @@ public:
         ret += L")";
 
         // Const qualifier on function
-        if (funtionType)
+        if (functionType)
         {
             BOOL isConst = FALSE;
-            if (SUCCEEDED(funtionType->get_constType(&isConst)) && isConst)
+            if (SUCCEEDED(functionType->get_constType(&isConst)) && isConst)
             {
                 ret += L" const";
+            }
+
+
+            BOOL isVolatile = FALSE;
+            if (SUCCEEDED(functionType->get_volatileType(&isVolatile)) && isVolatile)
+            {
+                ret += L" volatile";
+            }
+        }
+
+        // NOTE: noexcept support
+        {
+            IDiaSymbol4* symbol4 = nullptr;
+            if (SUCCEEDED(a_symbol->QueryInterface(__uuidof(IDiaSymbol4), (void**)&symbol4)) && symbol4)
+            {
+                BOOL isNoExcept = FALSE;
+                if (SUCCEEDED(symbol4->get_noexcept(&isNoExcept)) && isNoExcept)
+                {
+                    ret += L" noexcept";
+                }
+                symbol4->Release();
             }
         }
 
@@ -948,7 +976,7 @@ private:
                 case VT_UI4: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.ulVal);  ret = buf; break; }
                 case VT_I2:  { wchar_t buf[32]; swprintf_s(buf, L" = %d", v.iVal);   ret = buf; break; }
                 case VT_UI2: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.uiVal);  ret = buf; break; }
-                case VT_I1:  { wchar_t buf[32]; swprintf_s(buf, L" = %d", v.bVal);   ret = buf; break; }
+                case VT_I1:  { wchar_t buf[32]; swprintf_s(buf, L" = %d", (int)v.cVal);   ret = buf; break; }
                 case VT_UI1: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.bVal);   ret = buf; break; }
                 case VT_R4:  { wchar_t buf[32]; swprintf_s(buf, L" = %ff", v.fltVal); ret = buf; break; }
                 case VT_R8:  { wchar_t buf[32]; swprintf_s(buf, L" = %f", v.dblVal); ret = buf; break; }

@@ -31,22 +31,22 @@ namespace Test
 
     struct PrimitiveTypes
     {
-        bool        boolean;
-        char        character;
-        wchar_t     wideCharacter;
-        signed char signedChar;
-        unsigned char unsignedChar;
-        short       shortInt;
-        unsigned short unsignedShort;
-        int         integer;
-        unsigned int unsignedInt;
-        long        longInt;
-        unsigned long unsignedLong;
-        long long   longLong;
+        bool            boolean;
+        char            character;
+        wchar_t         wideCharacter;
+        signed char     signedChar;
+        unsigned char   unsignedChar;
+        short           shortInt;
+        unsigned short  unsignedShort;
+        int             integer;
+        unsigned int    unsignedInt;
+        long            longInt;
+        unsigned long   unsignedLong;
+        long long       longLong;
         unsigned long long unsignedLongLong;
-        float       floating;
-        double      doubleFloat;
-        long double longDouble;
+        float           floating;
+        double          doubleFloat;
+        long double     longDouble;
     };
 
     // ========================================================================
@@ -159,6 +159,14 @@ namespace Test
     {
         Min = -128,
         Max = 127
+    };
+
+    class EnumTest
+    {
+        SimpleEnum simple;
+        ScopedEnum scoped;
+        TypedEnum typed;
+        TypedScopedEnum typedScoped;
     };
 
     // ========================================================================
@@ -326,10 +334,10 @@ namespace Test
         ConstructorTest();
         ConstructorTest(int value);
         ConstructorTest(const ConstructorTest& other);
-        ConstructorTest(ConstructorTest&& other) noexcept;
+        ConstructorTest(ConstructorTest&& other) noexcept; // TODO:
         ~ConstructorTest();
-        ConstructorTest& operator=(const ConstructorTest& other);
-        ConstructorTest& operator=(ConstructorTest&& other) noexcept;
+        ConstructorTest& operator=(const ConstructorTest& other); // TODO:
+        ConstructorTest& operator=(ConstructorTest&& other) noexcept; // TODO:
 
         int value;
     };
@@ -375,10 +383,10 @@ namespace Test
     {
     public:
         static int staticField;
-        const int constField;
-        static const int staticConstField;
+        const int constField = 1;
+        static const int staticConstField = 2;
         static constexpr int staticConstexprField = 42;
-        mutable int mutableField;
+        mutable int mutableField; // TODO:
         volatile int volatileField;
     };
 
@@ -391,8 +399,9 @@ namespace Test
         unsigned int flagA : 1;
         unsigned int flagB : 2;
         unsigned int flagC : 3;
-        int signedField : 4;
-        unsigned int : 0; // unnamed zero-width bitfield for alignment
+        int : 32; // TODO:
+        int signedField : 5;
+        unsigned int : 0; // unnamed zero-width bitfield for alignment // TODO:
         unsigned int nextField : 8;
     };
 
@@ -400,7 +409,7 @@ namespace Test
     // 15. ANONYMOUS STRUCTS / UNIONS
     // ========================================================================
 
-    struct AnonymousTest
+    struct AnonymousTest // TODO: fix
     {
         union
         {
@@ -411,6 +420,19 @@ namespace Test
         {
             int x;
             int y;
+        };
+        union
+        {
+            struct
+            {
+                int z, w;
+            };
+            int a;
+            struct
+            {
+                double trouble;
+                float doubletrouble;
+            };
         };
     };
 
@@ -465,7 +487,7 @@ namespace Test
     // 18. CONST QUALIFIED FUNCTIONS
     // ========================================================================
 
-    class ConstMethodTest
+    class ConstMethodTest // TODO:
     {
     public:
         void nonConstMethod();
@@ -506,7 +528,7 @@ namespace Test
         Test::TemplateStruct<Test::Weapon> templatedWeapon;
         Test::FunctionPtrWithArgs callback;
         Test::Outer::Inner* innerPtr;
-        const Test::Outer::Inner::Deep* constDeepPtr;
+        const Test::Outer::Inner::Deep* constDeepPtr; // TODO: const
     };
 
     // ========================================================================
@@ -536,6 +558,9 @@ namespace Test
         TemplateUsage compile_TEMPLATE;
         ConstMethodTest compile_CONST_METHOD;
         ComplexFieldTypes compile_COMPLEX;
+        StaticConstMembers compile_CONST_MEMBERS;
+        MemberPointerTest compile_POINTER_TEST;
+        EnumTest compile_ENUM;
 
     public:
         CompileTested()
