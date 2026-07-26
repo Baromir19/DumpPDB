@@ -529,7 +529,7 @@ public:
         };
 
         struct FieldBranch {
-            std::vector<FieldGroup> groups; // 1 элемент — не union, 2+ — union
+            std::vector<FieldGroup> groups;
         };
 
         // Helper: get the byte-range end offset for a field.
@@ -555,6 +555,12 @@ public:
             return off + static_cast<LONG>(length);
         };
 
+        auto getBitPos = [](ComPtr<IDiaSymbol>& f) -> DWORD {
+            DWORD bitPos = 0;
+            f->get_bitPosition(&bitPos);
+            return bitPos;
+            };
+
         // Check if a field is a bit-field (any bitPosition, including 0).
         // A field is a bit-field if it has both bitPosition AND length < 64 bits.
         auto isBitfield = [](ComPtr<IDiaSymbol>& f) -> bool {
@@ -577,7 +583,11 @@ public:
             {
                 LONG futureOff = 0;
                 fields[j]->get_offset(&futureOff);
-                if (off == futureOff)
+
+                DWORD bitPos = 0;
+                fields[j]->get_bitPosition(&bitPos);
+
+                if (off == futureOff && bitPos == 0)
                 {
                     return j;
                 }
