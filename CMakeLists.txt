@@ -151,3 +151,14 @@ source_group(
         ${DUMPPDB_CPP_FILES}
         ${DUMPPDB_HEADER_FILES}
 )
+
+# ============================================================================
+# Tests (optional, requires GoogleTest)
+# ============================================================================
+
+option(BUILD_TESTS "Build unit and integration tests" OFF)
+
+if(BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

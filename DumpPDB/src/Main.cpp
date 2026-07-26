@@ -6,13 +6,9 @@
 
 #include <Util\Error\DumpError.hpp>
 
-#include <Test/Tests.hpp>
-
 int wmain(int argc, wchar_t* argv[]) 
 {
     // DebugManager::WaitDebugger();
-
-    COMPILE_TEST
 
     try
     {

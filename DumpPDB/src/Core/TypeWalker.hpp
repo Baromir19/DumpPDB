@@ -20,6 +20,44 @@ inline bool isValidIntStyle(long a_value) noexcept
         && a_value <= static_cast<long>(IntStyle::Cstdint);
 }
 
+/// Scope context that tracks the current nested class/struct hierarchy.
+/// Used to strip the current scope prefix from DIA symbol names.
+struct ScopeContext
+{
+    std::vector<std::wstring> m_parts;
+
+    void push(const std::wstring& a_name)
+    {
+        m_parts.push_back(a_name);
+    }
+
+    void pop()
+    {
+        if (!m_parts.empty())
+            m_parts.pop_back();
+    }
+
+    std::wstring full() const
+    {
+        std::wstring result;
+
+        for (size_t i = 0; i < m_parts.size(); ++i)
+        {
+            if (i > 0)
+                result += L"::";
+
+            result += m_parts[i];
+        }
+
+        return result;
+    }
+
+    bool empty() const
+    {
+        return m_parts.empty();
+    }
+};
+
 /// Walks IDiaSymbol trees and builds TypeBuilder chains.
 
 class TypeWalker
@@ -114,11 +152,11 @@ public:
 
     /// Build a TypeBuilder chain by recursively walking the DIA type tree.
     /// Returns a TypeBuilder populated with the full type chain.
-    /// @param a_stripScope Controls whether parent scope prefix is stripped from names
+    /// @param a_stripScope Controls whether current scope prefix is stripped from names
     ///                     (corresponds to DumpConfig::m_showNonScoped).
     static TypeBuilder resolveType(
         IDiaSymbol* a_symbol, 
-        const std::wstring& a_parentClassName = L"",
+        const ScopeContext& a_scope = ScopeContext(),
         bool a_stripScope = true,
         IntStyle a_intStyle = IntStyle::MsvcNative
     )
@@ -137,7 +175,7 @@ public:
         a_symbol->get_volatileType(&isVolatile);
 
         // Get name (strip scope based on a_stripScope parameter)
-        std::wstring name = getName(a_symbol, a_parentClassName, a_stripScope);
+        std::wstring name = getName(a_symbol, a_scope, a_stripScope);
 
         // Get sub-type (recursive)
         ComPtr<IDiaSymbol> subType;
@@ -157,7 +195,7 @@ public:
 
             TypeBuilder subBuilder = resolveType(
                 subType.get(), 
-                a_parentClassName, 
+                a_scope, 
                 a_stripScope,
                 a_intStyle
             );
@@ -212,7 +250,7 @@ public:
 
         case SymTagFunctionType:
         {
-            std::wstring args = getFuncArgsString(a_symbol, a_stripScope);
+            std::wstring args = getFuncArgsString(a_symbol, a_scope, a_stripScope);
             builder.function(std::move(args));
             break;
         }
@@ -256,6 +294,7 @@ public:
     /// Get function arguments as a comma-separated string.
     static std::wstring getFuncArgsString(
         IDiaSymbol* a_symbol, 
+        const ScopeContext& a_scope = ScopeContext(),
         bool a_stripScope = true, 
         IntStyle a_intStyle = IntStyle::MsvcNative
     )
@@ -274,7 +313,7 @@ public:
                 if (SUCCEEDED(child->get_type(&_argType)) && _argType)
                 {
                     if (!isFirst) { result += L", "; }
-                    result += resolveType(_argType.get(), L"", a_stripScope, a_intStyle).build();
+                    result += resolveType(_argType.get(), a_scope, a_stripScope, a_intStyle).build();
                     isFirst = false;
                 }
             }
@@ -291,41 +330,38 @@ public:
             || (a_name.size() > 0 && a_name[0] == L'$');
     }
 
-    /// Get the name of a symbol, optionally stripping the parent scope.
+    /// Get the name of a symbol, optionally stripping the current scope prefix.
     /// @param a_symbol        The DIA symbol to get the name from.
-    /// @param a_parentClassName If non-empty, scopes the lookup (used for children).
-    /// @param a_stripScope    If true (default), strips the parent scope prefix from the name.
+    /// @param a_scope         The current scope context (stack of enclosing class names).
+    /// @param a_stripScope    If true (default), strips the current scope prefix from the name.
     ///                         Controls the "m_showNonScoped" behavior: when true, only the
     ///                         short/non-scoped name is returned. When false, the full scoped
     ///                         name (e.g. "ParentClass::Child") is preserved.
     static std::wstring getName(
         IDiaSymbol* a_symbol, 
-        const std::wstring& a_parentClassName = L"",
+        const ScopeContext& a_scope = ScopeContext(),
         bool a_stripScope = true
     )
     {
         BSTR bstrName = nullptr;
         if (SUCCEEDED(a_symbol->get_name(&bstrName)) && bstrName)
         {
-            std::wstring ret(bstrName);
+            std::wstring name(bstrName);
             SysFreeString(bstrName);
 
-            if (a_stripScope)
+            if (a_stripScope && !a_scope.empty())
             {
-                bool isCleanIdentifier = !ret.empty() &&
-                    ret.find_first_of(L"<>*&()[] ") == std::wstring::npos;
+                const std::wstring scope = a_scope.full();
+                const std::wstring prefix = scope + L"::";
 
-                if (isCleanIdentifier)
+                if (name.size() > prefix.size() &&
+                    name.compare(0, prefix.size(), prefix) == 0)
                 {
-                    auto pos = ret.rfind(L"::");
-                    if (pos != std::wstring::npos)
-                    {
-                        ret = ret.substr(pos + 2);
-                    }
+                    return name.substr(prefix.size());
                 }
             }
 
-            return ret;
+            return name;
         }
         return L"";
     }

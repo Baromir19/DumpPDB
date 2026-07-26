@@ -45,36 +45,29 @@ public:
     std::wstring dumpClass(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
     {
         std::wstring ret;
-        std::wstring prevParent = m_parentClassName;
-        m_parentClassName = TypeWalker::getName(a_symbol, L"", m_config.m_showNonScoped);
-        
+
+        // Get class name relative to current scope
+        std::wstring className = TypeWalker::getName(a_symbol, m_scope, m_config.m_showNonScoped);
+
         ret += tab(a_nestingLevel);
         ret += sizeComment(a_symbol);
 
         ret += tab(a_nestingLevel);
         ret += modPrefix(a_symbol);
         ret += udtKeyword(a_symbol);
-
-        std::wstring typeText;
-        try
-        {
-            typeText = TypeWalker::resolveType(a_symbol, prevParent, m_config.m_showNonScoped, m_config.m_intStyle).build();
-        }
-        catch (...)
-        {
-            typeText = L"/* <error resolving type> */";
-        }
-        ret += typeText;
+        ret += className;
 
         ret += classInheritance(a_symbol);
         ret += scopeBegin(a_nestingLevel);
 
+        // Push this class onto the scope stack
+        m_scope.push(className);
         ret += dumpMembers(a_symbol, a_nestingLevel + 1);
+        m_scope.pop();
 
         ret += scopeEnd(a_nestingLevel);
         ret += typeSources();
 
-        m_parentClassName = prevParent;
         return ret;
     }
 
@@ -109,7 +102,7 @@ public:
         ret += L"enum";
 
         // Filter synthetic names like <unnamed-tag> or $HASH names
-        std::wstring enum_symbolsName = TypeWalker::getName(a_symbol, L"", m_config.m_showNonScoped);
+        std::wstring enum_symbolsName = TypeWalker::getName(a_symbol, m_scope, m_config.m_showNonScoped);
         if (!TypeWalker::isSyntheticName(enum_symbolsName))
         {
             ret += L" ";
@@ -127,7 +120,7 @@ public:
             while (SUCCEEDED(enum_symbolsMembers->Next(1, &member, &celt)) && celt == 1)
             {
                 ret += tab(a_nestingLevel + 1);
-                ret += TypeWalker::getName(member.get());
+                ret += TypeWalker::getName(member.get(), m_scope);
                 ret += constantValueSuffix(member.get());
                 ret += L",\n";
             }
@@ -145,7 +138,7 @@ public:
         ret += L"typedef ";
 
         // Get the typedef name
-        std::wstring typedefName = TypeWalker::getName(a_symbol, m_parentClassName);
+        std::wstring typedefName = TypeWalker::getName(a_symbol, m_scope);
 
         // Resolve the underlying type (the type this typedef aliases)
         // We need to get the type of the typedef symbol, not the typedef itself
@@ -158,7 +151,7 @@ public:
                 // Build the underlying type's full declaration
                 TypeBuilder builder = TypeWalker::resolveType(
                     underlyingType.get(), 
-                    m_parentClassName, 
+                    m_scope, 
                     true, 
                     m_config.m_intStyle
                 );
@@ -193,7 +186,7 @@ public:
         {
             typeText = TypeWalker::resolveType(
                 a_symbol, 
-                m_parentClassName, 
+                m_scope, 
                 true, 
                 m_config.m_intStyle
             ).build();
@@ -225,7 +218,7 @@ public:
         }
 
         // Return type
-        std::wstring funcName = TypeWalker::getName(a_symbol, m_parentClassName);
+        std::wstring funcName = TypeWalker::getName(a_symbol, m_scope);
         BOOL isCtor = FALSE;
         a_symbol->get_constructor(&isCtor);
         bool isDtor = !funcName.empty() && funcName[0] == L'~';
@@ -241,7 +234,7 @@ public:
                 {
                     retTypeStr = TypeWalker::resolveType(
                         retType.get(), 
-                        L"", 
+                        m_scope,
                         m_config.m_showNonScoped, 
                         m_config.m_intStyle
                     ).build();
@@ -268,7 +261,12 @@ public:
         if (funtionType && namedArgCount != (int)argCount)
         {
             if (namedArgCount > 0) { ret += L", "; }
-            ret += TypeWalker::getFuncArgsString(funtionType.get(), m_config.m_showNonScoped, m_config.m_intStyle);
+            ret += TypeWalker::getFuncArgsString(
+                funtionType.get(), 
+                m_scope, 
+                m_config.m_showNonScoped,
+                m_config.m_intStyle
+            );
         }
 
         ret += L")";
@@ -562,7 +560,7 @@ public:
             }
 
             ret += tab(_level);
-            try { ret += TypeWalker::resolveType(field.get(), m_parentClassName, true, m_config.m_intStyle).build(); }
+            try { ret += TypeWalker::resolveType(field.get(), m_scope, true, m_config.m_intStyle).build(); }
             catch (...) { ret += L"/* <error resolving field type> */"; }
             ret += L";";
 
@@ -674,7 +672,7 @@ public:
             {
                 ret += TypeWalker::resolveType(
                     field.get(), 
-                    m_parentClassName, 
+                    m_scope, 
                     true,
                     m_config.m_intStyle
                 ).build();
@@ -759,7 +757,7 @@ public:
             case SymTagData:
             {
                 std::wstring typeText;
-                try { typeText = TypeWalker::resolveType(a_symbol, L"", true, m_config.m_intStyle).build(); }
+                try { typeText = TypeWalker::resolveType(a_symbol, m_scope, true, m_config.m_intStyle).build(); }
                 catch (...) { typeText = L"/* <error> */"; }
                 aoutput += typeText;
                 break;
@@ -851,7 +849,7 @@ private:
                 baseSymbol->get_virtualBaseClass(&isVirtualBase); // get_indirectVirtualBaseClass
                 if (isVirtualBase) ret += L"virtual ";
 
-                ret += TypeWalker::getName(baseSymbol.get());
+                ret += TypeWalker::getName(baseSymbol.get(), m_scope);
             }
         }
         return ret;
@@ -914,7 +912,7 @@ private:
 
                     try
                     {
-                        aout += TypeWalker::resolveType(param.get(), m_parentClassName, true, m_config.m_intStyle).build();
+                        aout += TypeWalker::resolveType(param.get(), m_scope, true, m_config.m_intStyle).build();
                     }
                     catch (...)
                     {
@@ -1010,7 +1008,7 @@ private:
     }
 
     DumpConfig m_config;
-    std::wstring m_parentClassName;
+    ScopeContext m_scope;
     std::vector<std::wstring> m_typeSources;
     IDiaSession* m_session = nullptr;
 };
