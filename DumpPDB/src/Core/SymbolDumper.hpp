@@ -532,29 +532,78 @@ public:
             std::vector<FieldGroup> groups; // 1 элемент — не union, 2+ — union
         };
 
+        // Helper: get the byte-range end offset for a field.
+        // For bit-fields, uses the storage type size (storage unit in bytes, not bit width).
+        // For regular fields, uses the type size.
+        auto getFieldByteEnd = [](ComPtr<IDiaSymbol>& f) -> LONG {
+            LONG off = 0;
+            f->get_offset(&off);
+
+            ComPtr<IDiaSymbol> type;
+            if (SUCCEEDED(f->get_type(&type)) && type)
+            {
+                ULONGLONG typeSize = 0;
+                if (SUCCEEDED(type->get_length(&typeSize)))
+                {
+                    return off + static_cast<LONG>(typeSize);
+                }
+            }
+
+            // Fallback: use get_length() directly
+            ULONGLONG length = 0;
+            f->get_length(&length);
+            return off + static_cast<LONG>(length);
+        };
+
+        // Check if a field is a bit-field (any bitPosition, including 0).
+        // A field is a bit-field if it has both bitPosition AND length < 64 bits.
+        auto isBitfield = [](ComPtr<IDiaSymbol>& f) -> bool {
+            DWORD bitPos = 0;
+            ULONGLONG bitWidth = 0;
+            return SUCCEEDED(f->get_bitPosition(&bitPos)) &&
+                   SUCCEEDED(f->get_length(&bitWidth)) &&
+                   bitWidth > 0 && bitWidth < 64;
+        };
+
+        // Find overlapping fields starting at the same byte offset as field[i].
+        // Returns (j) if fields[i..j-1] share the same offset, or fields.size() if none found.
+        auto findOverlapEnd = [&](size_t startIdx) -> size_t {
+            if (startIdx + 1 >= fields.size()) return fields.size();
+
+            LONG off = 0;
+            fields[startIdx]->get_offset(&off);
+
+            for (size_t j = startIdx + 1; j < fields.size(); ++j)
+            {
+                LONG futureOff = 0;
+                fields[j]->get_offset(&futureOff);
+                if (off == futureOff)
+                {
+                    return j;
+                }
+            }
+            return fields.size();
+        };
+
+        // Build group from fields[i..j) sharing the same offset (union overlap).
+        auto makeGroup = [&](size_t i, size_t j) -> FieldGroup {
+            FieldGroup group;
+            group.beginOffset = 0;
+            if (i < fields.size())
+            {
+                fields[i]->get_offset(&group.beginOffset);
+            }
+            group.endOffset = getFieldByteEnd(fields[j - 1]);
+            for (size_t k = i; k < j; ++k)
+            {
+                group.fields.push_back(fields[k]);
+            }
+            return group;
+        };
+
         std::vector<FieldBranch> branches;
         {
-            auto isBitfieldOffset = [](ComPtr<IDiaSymbol>& f) -> bool {
-                DWORD bitPos = 0;
-                ULONGLONG bitWidth = 0;
-                if (SUCCEEDED(f->get_bitPosition(&bitPos)) &&
-                    SUCCEEDED(f->get_length(&bitWidth)) && bitWidth < 64) {
-                    return bitPos > 0;
-                }
-                return false;
-                };
-
-            auto fieldEnd = [](ComPtr<IDiaSymbol>& f) -> LONG {
-                LONG off = 0;
-                ULONGLONG length = 0;
-                f->get_offset(&off);
-                f->get_length(&length);
-                return off + (LONG)length;
-                };
-
             FieldBranch curBranch;
-            LONG branchMaxEnd = LONG_MIN;
-            bool isCurrentBranch = false;
             bool startsNewBranch = true;
 
             for (size_t i = 0; i < fields.size(); ++i) {
@@ -562,20 +611,7 @@ public:
                 LONG off = 0;
                 field->get_offset(&off);
 
-                ULONGLONG length = 0;
-
-                if (isBitfieldOffset(field))
-                {
-                    field->get_length(&length);
-                }
-                else
-                {
-                    ComPtr<IDiaSymbol> type;
-                    field->get_type(&type);
-
-                    type->get_length(&length);
-                }
-
+                // If starting a new branch and we have pending groups, push to branches
                 if (startsNewBranch && !curBranch.groups.empty())
                 {
                     branches.push_back(curBranch);
@@ -584,168 +620,89 @@ public:
 
                 if (!startsNewBranch)
                 {
+                    // Mode: We are inside a branch that was started by a previous union overlap.
+                    // Look ahead for the next overlap to extend this branch.
                     auto nextIdx = i + 1;
-
                     startsNewBranch = true;
 
+                    size_t overlapEnd = findOverlapEnd(i);
+                    if (overlapEnd != fields.size())
+                    {
+                        // Found overlapping fields [i, overlapEnd): they form a union group
+                        auto group = makeGroup(i, overlapEnd);
+                        curBranch.groups.push_back(group);
+                        startsNewBranch = false;
+                        i = overlapEnd - 1; // because of for-loop increment
+                        continue;
+                    }
+
+                    // No overlap found. Compute branch's max end offset from existing groups.
+                    LONG maxEndOffset = LONG_MIN;
+                    for (const auto& g : curBranch.groups)
+                    {
+                        maxEndOffset = maxEndOffset > g.endOffset ? maxEndOffset : g.endOffset;
+                    }
+
+                    // Collect fields until we reach a field starting at or past maxEndOffset.
+                    FieldGroup group;
+                    group.beginOffset = off;
+                    group.endOffset = maxEndOffset;
+
+                    bool foundBoundary = false;
                     for (size_t j = nextIdx; j < fields.size(); ++j)
                     {
                         LONG futureOff = 0;
-
-                        auto& currentField = fields[j];
-
-                        currentField->get_offset(&futureOff);
-
-                        if (off == futureOff) // end. Do not touch j
+                        fields[j]->get_offset(&futureOff);
+                        if (futureOff >= maxEndOffset)
                         {
                             auto lastGroupIdx = j - 1;
-                            auto& lastGroupField = fields[lastGroupIdx];
-
-                            FieldGroup group;
-
-                            LONG offsetGroupEnd = 0;
-                            lastGroupField->get_offset(&offsetGroupEnd);
-
-                            ULONGLONG lengthGroupEnd = 0;
-
-                            if (isBitfieldOffset(lastGroupField))
-                            {
-                                field->get_length(&length);
-                            }
-                            else
-                            {
-                                ComPtr<IDiaSymbol> type;
-                                lastGroupField->get_type(&type);
-
-                                type->get_length(&lengthGroupEnd);
-                            }
-
-                            group.beginOffset = off;
-                            group.endOffset = offsetGroupEnd + lengthGroupEnd;
-
                             for (size_t k = i; k < j; ++k)
                             {
                                 group.fields.push_back(fields[k]);
                             }
-
                             curBranch.groups.push_back(group);
-                            startsNewBranch = false;
-                            i = lastGroupIdx; // because of increment
+                            i = lastGroupIdx;
+                            foundBoundary = true;
                             break;
                         }
                     }
 
-                    if (!startsNewBranch)
+                    if (!foundBoundary)
                     {
-                        continue;
-                    }
-
-                    LONG maxEndOffset = LONG_MIN;
-
-                    for (const auto& groups : curBranch.groups)
-                    {
-                        maxEndOffset = maxEndOffset > groups.endOffset ? maxEndOffset : groups.endOffset;
-                    }
-
-                    FieldGroup group;
-                    group.beginOffset = off;
-                    group.endOffset = maxEndOffset;
-                    if (nextIdx >= fields.size())
-                    {
-                        group.fields.push_back(fields[i]); // only one
-                        curBranch.groups.push_back(group);
-                    }
-                    else
-                    {
-                        for (size_t j = nextIdx; j < fields.size(); ++j)
-                        {
-                            LONG futureOff = 0;
-                            auto& currentField = fields[j];
-
-                            currentField->get_offset(&futureOff);
-
-                            if (futureOff >= maxEndOffset)
-                            {
-                                auto lastGroupIdx = j - 1;
-
-                                for (size_t k = i; k < j; ++k)
-                                {
-                                    group.fields.push_back(fields[k]);
-                                }
-
-                                curBranch.groups.push_back(group);
-                                i = lastGroupIdx;
-                                break;
-                            }
-                        }
-                    }
-
-                    continue;
-                }
-
-                startsNewBranch = true;
-
-                // main logic
-
-                auto nextIdx = i + 1;
-
-                for (size_t j = nextIdx; j < fields.size(); ++j)
-                {
-                    LONG futureOff = 0;
-
-                    auto& currentField = fields[j];
-
-                    currentField->get_offset(&futureOff);
-
-                    if (off == futureOff) // end. Do not touch j
-                    {
-                        auto lastGroupIdx = j - 1;
-                        auto& lastGroupField = fields[lastGroupIdx];
-
-                        FieldGroup group;
-
-                        LONG offsetGroupEnd = 0;
-                        lastGroupField->get_offset(&offsetGroupEnd);
-
-                        ULONGLONG lengthGroupEnd = 0;
-
-                        if (isBitfieldOffset(lastGroupField))
-                        {
-                            field->get_length(&length);
-                        }
-                        else
-                        {
-                            ComPtr<IDiaSymbol> type;
-                            lastGroupField->get_type(&type);
-
-                            type->get_length(&lengthGroupEnd);
-                        }
-
-                        group.beginOffset = off;
-                        group.endOffset = offsetGroupEnd + lengthGroupEnd;
-
-                        for (size_t k = i; k < j; ++k)
+                        // Remaining fields up to the end
+                        for (size_t k = i; k < fields.size(); ++k)
                         {
                             group.fields.push_back(fields[k]);
                         }
-
-                        curBranch.groups.push_back(group);
-                        startsNewBranch = false;
-                        i = lastGroupIdx;
-                        break;
+                        i = fields.size() - 1;
+                        if (!group.fields.empty())
+                        {
+                            curBranch.groups.push_back(group);
+                        }
                     }
-                }
 
-                if (!startsNewBranch)
-                {
                     continue;
                 }
 
+                // Mode: Starting a new branch from scratch
+                startsNewBranch = true;
+
+                size_t overlapEnd = findOverlapEnd(i);
+                if (overlapEnd != fields.size())
+                {
+                    // Found overlapping fields — they start a new union branch
+                    auto group = makeGroup(i, overlapEnd);
+                    curBranch.groups.push_back(group);
+                    startsNewBranch = false;
+                    i = overlapEnd - 1;
+                    continue;
+                }
+
+                // No overlap — single field group
                 FieldGroup group;
                 group.fields.push_back(field);
                 group.beginOffset = off;
-                group.endOffset = off + length;
-
+                group.endOffset = getFieldByteEnd(field);
                 curBranch.groups.push_back(group);
             }
 
@@ -755,7 +712,7 @@ public:
             }
         }
 
-        for (const auto& branch : branches)
+        /*for (const auto& branch : branches)
         {
             printf(" - branch\n");
             for (const auto& group : branch.groups)
@@ -768,7 +725,7 @@ public:
                     printf("   - field: %d\n", off);
                 }
             }
-        }
+        }*/
 
         // Helper lambda: emit one field (handles anonymous UDT inline blocks).
         auto emitField = [&](const ComPtr<IDiaSymbol>& field, int _level)
