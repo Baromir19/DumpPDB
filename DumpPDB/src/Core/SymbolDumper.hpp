@@ -522,46 +522,252 @@ public:
         if (!fields.empty() && m_config.m_showInfoComment)
             hasContent = headerComment(ret, L" FIELDS:", a_nestingLevel, hasContent);
 
-        struct FieldBranch { std::vector<ComPtr<IDiaSymbol>> fields; };
+        struct FieldGroup {
+            std::vector<ComPtr<IDiaSymbol>> fields;
+            LONG beginOffset;
+            LONG endOffset;
+        };
+
+        struct FieldBranch {
+            std::vector<FieldGroup> groups; // 1 элемент — не union, 2+ — union
+        };
+
         std::vector<FieldBranch> branches;
         {
-            FieldBranch cur;
-            LONG maxOffsetInBranch = LONG_MIN;
+            auto isBitfieldOffset = [](ComPtr<IDiaSymbol>& f) -> bool {
+                DWORD bitPos = 0;
+                ULONGLONG bitWidth = 0;
+                if (SUCCEEDED(f->get_bitPosition(&bitPos)) &&
+                    SUCCEEDED(f->get_length(&bitWidth)) && bitWidth < 64) {
+                    return bitPos > 0;
+                }
+                return false;
+                };
 
-            for (auto& field : fields)
-            {
+            auto fieldEnd = [](ComPtr<IDiaSymbol>& f) -> LONG {
+                LONG off = 0;
+                ULONGLONG length = 0;
+                f->get_offset(&off);
+                f->get_length(&length);
+                return off + (LONG)length;
+                };
+
+            FieldBranch curBranch;
+            LONG branchMaxEnd = LONG_MIN;
+            bool isCurrentBranch = false;
+            bool startsNewBranch = true;
+
+            for (size_t i = 0; i < fields.size(); ++i) {
+                auto& field = fields[i];
                 LONG off = 0;
                 field->get_offset(&off);
 
-                bool isBitfield = false;
-                DWORD bitPos = 0;
+                ULONGLONG length = 0;
+
+                if (isBitfieldOffset(field))
                 {
-                    ULONGLONG bitWidth = 0;
-                    if (SUCCEEDED(field->get_bitPosition(&bitPos)) &&
-                        SUCCEEDED(field->get_length(&bitWidth)) && bitWidth < 64)
+                    field->get_length(&length);
+                }
+                else
+                {
+                    ComPtr<IDiaSymbol> type;
+                    field->get_type(&type);
+
+                    type->get_length(&length);
+                }
+
+                if (startsNewBranch && !curBranch.groups.empty())
+                {
+                    branches.push_back(curBranch);
+                    curBranch = {};
+                }
+
+                if (!startsNewBranch)
+                {
+                    auto nextIdx = i + 1;
+
+                    startsNewBranch = true;
+
+                    for (size_t j = nextIdx; j < fields.size(); ++j)
                     {
-                        isBitfield = (bitPos > 0);
+                        LONG futureOff = 0;
+
+                        auto& currentField = fields[j];
+
+                        currentField->get_offset(&futureOff);
+
+                        if (off == futureOff) // end. Do not touch j
+                        {
+                            auto lastGroupIdx = j - 1;
+                            auto& lastGroupField = fields[lastGroupIdx];
+
+                            FieldGroup group;
+
+                            LONG offsetGroupEnd = 0;
+                            lastGroupField->get_offset(&offsetGroupEnd);
+
+                            ULONGLONG lengthGroupEnd = 0;
+
+                            if (isBitfieldOffset(lastGroupField))
+                            {
+                                field->get_length(&length);
+                            }
+                            else
+                            {
+                                ComPtr<IDiaSymbol> type;
+                                lastGroupField->get_type(&type);
+
+                                type->get_length(&lengthGroupEnd);
+                            }
+
+                            group.beginOffset = off;
+                            group.endOffset = offsetGroupEnd + lengthGroupEnd;
+
+                            for (size_t k = i; k < j; ++k)
+                            {
+                                group.fields.push_back(fields[k]);
+                            }
+
+                            curBranch.groups.push_back(group);
+                            startsNewBranch = false;
+                            i = lastGroupIdx; // because of increment
+                            break;
+                        }
+                    }
+
+                    if (!startsNewBranch)
+                    {
+                        continue;
+                    }
+
+                    LONG maxEndOffset = LONG_MIN;
+
+                    for (const auto& groups : curBranch.groups)
+                    {
+                        maxEndOffset = maxEndOffset > groups.endOffset ? maxEndOffset : groups.endOffset;
+                    }
+
+                    FieldGroup group;
+                    group.beginOffset = off;
+                    group.endOffset = maxEndOffset;
+                    if (nextIdx >= fields.size())
+                    {
+                        group.fields.push_back(fields[i]); // only one
+                        curBranch.groups.push_back(group);
+                    }
+                    else
+                    {
+                        for (size_t j = nextIdx; j < fields.size(); ++j)
+                        {
+                            LONG futureOff = 0;
+                            auto& currentField = fields[j];
+
+                            currentField->get_offset(&futureOff);
+
+                            if (futureOff >= maxEndOffset)
+                            {
+                                auto lastGroupIdx = j - 1;
+
+                                for (size_t k = i; k < j; ++k)
+                                {
+                                    group.fields.push_back(fields[k]);
+                                }
+
+                                curBranch.groups.push_back(group);
+                                i = lastGroupIdx;
+                                break;
+                            }
+                        }
+                    }
+
+                    continue;
+                }
+
+                startsNewBranch = true;
+
+                // main logic
+
+                auto nextIdx = i + 1;
+
+                for (size_t j = nextIdx; j < fields.size(); ++j)
+                {
+                    LONG futureOff = 0;
+
+                    auto& currentField = fields[j];
+
+                    currentField->get_offset(&futureOff);
+
+                    if (off == futureOff) // end. Do not touch j
+                    {
+                        auto lastGroupIdx = j - 1;
+                        auto& lastGroupField = fields[lastGroupIdx];
+
+                        FieldGroup group;
+
+                        LONG offsetGroupEnd = 0;
+                        lastGroupField->get_offset(&offsetGroupEnd);
+
+                        ULONGLONG lengthGroupEnd = 0;
+
+                        if (isBitfieldOffset(lastGroupField))
+                        {
+                            field->get_length(&length);
+                        }
+                        else
+                        {
+                            ComPtr<IDiaSymbol> type;
+                            lastGroupField->get_type(&type);
+
+                            type->get_length(&lengthGroupEnd);
+                        }
+
+                        group.beginOffset = off;
+                        group.endOffset = offsetGroupEnd + lengthGroupEnd;
+
+                        for (size_t k = i; k < j; ++k)
+                        {
+                            group.fields.push_back(fields[k]);
+                        }
+
+                        curBranch.groups.push_back(group);
+                        startsNewBranch = false;
+                        i = lastGroupIdx;
+                        break;
                     }
                 }
 
-                bool isNewBranch = !cur.fields.empty()
-                    && (off <= maxOffsetInBranch)
-                    && !isBitfield;
-
-                if (isNewBranch)
+                if (!startsNewBranch)
                 {
-                    branches.push_back(std::move(cur));
-                    cur = {};
-                    maxOffsetInBranch = LONG_MIN;
+                    continue;
                 }
 
-                cur.fields.push_back(field);
-                if (off > maxOffsetInBranch)
-                    maxOffsetInBranch = off;
+                FieldGroup group;
+                group.fields.push_back(field);
+                group.beginOffset = off;
+                group.endOffset = off + length;
+
+                curBranch.groups.push_back(group);
             }
 
-            if (!cur.fields.empty())
-                branches.push_back(std::move(cur));
+            if (!curBranch.groups.empty()) 
+            { 
+                branches.push_back(std::move(curBranch)); 
+            }
+        }
+
+        for (const auto& branch : branches)
+        {
+            printf(" - branch\n");
+            for (const auto& group : branch.groups)
+            {
+                printf("  - group (begin: %d, end: %d)\n", group.beginOffset, group.endOffset);
+                for (const auto& field : group.fields)
+                {
+                    LONG off = 0;
+                    field->get_offset(&off);
+                    printf("   - field: %d\n", off);
+                }
+            }
         }
 
         // Helper lambda: emit one field (handles anonymous UDT inline blocks).
@@ -611,44 +817,60 @@ public:
         {
             
         }
-        else if (branches.size() == 1)
-        {
-            // Plain struct
-            for (auto& field : branches[0].fields)
-                emitField(field, a_nestingLevel);
-        }
         else
         {
-            // Overlapping offsets detected — reconstruct anonymous union with
-            // anonymous struct branches. Each branch with >1 field wraps in struct{}.
-            ret += tab(a_nestingLevel);
-            ret += L"union\n";
-            ret += tab(a_nestingLevel);
-            ret += L"{\n";
-
-            for (auto& branch : branches)
+            for (const auto& branch : branches)
             {
-                if (branch.fields.size() == 1)
+                bool isUnion = false;
+
+                if (branch.groups.size() > 1)
                 {
-                    // Single-field alternative — plain union member, no struct wrapper.
-                    emitField(branch.fields[0], a_nestingLevel + 1);
+                    isUnion = true;
                 }
-                else
+
+                if (isUnion)
                 {
-                    // Multi-field alternative — anonymous struct inside the union.
-                    ret += tab(a_nestingLevel + 1);
-                    ret += L"struct\n";
-                    ret += tab(a_nestingLevel + 1);
+                    ret += tab(a_nestingLevel);
+                    ret += L"union\n";
+                    ret += tab(a_nestingLevel);
                     ret += L"{\n";
-                    for (auto& field : branch.fields)
-                        emitField(field, a_nestingLevel + 2);
-                    ret += tab(a_nestingLevel + 1);
+                }
+
+                for (const auto& group : branch.groups)
+                {
+                    bool isStruct = false;
+
+                    if (group.fields.size() > 1)
+                    {
+                        isStruct = true;
+                    }
+
+                    if (isStruct)
+                    {
+                        ret += tab(a_nestingLevel + isUnion);
+                        ret += L"struct\n";
+                        ret += tab(a_nestingLevel + isUnion);
+                        ret += L"{\n";
+                    }
+
+                    for (auto& field : group.fields)
+                    {
+                        emitField(field, a_nestingLevel + isUnion + isStruct);
+                    }
+
+                    if (isStruct)
+                    {
+                        ret += tab(a_nestingLevel + isUnion);
+                        ret += L"};\n";
+                    }
+                }
+
+                if (isUnion)
+                {
+                    ret += tab(a_nestingLevel);
                     ret += L"};\n";
                 }
             }
-
-            ret += tab(a_nestingLevel);
-            ret += L"};\n";
         }
 
         // Non-virtual functions (filter compiler-generated like __local_vftable_ctor_closure)

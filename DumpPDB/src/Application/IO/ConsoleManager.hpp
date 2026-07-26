@@ -114,7 +114,7 @@ public:
 
 		COORD newPos = csbi.dwCursorPosition;
 
-		const SHORT padTo = max(a_pos, currentX + 1);
+		const SHORT padTo = std::max(a_pos, currentX + 1);
 		newPos.X = padTo;
 
 		if (padTo == a_pos) { ret = true; }

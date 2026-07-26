@@ -434,6 +434,96 @@ namespace Test
                 float doubletrouble;
             };
         };
+        int outOfStruct;
+
+        union
+        {
+            struct
+            {
+                unsigned int flagA : 1;
+                unsigned int flagB : 1;
+                unsigned int flagC : 3;
+                unsigned int reserved : 27;
+            };
+            int flagsRaw;
+        };
+
+        struct
+        {
+            short packedA;
+            short packedB;
+            union
+            {
+                struct
+                {
+                    char byte0;
+                    char byte1;
+                    char byte2;
+                    char byte3;
+                };
+                int packedInt;
+                float packedFloat;
+            };
+        };
+
+        union
+        {
+            int soloUnionInt;
+        };
+
+        struct
+        {
+            int soloStructInt;
+        };
+
+        union
+        {
+            struct
+            {
+                long long bigA;
+                long long bigB;
+            };
+            struct
+            {
+                int quadA;
+                int quadB;
+                int quadC;
+                int quadD;
+            };
+            double bigDouble;
+        };
+
+        union
+        {
+            struct
+            {
+                unsigned char bitX : 4;
+                unsigned char bitY : 4;
+            };
+            unsigned char bitsRaw;
+            struct
+            {
+                unsigned short wideBit : 9;
+                unsigned short wideRest : 7;
+            };
+        };
+
+        int tailField1;
+        int tailField2;
+
+        union
+        {
+            struct
+            {
+                int repeatA;
+                struct
+                {
+                    short innerX;
+                    short innerY;
+                };
+            };
+            long long repeatB;
+        };
     };
 
     // ========================================================================
