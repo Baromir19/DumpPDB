@@ -171,3 +171,42 @@ TEST(ScopeStrippingTest, NamespacedTypeNotStripped)
         stripCurrentScope(L"Test::Outer::Inner", L"Actor::SaveData"),
         L"Test::Outer::Inner");
 }
+
+// ============================================================================
+// parseQualifiedName tests
+// ============================================================================
+
+TEST(QualifiedNameTest, SingleNamespace)
+{
+    auto q = TypeWalker::parseQualifiedName(std::wstring(L"User::Hello"));
+    EXPECT_EQ(q.ns, L"User");
+    EXPECT_EQ(q.leaf, L"Hello");
+}
+
+TEST(QualifiedNameTest, NestedNamespaces)
+{
+    auto q = TypeWalker::parseQualifiedName(std::wstring(L"A::B::Hello"));
+    EXPECT_EQ(q.ns, L"A::B");
+    EXPECT_EQ(q.leaf, L"Hello");
+}
+
+TEST(QualifiedNameTest, NoNamespace)
+{
+    auto q = TypeWalker::parseQualifiedName(std::wstring(L"Hello"));
+    EXPECT_EQ(q.ns, L"");
+    EXPECT_EQ(q.leaf, L"Hello");
+}
+
+TEST(QualifiedNameTest, DeepNestedNamespaces)
+{
+    auto q = TypeWalker::parseQualifiedName(std::wstring(L"Test::Outer::Inner::Nested"));
+    EXPECT_EQ(q.ns, L"Test::Outer::Inner");
+    EXPECT_EQ(q.leaf, L"Nested");
+}
+
+TEST(QualifiedNameTest, EmptyString)
+{
+    auto q = TypeWalker::parseQualifiedName(std::wstring(L""));
+    EXPECT_EQ(q.ns, L"");
+    EXPECT_EQ(q.leaf, L"");
+}

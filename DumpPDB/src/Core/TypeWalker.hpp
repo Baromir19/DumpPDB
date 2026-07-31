@@ -59,11 +59,71 @@ struct ScopeContext
     }
 };
 
+/// A fully-qualified name split into namespace path + leaf name.
+struct QualifiedName
+{
+    std::wstring ns;   // e.g. L"A::B" for L"A::B::Hello"; empty for L"Hello"
+    std::wstring leaf; // e.g. L"Hello" for L"A::B::Hello"
+};
+
 /// Walks IDiaSymbol trees and builds TypeBuilder chains.
 
 class TypeWalker
 {
 public:
+    /// Returns true if a_symbol's lexical parent is SymTagExe (i.e. it's a true
+    /// top-level symbol — global, or inside a namespace but NOT a nested class).
+    static bool isTopLevelSymbol(IDiaSymbol* a_symbol)
+    {
+        ComPtr<IDiaSymbol> parent;
+        if (FAILED(a_symbol->get_lexicalParent(&parent)) || !parent)
+            return false;
+
+        DWORD tag = SymTagNull;
+        parent->get_symTag((DWORD*)&tag);
+        return tag == SymTagExe;
+    }
+
+    /// Parses a fully-qualified name string into namespace path + leaf name.
+    /// e.g. "User::Hello" -> ns="User",   leaf="Hello"
+    ///      "A::B::Hello" -> ns="A::B",   leaf="Hello"
+    ///      "Hello"       -> ns="",       leaf="Hello"
+    static QualifiedName parseQualifiedName(const std::wstring& a_fullyQualifiedName)
+    {
+        QualifiedName result;
+
+        auto lastSep = a_fullyQualifiedName.rfind(L"::");
+        if (lastSep == std::wstring::npos)
+        {
+            result.leaf = a_fullyQualifiedName;
+            return result;
+        }
+
+        result.ns   = a_fullyQualifiedName.substr(0, lastSep);
+        result.leaf = a_fullyQualifiedName.substr(lastSep + 2);
+        return result;
+    }
+
+    /// Parses a fully-qualified name from a DIA symbol into namespace path + leaf name.
+    /// Only call this when isTopLevelSymbol(a_symbol) is true — for nested classes
+    /// the "::" in the name refers to enclosing classes, not namespaces, and this
+    /// function must NOT be used there (ScopeContext handles that case instead).
+    /// Assumes that any qualifier of a top-level symbol is a namespace,
+    /// since nested classes have lexicalParent != SymTagExe.
+    static QualifiedName parseQualifiedName(IDiaSymbol* a_symbol)
+    {
+        QualifiedName result;
+
+        BSTR bstrName = nullptr;
+        if (FAILED(a_symbol->get_name(&bstrName)) || !bstrName)
+            return result;
+
+        std::wstring fullName(bstrName);
+        SysFreeString(bstrName);
+
+        return parseQualifiedName(fullName);
+    }
+
     /// Get the base type name for a SymTagBaseType symbol.
     static const wchar_t* getBaseTypeName(IDiaSymbol* a_symbol, IntStyle a_intStyle = IntStyle::MsvcNative)
     {
