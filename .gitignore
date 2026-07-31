@@ -17,6 +17,7 @@
 mono_crash.*
 
 # Build results
+build/
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/
@@ -40,6 +41,12 @@ bld/
 
 # Visual Studio 2017 auto generated files
 Generated\ Files/
+
+# Visual Studio generated files
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
 
 # MSTest test Results
 [Tt]est[Rr]esult*/

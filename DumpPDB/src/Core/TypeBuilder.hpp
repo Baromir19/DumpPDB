@@ -1,0 +1,240 @@
+#pragma once
+
+#include <Windows.h>
+#include <string>
+#include <vector>
+#include <cstdint>
+
+/// Chain-of-modifiers approach for C++ type rendering.
+/// Builds a type declaration by collecting modifiers from inner (base) to outer,
+/// then renders using the spiral/right-left rule.
+/// This systematically fixes the &* vs *& bug that flat-string concatenation causes.
+
+enum class ModifierKind : uint8_t
+{
+    Pointer,
+    Reference,
+    RValueReference,
+    Array,
+    Function,
+    BitField
+};
+
+/// Qualifiers (const/volatile) that can be attached to a type level.
+struct TypeQualifier
+{
+    bool isConst = false;
+    bool isVolatile = false;
+};
+
+struct Modifier
+{
+    ModifierKind  kind;
+    TypeQualifier qualifier;
+    size_t        arrayCount = 0;     // for Array
+    std::wstring  functionArgs;       // for Function
+    DWORD         bitPosition = 0;    // for BitField
+    ULONGLONG     bitLength = 0;      // for BitField
+};
+
+class TypeBuilder
+{
+public:
+    TypeBuilder& base(std::wstring_view a_type)
+    {
+        mbaseType = a_type;
+        return *this;
+    }
+
+    TypeBuilder& name(std::wstring_view a_name)
+    {
+        m_name = a_name;
+        return *this;
+    }
+
+    TypeBuilder& pointer()
+    {
+        m_chain.push_back({ ModifierKind::Pointer });
+        return *this;
+    }
+
+    TypeBuilder& reference()
+    {
+        m_chain.push_back({ ModifierKind::Reference });
+        return *this;
+    }
+
+    TypeBuilder& rvalueReference()
+    {
+        m_chain.push_back({ ModifierKind::RValueReference });
+        return *this;
+    }
+
+    TypeBuilder& array(size_t acount)
+    {
+        m_chain.push_back({ ModifierKind::Array, {}, acount });
+        return *this;
+    }
+
+    TypeBuilder& function(std::wstring a_args)
+    {
+        m_chain.push_back({ ModifierKind::Function, {}, 0, std::move(a_args) });
+        return *this;
+    }
+
+    TypeBuilder& bitField(DWORD a_pos, ULONGLONG a_len)
+    {
+        m_chain.push_back({ ModifierKind::BitField, {}, 0, L"", a_pos, a_len });
+        return *this;
+    }
+
+    /// Set const qualifier on the base type (e.g. const int).
+    TypeBuilder& constQual()
+    {
+        m_baseQualifier.isConst = true;
+        return *this;
+    }
+
+    /// Set volatile qualifier on the base type (e.g. volatile int).
+    TypeBuilder& volatileQual()
+    {
+        m_baseQualifier.isVolatile = true;
+        return *this;
+    }
+
+    /// Set const qualifier on the last modifier (e.g. pointer) in the chain.
+    /// For pointers: int* const  (const pointer)
+    TypeBuilder& constPointer()
+    {
+        if (!m_chain.empty())
+            m_chain.back().qualifier.isConst = true;
+        return *this;
+    }
+
+    /// Set volatile qualifier on the last modifier (e.g. pointer) in the chain.
+    TypeBuilder& volatilePointer()
+    {
+        if (!m_chain.empty())
+            m_chain.back().qualifier.isVolatile = true;
+        return *this;
+    }
+
+    /// Build the type string using spiral/right-left rule.
+    /// The chain is traversed from inner to outer (begin to end),
+    /// applying modifiers in the correct C++ declaration order.
+    std::wstring build() const
+    {
+        std::wstring result;
+
+        // 1. Base qualifiers (const, volatile) belong before the base type.
+        if (m_baseQualifier.isVolatile) { result += L"volatile "; }
+        if (m_baseQualifier.isConst)    { result += L"const "; }
+
+        // 2. Base type
+        if (!mbaseType.empty()) { result += mbaseType; }
+
+        // 3. Build prefix (before name) and postfix (after name) from the modifier chain.
+        //    Walk from inner (begin) to outer (end) to correctly handle C++ declarators.
+        //    When a postfix modifier (Function/Array) wraps a prefix modifier (Pointer/Ref),
+        //    we need parentheses around the prefix: e.g. int (*)(float) not int*(float).
+        std::wstring prefix;
+        std::wstring postfix;
+        bool seenPostfix = false;
+        bool needsParen = false;
+
+        for (auto it = m_chain.begin(); it != m_chain.end(); ++it)
+        {
+            switch (it->kind)
+            {
+            case ModifierKind::Pointer:
+                if (seenPostfix) { needsParen = true; }
+                prefix += L"*";
+                if (it->qualifier.isConst)    { prefix += L" const"; }
+                if (it->qualifier.isVolatile) { prefix += L" volatile"; }
+                break;
+
+            case ModifierKind::Reference:
+                if (seenPostfix) { needsParen = true; }
+                prefix += L"&";
+                if (it->qualifier.isConst)    { prefix += L" const"; }
+                if (it->qualifier.isVolatile) { prefix += L" volatile"; }
+                break;
+
+            case ModifierKind::RValueReference:
+                if (seenPostfix) { needsParen = true; }
+                prefix += L"&&";
+                if (it->qualifier.isConst)    { prefix += L" const"; }
+                if (it->qualifier.isVolatile) { prefix += L" volatile"; }
+                break;
+
+            case ModifierKind::Array:
+                postfix += L"[";
+                if (it->arrayCount > 0)
+                {
+                    postfix += std::to_wstring(it->arrayCount);
+                }
+                postfix += L"]";
+                seenPostfix = true;
+                break;
+
+            case ModifierKind::Function:
+                postfix += L"(";
+                postfix += it->functionArgs;
+                postfix += L")";
+                seenPostfix = true;
+                break;
+
+            case ModifierKind::BitField:
+                break; // handled after name
+            }
+        }
+
+        // 4. Emit prefix with parentheses if needed for correct C++ declarator syntax.
+        //    The name is placed inside the parentheses (or right after prefix if no parens)
+        //    to correctly handle the spiral rule for pointers to arrays/functions.
+        //    e.g. int (*arr)[10] not int (*)[10] arr
+        if (needsParen)
+        {
+            result += L" (";
+            result += prefix;
+            if (!m_name.empty()) { result += L" "; result += m_name; }
+            result += L")";
+        }
+        else
+        {
+            result += prefix;
+            if (!m_name.empty()) { result += L" "; result += m_name; }
+        }
+
+        // 5. Postfix (function args, array dimensions)
+        result += postfix;
+
+        // 6. Bitfield
+        for (auto it = m_chain.begin(); it != m_chain.end(); ++it)
+        {
+            if (it->kind == ModifierKind::BitField && it->bitLength > 0)
+            {
+                wchar_t buf[64];
+                swprintf_s(buf, L" : %llu", it->bitLength);
+                result += buf;
+            }
+        }
+
+        return result;
+    }
+
+    /// Reset builder state for reuse.
+    void reset()
+    {
+        m_chain.clear();
+        mbaseType.clear();
+        m_name.clear();
+        m_baseQualifier = TypeQualifier{};
+    }
+
+private:
+    std::vector<Modifier> m_chain;  // inner (closest to base) to outer
+    std::wstring          mbaseType;
+    std::wstring          m_name;
+    TypeQualifier         m_baseQualifier;
+};
