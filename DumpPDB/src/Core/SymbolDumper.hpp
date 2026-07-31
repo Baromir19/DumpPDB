@@ -40,6 +40,105 @@ public:
     void setConfig(const DumpConfig& a_config) { m_config = a_config; }
     const DumpConfig& config() const { return m_config; }
 
+    // --- Scope control (namespace/class hierarchy) ---
+
+    void pushScope(const std::wstring& a_name)
+    {
+        m_scope.push(a_name);
+    }
+
+    void popScope()
+    {
+        m_scope.pop();
+    }
+
+    /// Push a fully-qualified namespace onto the scope stack one part at a time.
+    /// e.g. pushQualifiedScope(L"User::Math") pushes "User" then "Math",
+    /// so the scope stack remains a flat list of individual scope parts.
+    void pushQualifiedScope(const std::wstring& a_qualifiedName)
+    {
+        size_t start = 0;
+        while (start <= a_qualifiedName.size())
+        {
+            auto sep = a_qualifiedName.find(L"::", start);
+            if (sep == std::wstring::npos)
+            {
+                pushScope(a_qualifiedName.substr(start));
+                break;
+            }
+            pushScope(a_qualifiedName.substr(start, sep - start));
+            start = sep + 2;
+        }
+    }
+
+    void popQualifiedScope(size_t a_partCount)
+    {
+        for (size_t i = 0; i < a_partCount; ++i)
+        {
+            popScope();
+        }
+    }
+
+    /// Dump any top-level symbol (class/enum/typedef), wrapping it in its
+    /// namespace block if it lives inside a namespace.
+    /// Uses the compact C++17 form "namespace User::Math { ... }".
+    std::wstring dumpTopLevelAny(IDiaSymbol* a_symbol)
+    {
+        std::wstring ret;
+
+        if (!a_symbol)
+            return ret;
+
+        std::wstring ns;
+        bool hasNs = false;
+
+        if (TypeWalker::isTopLevelSymbol(a_symbol))
+        {
+            auto qname = TypeWalker::parseQualifiedName(a_symbol);
+            ns    = qname.ns;
+            hasNs = !ns.empty();
+        }
+
+        if (hasNs)
+        {
+            ret += L"namespace ";
+            ret += ns;
+            ret += L"\n{\n";
+
+            pushQualifiedScope(ns);
+        }
+
+        DWORD symTag = SymTagNull;
+        a_symbol->get_symTag((DWORD*)&symTag);
+
+        int nesting = hasNs ? 1 : 0;
+        switch (symTag)
+        {
+        case SymTagUDT:     ret += dumpClass(a_symbol, nesting); break;
+        case SymTagEnum:    ret += dumpEnum(a_symbol, nesting); break;
+        case SymTagTypedef: ret += dumpTypedef(a_symbol, nesting); break;
+        default: break;
+        }
+
+        if (hasNs)
+        {
+            // Determine how many scope parts were pushed by pushQualifiedScope.
+            size_t partCount = 1;
+            for (size_t i = 0; i + 1 < ns.size(); ++i)
+            {
+                if (ns[i] == L':' && ns[i + 1] == L':')
+                {
+                    ++partCount;
+                    ++i;
+                }
+            }
+            popQualifiedScope(partCount);
+            ret += L"}\n";
+        }
+
+        return ret;
+    }
+
     // --- Top-level dump methods ---
 
     std::wstring dumpClass(IDiaSymbol* a_symbol, int a_nestingLevel = 0)
@@ -968,9 +1067,11 @@ public:
         {
             switch (symTag)
             {
-            case SymTagTypedef: aoutput += dumpTypedef(a_symbol); break;
-            case SymTagUDT:    aoutput += dumpClass(a_symbol); break;
-            case SymTagEnum:   aoutput += dumpEnum(a_symbol); break;
+            case SymTagTypedef:
+            case SymTagUDT:
+            case SymTagEnum:
+                aoutput += dumpTopLevelAny(a_symbol);
+                break;
             case SymTagData:
             {
                 std::wstring typeText;

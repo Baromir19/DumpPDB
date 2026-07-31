@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <map>
 
 #include <Core/DiaSession.hpp>
 #include <Core/SymbolDumper.hpp>
@@ -54,7 +55,8 @@ public:
 
     /// Dump all types matching the given name.
     /// Searches by exact name first (all tags), then falls back to namespace prefix search
-    /// if no exact matches found
+    /// if no exact matches found.
+    /// Multiple symbols in the same namespace are grouped into one "namespace X { ... }" block.
     std::wstring dumpTypeByName(const wchar_t* a_name, bool a_caseSensitive)
     {
         std::wstring out;
@@ -62,21 +64,14 @@ public:
 
         // Step 1: Search by exact name across all symbol types
         auto matches = SymbolFinder::findAll(m_session.globalScope(), SymTagNull, a_name, a_caseSensitive);
-        for (auto& sym : matches)
-        {
-            m_dumper.processType(sym.get(), out);
-        }
 
         // Step 2: Fallback to namespace prefix search (like old displayTypePrefixed)
         if (matches.empty())
         {
-            auto prefixed = SymbolFinder::findByNamespacePrefix(m_session.globalScope(), a_name, a_caseSensitive);
-            for (auto& sym : prefixed)
-            {
-                m_dumper.processType(sym.get(), out);
-            }
+            matches = SymbolFinder::findByNamespacePrefix(m_session.globalScope(), a_name, a_caseSensitive);
         }
 
+        dumpSymbolsGrouped(matches, out);
         return out;
     }
 
@@ -90,7 +85,7 @@ public:
         auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagUDT, a_name, a_caseSensitive);
         if (_sym)
         {
-            out += m_dumper.dumpClass(_sym.get());
+            out += m_dumper.dumpTopLevelAny(_sym.get());
         }
         return out;
     }
@@ -103,7 +98,7 @@ public:
         auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagEnum, a_name, a_caseSensitive);
         if (_sym)
         {
-            out += m_dumper.dumpEnum(_sym.get());
+            out += m_dumper.dumpTopLevelAny(_sym.get());
         }
         return out;
     }
@@ -116,7 +111,7 @@ public:
         auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagTypedef, a_name, a_caseSensitive);
         if (_sym)
         {
-            out += m_dumper.dumpTypedef(_sym.get());
+            out += m_dumper.dumpTopLevelAny(_sym.get());
         }
         return out;
     }
@@ -246,5 +241,75 @@ public:
         }
 
         return out;
+    }
+
+private:
+    /// Dump a set of symbols, grouping those in the same namespace into one
+    /// "namespace X { ... }" block. Symbols without a namespace are dumped as-is.
+    void dumpSymbolsGrouped(
+        const std::vector<ComPtr<IDiaSymbol>>& a_symbols,
+        std::wstring& aoutput)
+    {
+        // Group symbols by namespace key.
+        // Key "<empty>" for global (no namespace) symbols.
+        std::map<std::wstring, std::vector<ComPtr<IDiaSymbol>>> groups;
+
+        for (auto& sym : a_symbols)
+        {
+            std::wstring ns;
+            if (TypeWalker::isTopLevelSymbol(sym.get()))
+            {
+                ns = TypeWalker::parseQualifiedName(sym.get()).ns;
+            }
+            groups[ns].push_back(sym);
+        }
+
+        for (auto& [ns, syms] : groups)
+        {
+            if (ns.empty())
+            {
+                // Global scope — dump each symbol directly.
+                for (auto& sym : syms)
+                {
+                    aoutput += m_dumper.dumpTopLevelAny(sym.get());
+                }
+            }
+            else
+            {
+                // Open one namespace block per group.
+                aoutput += L"namespace ";
+                aoutput += ns;
+                aoutput += L"\n{\n";
+
+                m_dumper.pushQualifiedScope(ns);
+
+                for (auto& sym : syms)
+                {
+                    DWORD symTag = SymTagNull;
+                    sym->get_symTag((DWORD*)&symTag);
+
+                    switch (symTag)
+                    {
+                    case SymTagUDT:     aoutput += m_dumper.dumpClass(sym.get(), 1); break;
+                    case SymTagEnum:    aoutput += m_dumper.dumpEnum(sym.get(), 1); break;
+                    case SymTagTypedef: aoutput += m_dumper.dumpTypedef(sym.get(), 1); break;
+                    default: break;
+                    }
+                }
+
+                size_t partCount = 1;
+                for (size_t i = 0; i + 1 < ns.size(); ++i)
+                {
+                    if (ns[i] == L':' && ns[i + 1] == L':')
+                    {
+                        ++partCount;
+                        ++i;
+                    }
+                }
+                m_dumper.popQualifiedScope(partCount);
+
+                aoutput += L"}\n";
+            }
+        }
     }
 };
