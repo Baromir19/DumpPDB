@@ -32,12 +32,30 @@ public:
         m_comInitialized = true;
 
         ComPtr<IDiaDataSource> source;
-        HRESULT hr = CoCreateInstance(__uuidof(DiaSource), nullptr, CLSCTX_INPROC_SERVER,
-            __uuidof(IDiaDataSource), (void**)&source);
+        HRESULT hr = E_FAIL;
+
+        hr = NoRegCoCreate(
+            L"msdia140.dll",
+            __uuidof(DiaSource),
+            __uuidof(IDiaDataSource),
+            (void**)&source
+        );
+
+        if (FAILED(hr))
+        {
+            hr = CoCreateInstance(
+                __uuidof(DiaSource),
+                nullptr,
+                CLSCTX_INPROC_SERVER,
+                __uuidof(IDiaDataSource),
+                (void**)&source
+            );
+        }
+
         if (FAILED(hr))
         {
             wchar_t buf[64];
-            swprintf_s(buf, L"CoCreateInstance failed: 0x%X", hr);
+            swprintf_s(buf, L"Unable to create DIA source: 0x%08X", hr);
             throw DumpError(buf);
         }
 

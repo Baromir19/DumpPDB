@@ -71,19 +71,23 @@ find_path(DIA_INCLUDE_DIR
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(DIA_LIB_PATH lib/amd64)
+    set(DIA_BIN_PATH bin/amd64)
 else()
     set(DIA_LIB_PATH lib)
+    set(DIA_BIN_PATH bin)
 endif()
 
 find_library(DIA_LIBRARY
     NAMES diaguids
     PATHS ${DIA_SEARCH_ROOTS}
-    PATH_SUFFIXES
-        ${DIA_LIB_PATH}
+    PATH_SUFFIXES ${DIA_LIB_PATH}
 )
 
-message(STATUS "DIA architecture path: ${DIA_LIB_PATH}")
-message(STATUS "DIA library: ${DIA_LIBRARY}")
+find_file(DIA_DLL
+    NAMES msdia140.dll
+    PATHS ${DIA_SEARCH_ROOTS}
+    PATH_SUFFIXES ${DIA_BIN_PATH}
+)
 
 if(NOT DIA_INCLUDE_DIR)
     message(FATAL_ERROR
@@ -100,7 +104,22 @@ if(NOT DIA_LIBRARY)
 endif()
 
 message(STATUS "DIA include directory: ${DIA_INCLUDE_DIR}")
+message(STATUS "DIA architecture path: ${DIA_LIB_PATH}")
 message(STATUS "DIA library: ${DIA_LIBRARY}")
+message(STATUS "DIA DLL: ${DIA_DLL}")
+
+if(NOT DIA_DLL)
+    message(FATAL_ERROR
+        "Could not find msdia140.dll."
+    )
+endif()
+
+
+add_custom_target(CopyDiaDll ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${DIA_DLL}"
+        "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+)
 
 # ============================================================================
 # Target 1: DumpPDBCore — header-only library (INTERFACE)
@@ -205,6 +224,12 @@ set_target_properties(TestCompiland PROPERTIES
 )
 
 # ============================================================================
+
+add_dependencies(DumpPDB CopyDiaDll)
+add_dependencies(PdbAPI CopyDiaDll)
+add_dependencies(TestCompiland CopyDiaDll)
+
+# ============================================================================
 # Tests (optional, requires GoogleTest)
 # ============================================================================
 
@@ -213,4 +238,7 @@ option(BUILD_TESTS "Build unit and integration tests" OFF)
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+    
+    add_dependencies(DumpPDB_UnitTests CopyDiaDll)
+    add_dependencies(DumpPDB_IntegrationTests CopyDiaDll)
 endif()
