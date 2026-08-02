@@ -22,49 +22,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup MSVC
+      - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch }}
 
-      - name: Set build dir
-        shell: pwsh
-        run: |
-          $buildDir = if ("${{ matrix.arch }}" -eq "x86") { "build-x86" } else { "build" }
-          echo "BUILD_DIR=$buildDir" >> $env:GITHUB_ENV
-
-      # Cache CMake FetchContent downloads (_deps)
       - name: Cache CMake dependencies
         uses: actions/cache@v4
         with:
-          path: ${{ env.BUILD_DIR }}/_deps
+          path: build-ci-${{ matrix.arch }}/_deps
           key: cmake-deps-${{ matrix.arch }}-${{ hashFiles('**/CMakeLists.txt') }}
           restore-keys: |
             cmake-deps-${{ matrix.arch }}-
 
       - name: Configure CMake
-        run: cmake --preset vs2022-${{ matrix.arch }}-tests
+        run: cmake --preset ci-${{ matrix.arch }}-tests
 
       # ── Debug build + tests ──────────────────────────────────────────────
       - name: Build Debug
-        run: cmake --build ${{ env.BUILD_DIR }} --config Debug
+        run: cmake --build build-ci-${{ matrix.arch }} --config Debug
 
       - name: Test Debug
-        run: ctest --test-dir ${{ env.BUILD_DIR }} -C Debug --output-on-failure
+        run: ctest --test-dir build-ci-${{ matrix.arch }} -C Debug --output-on-failure
 
       # ── Release build + tests ────────────────────────────────────────────
       - name: Build Release
-        run: cmake --build ${{ env.BUILD_DIR }} --config Release
+        run: cmake --build build-ci-${{ matrix.arch }} --config Release
 
       - name: Test Release
-        run: ctest --test-dir ${{ env.BUILD_DIR }} -C Release --output-on-failure
+        run: ctest --test-dir build-ci-${{ matrix.arch }} -C Release --output-on-failure
 
       # ── Package candidate ────────────────────────────────────────────────
       - name: Package candidate (${{ matrix.arch }})
         shell: pwsh
         run: |
           $arch = "${{ matrix.arch }}"
-          $buildDir = $env:BUILD_DIR
+          $buildDir = "build-ci-$arch"
           $stagingDir = "staging-$arch"
           New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
 

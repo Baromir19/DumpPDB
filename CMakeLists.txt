@@ -34,18 +34,28 @@ endforeach()
 # DIA SDK
 # ============================================================================
 
-set(DIA_SEARCH_ROOTS
-    "$ENV{VSINSTALLDIR}DIA SDK"
+# Primary: use VSINSTALLDIR set by vcvarsall.bat / ilammy/msvc-dev-cmd.
+# This works with any VS version (2022, 2026, ...) without hardcoding year.
+set(DIA_SEARCH_ROOTS "$ENV{VSINSTALLDIR}DIA SDK")
 
-    "$ENV{ProgramFiles}/Microsoft Visual Studio/2022/Community/DIA SDK"
-    "$ENV{ProgramFiles}/Microsoft Visual Studio/2022/Professional/DIA SDK"
-    "$ENV{ProgramFiles}/Microsoft Visual Studio/2022/Enterprise/DIA SDK"
-    "$ENV{ProgramFiles}/Microsoft Visual Studio/2022/BuildTools/DIA SDK"
-
-    "$ENV{ProgramFiles\(x86\)}/Microsoft Visual Studio/2019/Community/DIA SDK"
-    "$ENV{ProgramFiles\(x86\)}/Microsoft Visual Studio/2019/Professional/DIA SDK"
-    "$ENV{ProgramFiles\(x86\)}/Microsoft Visual Studio/2019/Enterprise/DIA SDK"
+# Fallback: ask vswhere for the latest VS installation path.
+# vswhere ships with every VS2017+ and is always at the fixed location below.
+find_program(_VSWHERE
+    NAMES vswhere
+    PATHS "$ENV{ProgramFiles\(x86\)}/Microsoft Visual Studio/Installer"
+    NO_DEFAULT_PATH
 )
+if(_VSWHERE)
+    execute_process(
+        COMMAND "${_VSWHERE}" -latest -property installationPath
+        OUTPUT_VARIABLE _VS_INSTALL_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(_VS_INSTALL_PATH)
+        list(APPEND DIA_SEARCH_ROOTS "${_VS_INSTALL_PATH}/DIA SDK")
+    endif()
+endif()
 
 find_path(DIA_INCLUDE_DIR
     NAMES dia2.h

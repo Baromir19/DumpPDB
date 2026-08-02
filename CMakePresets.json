@@ -2,8 +2,8 @@
   "version": 6,
   "configurePresets": [
     {
-      "name": "vs2022-x64",
-      "displayName": "Visual Studio 2022 - x64",
+      "name": "vs-x64",
+      "displayName": "[Local] Visual Studio x64",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build",
@@ -12,16 +12,16 @@
       }
     },
     {
-      "name": "vs2022-x64-tests",
-      "displayName": "Visual Studio 2022 - x64 (with tests)",
-      "inherits": "vs2022-x64",
+      "name": "vs-x64-tests",
+      "displayName": "[Local] Visual Studio x64 (with tests)",
+      "inherits": "vs-x64",
       "cacheVariables": {
         "BUILD_TESTS": "ON"
       }
     },
     {
-      "name": "vs2022-x86",
-      "displayName": "Visual Studio 2022 - x86",
+      "name": "vs-x86",
+      "displayName": "[Local] Visual Studio x86",
       "generator": "Visual Studio 17 2022",
       "architecture": "Win32",
       "binaryDir": "${sourceDir}/build-x86",
@@ -30,9 +30,47 @@
       }
     },
     {
-      "name": "vs2022-x86-tests",
-      "displayName": "Visual Studio 2022 - x86 (with tests)",
-      "inherits": "vs2022-x86",
+      "name": "vs-x86-tests",
+      "displayName": "[Local] Visual Studio x86 (with tests)",
+      "inherits": "vs-x86",
+      "cacheVariables": {
+        "BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "ci-base",
+      "hidden": true,
+      "generator": "Ninja Multi-Config",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      }
+    },
+    {
+      "name": "ci-x64",
+      "displayName": "[CI] Ninja x64",
+      "inherits": "ci-base",
+      "binaryDir": "${sourceDir}/build-ci-x64"
+    },
+    {
+      "name": "ci-x64-tests",
+      "displayName": "[CI] Ninja x64 (with tests)",
+      "inherits": "ci-x64",
+      "cacheVariables": {
+        "BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "ci-x86",
+      "displayName": "[CI] Ninja x86",
+      "inherits": "ci-base",
+      "binaryDir": "${sourceDir}/build-ci-x86"
+    },
+    {
+      "name": "ci-x86-tests",
+      "displayName": "[CI] Ninja x86 (with tests)",
+      "inherits": "ci-x86",
       "cacheVariables": {
         "BUILD_TESTS": "ON"
       }
