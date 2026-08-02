@@ -1,5 +1,3 @@
-#define NOMINMAX
-
 #include <Windows.h>
 
 #include <Core/Config/SaveManager.hpp>

@@ -1,5 +1,3 @@
-#define PDBAPI_EXPORTS
-
 #include <API/PdbApi.h>
 
 #include <Core/PdbToolset.hpp>

@@ -60,7 +60,7 @@ public:
 		print(L"\n");
 	}
 
-	static inline void print(const wchar_t* a_format, va_list a_args) { vwprintf(a_format, a_args); }
+	static inline void print(const wchar_t* a_format, va_list a_args) { vfwprintf(stdout, a_format, a_args); }
 
 	static inline void print(const wchar_t* a_format, ...)
 	{
@@ -70,6 +70,7 @@ public:
 		va_end(args);
 	}
 
+	[[noreturn]] 
 	static void printError(const wchar_t* a_format, ...)
 	{
 		wchar_t buffer[0x2000];
@@ -88,7 +89,7 @@ public:
 
 	static bool setCursorNoDiscard(
 		int a_pos, 
-		unsigned int a_repeatTime = -1, 
+		int a_repeatTime = 10, 
 		bool a_tabulation = true
 	)
 	{
@@ -161,6 +162,7 @@ public:
 		else
 		{
 			printError(L"No arguments! \n");
+			return m_path;
 		}
 	}
 
@@ -262,6 +264,8 @@ protected:
 			L"No extension for \"%s\" (must be \".pdb\")!\n ",
 			a_path.c_str()
 		);
+
+		return false;
 	}
 
 public:

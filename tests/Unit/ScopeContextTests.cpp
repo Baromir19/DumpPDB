@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <Core/TypeWalker.hpp>
+#include <Core/DIA/TypeWalker.hpp>
 
 // ============================================================================
 // ScopeContext unit tests

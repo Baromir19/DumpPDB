@@ -1,4 +1,3 @@
-#define NOMINMAX
 #include <Windows.h>
 
 BOOL APIENTRY DllMain(HMODULE, DWORD a_reason, LPVOID)

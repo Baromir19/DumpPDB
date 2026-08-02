@@ -35,7 +35,8 @@ public:
 		return true;
 	}
 
-	__declspec(noreturn) void displayCommandsInfo() const
+	[[noreturn]] 
+	void displayCommandsInfo() const
 	{
 		ConsoleManager::print(L"Usage: DumpPDB.exe <commandname> <filename>\n");
 		ConsoleManager::print(L"Command list:\n");
@@ -79,6 +80,7 @@ public:
 		}
 
 		ConsoleManager::printError(L"No command defined as \"%s\"! \n", a_commandString);
+		return nullptr;
 		// displayCommandsInfo();
 	}
 
@@ -96,6 +98,7 @@ public:
 		if (a_userMessageSize - count >= 0) { return ret; }
 
 		ConsoleManager::printError(L"Command size (%u) is less than minimum (%u) \n", a_userMessageSize, count);
+		return nullptr;
 	}
 
 	void executeCommand(ICommand* a_command)

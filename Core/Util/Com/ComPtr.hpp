@@ -58,6 +58,16 @@ public:
 
     explicit operator bool() const noexcept { return m_ptr != nullptr; }
 
+    bool operator==(std::nullptr_t) const noexcept
+    {
+        return m_ptr == nullptr;
+    }
+
+    bool operator!=(std::nullptr_t) const noexcept
+    {
+        return m_ptr != nullptr;
+    }
+
     /// For COM output parameters: releases current pointer, returns address.
     T** operator&() noexcept
     {

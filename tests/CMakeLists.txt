@@ -19,14 +19,9 @@ add_executable(DumpPDB_UnitTests
     Unit/TypeBuilderTests.cpp
 )
 
-target_include_directories(DumpPDB_UnitTests
-    PRIVATE
-        "${DUMPPDB_SOURCE_DIR}"
-        "${DIA_INCLUDE_DIR}"
-)
-
 target_link_libraries(DumpPDB_UnitTests
     PRIVATE
+        DumpPDBCore
         GTest::gtest_main
 )
 
@@ -34,22 +29,34 @@ target_link_libraries(DumpPDB_UnitTests
 # Integration tests — require TestCompiland PDB
 # ============================================================================
 
-# Find TestCompiland PDB — built separately (MSBuild project)
-set(TEST_COMPILAND_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../TestCompiland")
-set(TEST_COMPILAND_PDB "${TEST_COMPILAND_DIR}/x64/Debug/TestCompiland.pdb")
-
+# Find TestCompiland PDB — built by the TestCompiland target
 add_executable(DumpPDB_IntegrationTests
     Integration/PdbDumpTests.cpp
 )
 
-target_include_directories(DumpPDB_IntegrationTests
-    PRIVATE
-        "${DUMPPDB_SOURCE_DIR}"
-        "${DIA_INCLUDE_DIR}"
+add_dependencies(
+    DumpPDB_IntegrationTests
+    TestCompiland
 )
 
 target_link_libraries(DumpPDB_IntegrationTests
     PRIVATE
+        DumpPDBCore
+        GTest::gtest_main
+        "${DIA_LIBRARY}"
+        ole32
+        shell32
+)
+
+target_compile_definitions(
+    DumpPDB_IntegrationTests
+    PRIVATE
+        TEST_COMPILAND_PDB="$<TARGET_PDB_FILE:TestCompiland>"
+)
+
+target_link_libraries(DumpPDB_IntegrationTests
+    PRIVATE
+        DumpPDBCore
         GTest::gtest_main
         "${DIA_LIBRARY}"
         ole32
@@ -58,8 +65,6 @@ target_link_libraries(DumpPDB_IntegrationTests
 
 target_compile_definitions(DumpPDB_IntegrationTests
     PRIVATE
-        UNICODE
-        _UNICODE
         TEST_COMPILAND_PDB="${TEST_COMPILAND_PDB}"
 )
 

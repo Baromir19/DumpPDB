@@ -5,8 +5,12 @@
 #include <filesystem>
 
 #include <Core/PdbToolset.hpp>
-#include <Core/SymbolFinder.hpp>
-#include <Core/TypeWalker.hpp>
+#include <Core/DIA/SymbolFinder.hpp>
+#include <Core/DIA/TypeWalker.hpp>
+
+#ifndef TEST_COMPILAND_PDB
+#error TEST_COMPILAND_PDB is not defined
+#endif
 
 // ============================================================================
 // PDB Dump Integration Tests
@@ -26,77 +30,25 @@ class PdbDumpTest : public ::testing::Test
 protected:
     void SetUp() override
     {
-        // Find the TestCompiland PDB
-        const wchar_t* envPath = _wgetenv(L"TEST_COMPILAND_PDB");
-        std::wstring pdbPath;
+        fs::path pdbPath = TEST_COMPILAND_PDB;
 
-        if (envPath && fs::exists(envPath))
+        ASSERT_TRUE(fs::exists(pdbPath))
+            << "Missing PDB: " << pdbPath.string();
+
+        std::wstring targetPath = pdbPath.wstring();
+
+        auto exePath = pdbPath;
+        exePath.replace_extension(".exe");
+
+        if (fs::exists(exePath))
         {
-            pdbPath = envPath;
-        }
-        else
-        {
-            // Look for PDB relative to executable
-            wchar_t exePath[MAX_PATH];
-            GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-            fs::path exeDir = fs::path(exePath).parent_path();
-
-            // Try parent directories
-            for (auto root : { exeDir,
-                               exeDir.parent_path(),
-                               exeDir.parent_path().parent_path() })
-            {
-                auto testPath = root / "TestCompiland" / "x64" / "Debug" / "TestCompiland.pdb";
-                if (fs::exists(testPath))
-                {
-                    pdbPath = testPath.wstring();
-                    break;
-                }
-
-                // Try alongside the exe
-                auto localPath = root / "TestCompiland.pdb";
-                if (fs::exists(localPath))
-                {
-                    pdbPath = localPath.wstring();
-                    break;
-                }
-            }
+            targetPath = exePath.wstring();
         }
 
-        if (pdbPath.empty())
-        {
-            // Try source tree path
-            fs::path srcPath = CMAKE_SOURCE_DIR;
-            auto testPath = srcPath / "TestCompiland" / "x64" / "Debug" / "TestCompiland.pdb";
-            if (fs::exists(testPath))
-            {
-                pdbPath = testPath.wstring();
-            }
-        }
+        bool initialized =
+            PdbToolset::instance().initialize(targetPath);
 
-        ASSERT_FALSE(pdbPath.empty())
-            << "TestCompiland.pdb not found. Build TestCompiland project first.";
-
-        // Find the corresponding .exe (DIA needs it)
-        std::wstring exePath2 = pdbPath;
-        auto extPos = exePath2.rfind(L".pdb");
-        if (extPos != std::wstring::npos)
-        {
-            exePath2.replace(extPos, 4, L".exe");
-        }
-
-        // Check which file exists
-        std::wstring targetPath = pdbPath;
-        if (fs::exists(exePath2))
-        {
-            // Prefer .exe — DIA can find .pdb from it
-            targetPath = exePath2;
-        }
-
-        // Initialize the PDB toolset
-        bool initialized = PdbToolset::instance().initialize(targetPath);
-        ASSERT_TRUE(initialized)
-            << "Failed to initialize DIA session with: " << targetPath;
+        ASSERT_TRUE(initialized);
     }
 };
 

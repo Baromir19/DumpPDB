@@ -15,38 +15,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ============================================================================
 # Output directories
+#   build/bin/<Config>/DumpPDB.exe
+#   build/bin/<Config>/PdbAPI.dll
 # ============================================================================
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
-    "${CMAKE_BINARY_DIR}/bin"
-)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY
-    "${CMAKE_BINARY_DIR}/bin"
-)
-
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY
-    "${CMAKE_BINARY_DIR}/lib"
-)
-
-# ============================================================================
-# Source files
-# ============================================================================
-
-set(DUMPPDB_SOURCE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/DumpPDB/src"
-)
-
-file(GLOB_RECURSE DUMPPDB_CPP_FILES
-    CONFIGURE_DEPENDS
-        "${DUMPPDB_SOURCE_DIR}/*.cpp"
-)
-
-file(GLOB_RECURSE DUMPPDB_HEADER_FILES
-    CONFIGURE_DEPENDS
-        "${DUMPPDB_SOURCE_DIR}/*.hpp"
-        "${DUMPPDB_SOURCE_DIR}/*.h"
-)
+foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG_UPPER)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} "${CMAKE_BINARY_DIR}/bin/${OUTPUTCONFIG}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} "${CMAKE_BINARY_DIR}/bin/${OUTPUTCONFIG}")
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG_UPPER} "${CMAKE_BINARY_DIR}/lib/${OUTPUTCONFIG}")
+endforeach()
 
 # ============================================================================
 # DIA SDK
@@ -97,59 +79,105 @@ message(STATUS "DIA include directory: ${DIA_INCLUDE_DIR}")
 message(STATUS "DIA library: ${DIA_LIBRARY}")
 
 # ============================================================================
-# Executable
+# Target 1: DumpPDBCore — header-only library (INTERFACE)
+#   Contains: Core/DIA/*, Core/Config/*, Core/System/*, Core/Util/*
+#   No .cpp files — pure header-only, so INTERFACE is correct.
 # ============================================================================
 
-add_executable(DumpPDB
-    ${DUMPPDB_CPP_FILES}
-    ${DUMPPDB_HEADER_FILES}
-)
+add_library(DumpPDBCore INTERFACE)
 
-# ============================================================================
-# Include directories
-# ============================================================================
-
-target_include_directories(DumpPDB
-    PRIVATE
-        "${DUMPPDB_SOURCE_DIR}"
+target_include_directories(DumpPDBCore
+    INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
         "${DIA_INCLUDE_DIR}"
 )
 
+target_compile_definitions(DumpPDBCore
+    INTERFACE
+        UNICODE
+        _UNICODE
+        NOMINMAX
+)
+
 # ============================================================================
-# Libraries
+# Target 2: DumpPDB — CLI executable
 # ============================================================================
+
+add_executable(DumpPDB
+    CLI/Main.cpp
+)
 
 target_link_libraries(DumpPDB
     PRIVATE
+        DumpPDBCore
         "${DIA_LIBRARY}"
         ole32
         shell32
 )
 
-# ============================================================================
-# Compile definitions
-# ============================================================================
-
-target_compile_definitions(DumpPDB
-    PRIVATE
-        UNICODE
-        _UNICODE
-)
-
-# ============================================================================
-# Visual Studio
-# ============================================================================
+target_compile_options(DumpPDB PRIVATE /Zi)
+target_link_options(DumpPDB PRIVATE /DEBUG)
 
 set_target_properties(DumpPDB PROPERTIES
-    VS_DEBUGGER_WORKING_DIRECTORY
-        "${CMAKE_CURRENT_SOURCE_DIR}"
+    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
 )
 
-source_group(
-    TREE "${DUMPPDB_SOURCE_DIR}"
-    FILES
-        ${DUMPPDB_CPP_FILES}
-        ${DUMPPDB_HEADER_FILES}
+# ============================================================================
+# Target 3: PdbAPI — shared library (DLL)
+# ============================================================================
+
+add_library(PdbAPI SHARED
+    API/dllmain.cpp
+    API/PdbApi.cpp
+)
+
+target_include_directories(PdbAPI
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+    PRIVATE
+        "${DIA_INCLUDE_DIR}"
+)
+
+target_link_libraries(PdbAPI
+    PRIVATE
+        DumpPDBCore
+        "${DIA_LIBRARY}"
+        ole32
+        shell32
+)
+
+target_compile_definitions(PdbAPI
+    PRIVATE
+        PDBAPI_EXPORTS
+)
+
+target_compile_options(PdbAPI PRIVATE /Zi)
+target_link_options(PdbAPI PRIVATE /DEBUG)
+
+set_target_properties(PdbAPI PROPERTIES
+    PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+)
+
+# ============================================================================
+# Target 4: TestCompiland — generates test PDB for integration tests
+# ============================================================================
+
+add_executable(TestCompiland
+    TestCompiland/Main.cpp
+    TestCompiland/Test/Tests.cpp
+)
+
+target_include_directories(TestCompiland
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/TestCompiland"
+)
+
+target_compile_options(TestCompiland PRIVATE /Zi)
+target_link_options(TestCompiland PRIVATE /DEBUG)
+
+set_target_properties(TestCompiland PROPERTIES
+    PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
 )
 
 # ============================================================================

@@ -10,6 +10,13 @@
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
       }
+    },
+    {
+      "name": "vs2022-x64-tests",
+      "inherits": "vs2022-x64",
+      "cacheVariables": {
+        "BUILD_TESTS": "ON"
+      }
     }
   ]
 }

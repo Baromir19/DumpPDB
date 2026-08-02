@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <Core/TypeBuilder.hpp>
+#include <Core/DIA/TypeBuilder.hpp>
 
 // ============================================================================
 // TypeBuilder unit tests
