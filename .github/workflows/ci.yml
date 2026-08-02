@@ -30,6 +30,13 @@ jobs:
         with:
           arch: ${{ matrix.arch }}
 
+      - name: Check Visual Studio
+        shell: pwsh
+        run: |
+          where.exe cmake
+          cmake --version
+          vswhere.exe -latest
+
       - name: Set build dir
         shell: pwsh
         run: |
