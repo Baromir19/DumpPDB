@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - "feature/**"
+      - "ci/**"
+  pull_request:
+    branches:
+      - develop
+
+jobs:
+  build-and-test:
+    name: Build & Test (${{ matrix.config }}, ${{ matrix.arch }})
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Debug, Release]
+        arch: [x64, x86]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Set build dir
+        shell: pwsh
+        run: |
+          $buildDir = if ("${{ matrix.arch }}" -eq "x86") { "build-x86" } else { "build" }
+          echo "BUILD_DIR=$buildDir" >> $env:GITHUB_ENV
+
+      # Cache CMake FetchContent downloads (_deps)
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BUILD_DIR }}/_deps
+          key: cmake-deps-${{ matrix.arch }}-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            cmake-deps-${{ matrix.arch }}-
+
+      - name: Configure CMake
+        run: cmake --preset vs2022-${{ matrix.arch }}-tests
+
+      - name: Build
+        run: cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.config }}
+
+      - name: Test
+        run: ctest --test-dir ${{ env.BUILD_DIR }} -C ${{ matrix.config }} --output-on-failure
