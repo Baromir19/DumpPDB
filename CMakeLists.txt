@@ -69,12 +69,17 @@ find_path(DIA_INCLUDE_DIR
     PATH_SUFFIXES include
 )
 
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(DIA_ARCH amd64)
+else()
+    set(DIA_ARCH x86)
+endif()
+
 find_library(DIA_LIBRARY
     NAMES diaguids
     PATHS ${DIA_SEARCH_ROOTS}
     PATH_SUFFIXES
-        lib/amd64
-        lib
+        lib/${DIA_ARCH}
 )
 
 if(NOT DIA_INCLUDE_DIR)
