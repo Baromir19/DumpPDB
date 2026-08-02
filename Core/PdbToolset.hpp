@@ -45,8 +45,8 @@ public:
         }
         catch (const DumpError& e)
         {
-            std::cerr << L"PdbToolset initialize failed: "
-                << e.what()
+            std::wcerr << L"PdbToolset initialize failed: "
+                << e.wideMessage()
                 << L'\n';
             return false;
         }
