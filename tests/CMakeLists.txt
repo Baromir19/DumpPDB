@@ -7,6 +7,7 @@ include(FetchContent)
 FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(googletest)
 
@@ -17,6 +18,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(DumpPDB_UnitTests
     Unit/ScopeContextTests.cpp
     Unit/TypeBuilderTests.cpp
+    Unit/TypeWalkerTests.cpp
 )
 
 target_link_libraries(DumpPDB_UnitTests
@@ -32,6 +34,7 @@ target_link_libraries(DumpPDB_UnitTests
 # Find TestCompiland PDB — built by the TestCompiland target
 add_executable(DumpPDB_IntegrationTests
     Integration/PdbDumpTests.cpp
+    Integration/PropertyTests.cpp
 )
 
 add_dependencies(

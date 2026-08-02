@@ -999,7 +999,10 @@ public:
                 ret += L"/* <error> */";
             }
 
-            // ret += constantValueSuffix(field.get());
+            if (canHaveValue(field.get()))
+            {
+                ret += constantValueSuffix(field.get());
+            }
 
             ret += L";\n";
         }
@@ -1281,14 +1284,37 @@ private:
         return L"";
     }
 
-    bool headerComment(std::wstring& aout, const wchar_t* a_label, int a_nesting, bool ahasContent)
+    bool headerComment(std::wstring& o_out, const wchar_t* a_label, int a_nesting, bool a_hasContent)
     {
-        if (ahasContent) { aout += L"\n"; }
-        aout += tab(a_nesting);
-        aout += L"///";
-        aout += a_label;
-        aout += L"\n";
+        if (a_hasContent) { o_out += L"\n"; }
+        o_out += tab(a_nesting);
+        o_out += L"///";
+        o_out += a_label;
+        o_out += L"\n";
         return true;
+    }
+
+    bool canHaveValue(IDiaSymbol* a_field)
+    {
+        DWORD kind = 0;
+        if (FAILED(a_field->get_dataKind(&kind)))
+            return false;
+
+        if (kind == DataIsConstant)
+            return true;
+
+        if (kind == DataIsStaticMember)
+        {
+			ComPtr<IDiaSymbol> subType;
+            if (SUCCEEDED(a_field->get_type(&subType)))
+            {
+                BOOL isConst = FALSE;
+                if (SUCCEEDED(subType->get_constType(&isConst)) && isConst)
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     static const wchar_t* getVirtualName(IDiaSymbol* a_symbol)
