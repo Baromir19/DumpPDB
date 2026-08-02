@@ -1,4 +1,4 @@
-![DumpPDB banner](/images/readme_header.png)
+![DumpPDB banner](/docs/images/readme_header.png)
 
 # About
 The tool was developed on DIA API, with the main goal of speeding up the output of class fields and other types.

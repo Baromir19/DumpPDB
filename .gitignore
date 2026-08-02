@@ -47,6 +47,7 @@ Generated\ Files/
 *.vcxproj
 *.vcxproj.filters
 *.vcxproj.user
+*.filters
 
 # MSTest test Results
 [Tt]est[Rr]esult*/
