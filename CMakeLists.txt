@@ -70,17 +70,20 @@ find_path(DIA_INCLUDE_DIR
 )
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(DIA_ARCH amd64)
+    set(DIA_LIB_PATH lib/amd64)
 else()
-    set(DIA_ARCH x86)
+    set(DIA_LIB_PATH lib)
 endif()
 
 find_library(DIA_LIBRARY
     NAMES diaguids
     PATHS ${DIA_SEARCH_ROOTS}
     PATH_SUFFIXES
-        lib/${DIA_ARCH}
+        ${DIA_LIB_PATH}
 )
+
+message(STATUS "DIA architecture path: ${DIA_LIB_PATH}")
+message(STATUS "DIA library: ${DIA_LIBRARY}")
 
 if(NOT DIA_INCLUDE_DIR)
     message(FATAL_ERROR
