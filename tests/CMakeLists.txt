@@ -71,5 +71,5 @@ target_link_libraries(DumpPDB_IntegrationTests
 # ============================================================================
 
 include(GoogleTest)
-gtest_discover_tests(DumpPDB_UnitTests)
-gtest_discover_tests(DumpPDB_IntegrationTests)
+gtest_discover_tests(DumpPDB_UnitTests DISCOVERY_MODE PRE_TEST)
+gtest_discover_tests(DumpPDB_IntegrationTests DISCOVERY_MODE PRE_TEST)
