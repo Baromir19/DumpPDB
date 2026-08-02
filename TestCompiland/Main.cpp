@@ -1,4 +1,4 @@
-#include <Test\Tests.hpp>
+#include <Test/Tests.hpp>
 
 void main()
 {
