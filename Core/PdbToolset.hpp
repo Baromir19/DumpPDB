@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <iostream>
 
 #include <Core/DIA/DiaSession.hpp>
 #include <Core/DIA/SymbolDumper.hpp>
@@ -42,8 +43,11 @@ public:
             m_dumper.setSession(m_session.session());
             return true;
         }
-        catch (const DumpError&)
+        catch (const DumpError& e)
         {
+            std::cerr << L"PdbToolset initialize failed: "
+                << e.what()
+                << L'\n';
             return false;
         }
     }
