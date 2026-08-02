@@ -87,6 +87,7 @@ find_file(DIA_DLL
     NAMES msdia140.dll
     PATHS ${DIA_SEARCH_ROOTS}
     PATH_SUFFIXES ${DIA_BIN_PATH}
+    NO_DEFAULT_PATH
 )
 
 if(NOT DIA_INCLUDE_DIR)
@@ -106,6 +107,7 @@ endif()
 message(STATUS "DIA include directory: ${DIA_INCLUDE_DIR}")
 message(STATUS "DIA architecture path: ${DIA_LIB_PATH}")
 message(STATUS "DIA library: ${DIA_LIBRARY}")
+message(STATUS "DIA_SEARCH_ROOTS = ${DIA_SEARCH_ROOTS}")
 message(STATUS "DIA DLL: ${DIA_DLL}")
 
 if(NOT DIA_DLL)
@@ -238,7 +240,7 @@ option(BUILD_TESTS "Build unit and integration tests" OFF)
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
-    
+
     add_dependencies(DumpPDB_UnitTests CopyDiaDll)
     add_dependencies(DumpPDB_IntegrationTests CopyDiaDll)
 endif()
