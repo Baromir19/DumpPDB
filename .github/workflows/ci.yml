@@ -48,5 +48,10 @@ jobs:
       - name: Build
         run: cmake --build build-ci-${{ matrix.arch }} --config ${{ matrix.config }}
 
+      - name: Dump PDB files
+        shell: pwsh
+        run: |
+          dir build-ci-${{ matrix.arch }}/bin/${{ matrix.config }}
+
       - name: Test
         run: ctest --test-dir build-ci-${{ matrix.arch }} -C ${{ matrix.config }} --output-on-failure
