@@ -3,8 +3,8 @@ setlocal
 
 set SCRIPT_DIR=%~dp0
 
-echo Configuring DumpPDB solution (CMake preset: vs2022-x64)...
-cmake --preset vs2022-x64 -S %SCRIPT_DIR%
+echo Configuring DumpPDB solution (CMake preset: vs-x64)...
+cmake --preset vs-x64 -S %SCRIPT_DIR%
 
 if errorlevel 1 (
     echo.
