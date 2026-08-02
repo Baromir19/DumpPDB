@@ -17,7 +17,7 @@ jobs:
     runs-on: windows-latest
 
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         arch: [x64, x86]
 
@@ -79,7 +79,7 @@ jobs:
         with:
           name: DumpPDB-${{ matrix.arch }}
           path: DumpPDB-${{ matrix.arch }}.zip
-          retention-days: 1
+          retention-days: 7
 
   # ─── Stage 2: semantic-release — runs only after both builds succeed ──────
   release:
@@ -97,7 +97,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "npm"
 
       - name: Install semantic-release
