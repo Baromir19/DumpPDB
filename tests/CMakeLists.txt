@@ -63,11 +63,6 @@ target_link_libraries(DumpPDB_IntegrationTests
         shell32
 )
 
-target_compile_definitions(DumpPDB_IntegrationTests
-    PRIVATE
-        TEST_COMPILAND_PDB="${TEST_COMPILAND_PDB}"
-)
-
 # ============================================================================
 # Register with CTest
 # ============================================================================

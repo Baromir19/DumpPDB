@@ -12,6 +12,8 @@
 #error TEST_COMPILAND_PDB is not defined
 #endif
 
+// #pragma message("TEST_COMPILAND_PDB = " TEST_COMPILAND_PDB)
+
 // ============================================================================
 // PDB Dump Integration Tests
 //
@@ -35,7 +37,7 @@ protected:
         ASSERT_TRUE(fs::exists(pdbPath))
             << "Missing PDB: " << pdbPath.string();
 
-        std::wstring targetPath = pdbPath.wstring();
+        /*std::wstring targetPath = pdbPath.wstring();
 
         auto exePath = pdbPath;
         exePath.replace_extension(".exe");
@@ -43,10 +45,12 @@ protected:
         if (fs::exists(exePath))
         {
             targetPath = exePath.wstring();
-        }
+        }*/
+
+		printf("Loading PDB: %ls\n", pdbPath.c_str());
 
         bool initialized =
-            PdbToolset::instance().initialize(targetPath);
+            PdbToolset::instance().initialize(pdbPath);
 
         ASSERT_TRUE(initialized);
     }
