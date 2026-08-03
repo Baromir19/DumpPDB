@@ -16,6 +16,7 @@
 class DiaSession
 {
 public:
+
     DiaSession() = default;
 
     bool initialize(const std::wstring& a_pdbPath)
@@ -32,38 +33,52 @@ public:
         m_comInitialized = true;
 
         ComPtr<IDiaDataSource> source;
-        HRESULT hr = CoCreateInstance(__uuidof(DiaSource), nullptr, CLSCTX_INPROC_SERVER,
-            __uuidof(IDiaDataSource), (void**)&source);
-        if (FAILED(hr))
+        HRESULT hrResult = E_FAIL;
+
+        hrResult = NoRegCoCreate(L"msdia140.dll",
+            __uuidof(DiaSource),
+            __uuidof(IDiaDataSource),
+            reinterpret_cast<void**>(&source));
+
+        if (FAILED(hrResult))
+        {
+            hrResult = CoCreateInstance(__uuidof(DiaSource),
+                nullptr,
+                CLSCTX_INPROC_SERVER,
+                __uuidof(IDiaDataSource),
+                reinterpret_cast<void**>(&source));
+        }
+
+        if (FAILED(hrResult))
         {
             wchar_t buf[64];
-            swprintf_s(buf, L"CoCreateInstance failed: 0x%X", hr);
+            swprintf_s(buf, L"Unable to create DIA source: 0x%08X", hrResult);
             throw DumpError(buf);
         }
 
-        hr = source->loadDataFromPdb(a_pdbPath.c_str());
-        if (FAILED(hr))
+        hrResult = source->loadDataFromPdb(a_pdbPath.c_str());
+        if (FAILED(hrResult))
         {
             wchar_t buf[64];
-            swprintf_s(buf, L"loadDataFromPdb failed: 0x%X", hr);
+            swprintf_s(buf, L"loadDataFromPdb failed: 0x%X", hrResult);
             throw DumpError(buf);
         }
 
         ComPtr<IDiaSession> session;
-        hr = source->openSession(&session);
-        if (FAILED(hr))
+        hrResult = source->openSession(&session);
+        if (FAILED(hrResult))
         {
             wchar_t buf[64];
-            swprintf_s(buf, L"openSession failed: 0x%X", hr);
+            swprintf_s(buf, L"openSession failed: 0x%X", hrResult);
             throw DumpError(buf);
         }
 
         ComPtr<IDiaSymbol> globalScope;
-        hr = session->get_globalScope(&globalScope);
-        if (FAILED(hr))
+        hrResult = session->get_globalScope(&globalScope);
+        if (FAILED(hrResult))
         {
             wchar_t buf[64];
-            swprintf_s(buf, L"get_globalScope failed: 0x%X", hr);
+            swprintf_s(buf, L"get_globalScope failed: 0x%X", hrResult);
             throw DumpError(buf);
         }
 
@@ -73,8 +88,14 @@ public:
         return true;
     }
 
-    IDiaSession* session() const { return m_session.get(); }
-    IDiaSymbol* globalScope() const { return m_globalScope.get(); }
+    [[nodiscard]] IDiaSession* session() const
+    {
+        return m_session.get();
+    }
+    [[nodiscard]] IDiaSymbol* globalScope() const
+    {
+        return m_globalScope.get();
+    }
 
     ~DiaSession()
     {
@@ -126,6 +147,7 @@ public:
     }
 
 private:
+
     ComPtr<IDiaDataSource> m_source;
     ComPtr<IDiaSession> m_session;
     ComPtr<IDiaSymbol> m_globalScope;

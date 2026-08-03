@@ -15,55 +15,53 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ============================================================================
 # Output directories
+#   build/bin/<Config>/DumpPDB.exe
+#   build/bin/<Config>/PdbAPI.dll
 # ============================================================================
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
-    "${CMAKE_BINARY_DIR}/bin"
-)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY
-    "${CMAKE_BINARY_DIR}/bin"
-)
-
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY
-    "${CMAKE_BINARY_DIR}/lib"
-)
-
-# ============================================================================
-# Source files
-# ============================================================================
-
-set(DUMPPDB_SOURCE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/DumpPDB/src"
-)
-
-file(GLOB_RECURSE DUMPPDB_CPP_FILES
-    CONFIGURE_DEPENDS
-        "${DUMPPDB_SOURCE_DIR}/*.cpp"
-)
-
-file(GLOB_RECURSE DUMPPDB_HEADER_FILES
-    CONFIGURE_DEPENDS
-        "${DUMPPDB_SOURCE_DIR}/*.hpp"
-        "${DUMPPDB_SOURCE_DIR}/*.h"
-)
+if(CMAKE_CONFIGURATION_TYPES)
+    foreach(CONFIG ${CMAKE_CONFIGURATION_TYPES})
+        string(TOUPPER ${CONFIG} CONFIG_UPPER)
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CONFIG_UPPER} "${CMAKE_BINARY_DIR}/bin/${CONFIG}")
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${CONFIG_UPPER} "${CMAKE_BINARY_DIR}/bin/${CONFIG}")
+        set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${CONFIG_UPPER} "${CMAKE_BINARY_DIR}/lib/${CONFIG}")
+    endforeach()
+else()
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}")
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/${CMAKE_BUILD_TYPE}")
+endif()
 
 # ============================================================================
 # DIA SDK
 # ============================================================================
 
-set(DIA_SEARCH_ROOTS
-    "$ENV{VSINSTALLDIR}DIA SDK"
+# Primary: use VSINSTALLDIR set by vcvarsall.bat / ilammy/msvc-dev-cmd.
+# This works with any VS version (2022, 2026, ...) without hardcoding year.
+set(DIA_SEARCH_ROOTS "$ENV{VSINSTALLDIR}DIA SDK")
 
-    "$ENV{ProgramFiles}/Microsoft Visual Studio/2022/Community/DIA SDK"
-    "$ENV{ProgramFiles}/Microsoft Visual Studio/2022/Professional/DIA SDK"
-    "$ENV{ProgramFiles}/Microsoft Visual Studio/2022/Enterprise/DIA SDK"
-    "$ENV{ProgramFiles}/Microsoft Visual Studio/2022/BuildTools/DIA SDK"
-
-    "$ENV{ProgramFiles\(x86\)}/Microsoft Visual Studio/2019/Community/DIA SDK"
-    "$ENV{ProgramFiles\(x86\)}/Microsoft Visual Studio/2019/Professional/DIA SDK"
-    "$ENV{ProgramFiles\(x86\)}/Microsoft Visual Studio/2019/Enterprise/DIA SDK"
+# Fallback: ask vswhere for the latest VS installation path.
+# vswhere ships with every VS2017+ and is always at the fixed location below.
+find_program(_VSWHERE
+    NAMES vswhere
+    PATHS "$ENV{ProgramFiles\(x86\)}/Microsoft Visual Studio/Installer"
+    NO_DEFAULT_PATH
 )
+if(_VSWHERE)
+    execute_process(
+        COMMAND "${_VSWHERE}" -latest -property installationPath
+        OUTPUT_VARIABLE _VS_INSTALL_PATH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(_VS_INSTALL_PATH)
+        list(APPEND DIA_SEARCH_ROOTS "${_VS_INSTALL_PATH}/DIA SDK")
+    endif()
+endif()
 
 find_path(DIA_INCLUDE_DIR
     NAMES dia2.h
@@ -71,12 +69,25 @@ find_path(DIA_INCLUDE_DIR
     PATH_SUFFIXES include
 )
 
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(DIA_LIB_PATH lib/amd64)
+    set(DIA_BIN_PATH bin/amd64)
+else()
+    set(DIA_LIB_PATH lib)
+    set(DIA_BIN_PATH bin)
+endif()
+
 find_library(DIA_LIBRARY
     NAMES diaguids
     PATHS ${DIA_SEARCH_ROOTS}
-    PATH_SUFFIXES
-        lib/amd64
-        lib
+    PATH_SUFFIXES ${DIA_LIB_PATH}
+)
+
+find_file(DIA_DLL
+    NAMES msdia140.dll
+    PATHS ${DIA_SEARCH_ROOTS}
+    PATH_SUFFIXES ${DIA_BIN_PATH}
+    NO_DEFAULT_PATH
 )
 
 if(NOT DIA_INCLUDE_DIR)
@@ -94,63 +105,131 @@ if(NOT DIA_LIBRARY)
 endif()
 
 message(STATUS "DIA include directory: ${DIA_INCLUDE_DIR}")
+message(STATUS "DIA architecture path: ${DIA_LIB_PATH}")
 message(STATUS "DIA library: ${DIA_LIBRARY}")
+message(STATUS "DIA_SEARCH_ROOTS = ${DIA_SEARCH_ROOTS}")
+message(STATUS "DIA DLL: ${DIA_DLL}")
 
-# ============================================================================
-# Executable
-# ============================================================================
+if(NOT DIA_DLL)
+    message(FATAL_ERROR
+        "Could not find msdia140.dll."
+    )
+endif()
 
-add_executable(DumpPDB
-    ${DUMPPDB_CPP_FILES}
-    ${DUMPPDB_HEADER_FILES}
+
+add_custom_target(CopyDiaDll ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${DIA_DLL}"
+        "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
 )
 
 # ============================================================================
-# Include directories
+# Target 1: DumpPDBCore — header-only library (INTERFACE)
+#   Contains: Core/DIA/*, Core/Config/*, Core/System/*, Core/Util/*
+#   No .cpp files — pure header-only, so INTERFACE is correct.
 # ============================================================================
 
-target_include_directories(DumpPDB
-    PRIVATE
-        "${DUMPPDB_SOURCE_DIR}"
+add_library(DumpPDBCore INTERFACE)
+
+target_include_directories(DumpPDBCore
+    INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
         "${DIA_INCLUDE_DIR}"
 )
 
+target_compile_definitions(DumpPDBCore
+    INTERFACE
+        UNICODE
+        _UNICODE
+        NOMINMAX
+)
+
 # ============================================================================
-# Libraries
+# Target 2: DumpPDB — CLI executable
 # ============================================================================
+
+add_executable(DumpPDB
+    CLI/Main.cpp
+)
 
 target_link_libraries(DumpPDB
     PRIVATE
+        DumpPDBCore
         "${DIA_LIBRARY}"
         ole32
         shell32
 )
 
-# ============================================================================
-# Compile definitions
-# ============================================================================
-
-target_compile_definitions(DumpPDB
-    PRIVATE
-        UNICODE
-        _UNICODE
-)
-
-# ============================================================================
-# Visual Studio
-# ============================================================================
+target_compile_options(DumpPDB PRIVATE /Zi)
+target_link_options(DumpPDB PRIVATE /DEBUG)
 
 set_target_properties(DumpPDB PROPERTIES
-    VS_DEBUGGER_WORKING_DIRECTORY
-        "${CMAKE_CURRENT_SOURCE_DIR}"
+    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
 )
 
-source_group(
-    TREE "${DUMPPDB_SOURCE_DIR}"
-    FILES
-        ${DUMPPDB_CPP_FILES}
-        ${DUMPPDB_HEADER_FILES}
+# ============================================================================
+# Target 3: PdbAPI — shared library (DLL)
+# ============================================================================
+
+add_library(PdbAPI SHARED
+    API/dllmain.cpp
+    API/PdbApi.cpp
 )
+
+target_include_directories(PdbAPI
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+    PRIVATE
+        "${DIA_INCLUDE_DIR}"
+)
+
+target_link_libraries(PdbAPI
+    PRIVATE
+        DumpPDBCore
+        "${DIA_LIBRARY}"
+        ole32
+        shell32
+)
+
+target_compile_definitions(PdbAPI
+    PRIVATE
+        PDBAPI_EXPORTS
+)
+
+target_compile_options(PdbAPI PRIVATE /Zi)
+target_link_options(PdbAPI PRIVATE /DEBUG)
+
+set_target_properties(PdbAPI PROPERTIES
+    PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+)
+
+# ============================================================================
+# Target 4: TestCompiland — generates test PDB for integration tests
+# ============================================================================
+
+add_executable(TestCompiland
+    TestCompiland/Main.cpp
+    TestCompiland/Test/Tests.cpp
+)
+
+target_include_directories(TestCompiland
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/TestCompiland"
+)
+
+target_compile_options(TestCompiland PRIVATE /Zi)
+target_link_options(TestCompiland PRIVATE /DEBUG)
+
+set_target_properties(TestCompiland PROPERTIES
+    PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+)
+
+# ============================================================================
+
+add_dependencies(DumpPDB CopyDiaDll)
+add_dependencies(PdbAPI CopyDiaDll)
+add_dependencies(TestCompiland CopyDiaDll)
 
 # ============================================================================
 # Tests (optional, requires GoogleTest)
@@ -161,4 +240,7 @@ option(BUILD_TESTS "Build unit and integration tests" OFF)
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+
+    add_dependencies(DumpPDB_UnitTests CopyDiaDll)
+    add_dependencies(DumpPDB_IntegrationTests CopyDiaDll)
 endif()

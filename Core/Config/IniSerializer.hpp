@@ -3,10 +3,10 @@
 #include <Core/Config/IniFile.hpp>
 #include <Core/DIA/SymbolDumper.hpp>
 
-template<typename T>
+template <typename T>
 struct IniSerializer;
 
-template<>
+template <>
 struct IniSerializer<DumpConfig>
 {
     static constexpr const char* kSection = "DumpConfig";
@@ -31,18 +31,21 @@ struct IniSerializer<DumpConfig>
         a_cfg.m_showSize = a_ini.getBool(kSection, "ShowSize", a_cfg.m_showSize);
         a_cfg.m_showOffset = a_ini.getBool(kSection, "ShowOffset", a_cfg.m_showOffset);
         a_cfg.m_showAccess = a_ini.getBool(kSection, "ShowAccess", a_cfg.m_showAccess);
-        a_cfg.m_showInfoComment = a_ini.getBool(kSection, "ShowInfoComment", a_cfg.m_showInfoComment);
+        a_cfg.m_showInfoComment
+            = a_ini.getBool(kSection, "ShowInfoComment", a_cfg.m_showInfoComment);
         a_cfg.m_showNonScoped = a_ini.getBool(kSection, "ShowNonScoped", a_cfg.m_showNonScoped);
         a_cfg.m_showEnumHex = a_ini.getBool(kSection, "ShowEnumHex", a_cfg.m_showEnumHex);
         a_cfg.m_showTypeSource = a_ini.getBool(kSection, "ShowTypeSource", a_cfg.m_showTypeSource);
-        a_cfg.m_curlyBraceNewline = a_ini.getBool(kSection, "CurlyBraceNewline", a_cfg.m_curlyBraceNewline);
-        a_cfg.m_hideCompilerGenerated = a_ini.getBool(kSection, "HideCompilerGenerated", a_cfg.m_hideCompilerGenerated);
+        a_cfg.m_curlyBraceNewline
+            = a_ini.getBool(kSection, "CurlyBraceNewline", a_cfg.m_curlyBraceNewline);
+        a_cfg.m_hideCompilerGenerated
+            = a_ini.getBool(kSection, "HideCompilerGenerated", a_cfg.m_hideCompilerGenerated);
         a_cfg.m_baseAccessType = a_ini.getUlong(kSection, "BaseAccessType", a_cfg.m_baseAccessType);
 
-        const long rawStyle = a_ini.getLong(kSection, "IntStyle", static_cast<long>(a_cfg.m_intStyle));
-        a_cfg.m_intStyle = isValidIntStyle(rawStyle)
-            ? static_cast<IntStyle>(rawStyle)
-            : IntStyle::Cstdint;
+        const long rawStyle
+            = a_ini.getLong(kSection, "IntStyle", static_cast<long>(a_cfg.m_intStyle));
+        a_cfg.m_intStyle
+            = isValidIntStyle(rawStyle) ? static_cast<IntStyle>(rawStyle) : IntStyle::Cstdint;
     }
 };
 
@@ -51,7 +54,7 @@ struct CommandConfig
     bool m_useClipboard = true;
 };
 
-template<>
+template <>
 struct IniSerializer<CommandConfig>
 {
     static constexpr const char* kSection = "CommandConfig";

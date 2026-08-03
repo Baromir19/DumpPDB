@@ -2,5 +2,5 @@
 
 void main()
 {
-	Test::CompileTested test = Test::CompileTested();
+    Test::CompileTested test = Test::CompileTested();
 }

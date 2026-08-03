@@ -23,17 +23,13 @@ public:
         a_symbol->get_symTag(&symTag);
 
         printIndent(a_indent);
-        wprintf(
-            L"============================================================\n"
-        );
+        wprintf(L"============================================================\n");
 
         printIndent(a_indent);
         wprintf(L"SYMBOL\n");
 
         printIndent(a_indent);
-        wprintf(L"  symTag:        %lu (%s)\n",
-            symTag,
-            symTagName(symTag));
+        wprintf(L"  symTag:        %lu (%s)\n", symTag, symTagName(symTag));
 
         dumpName(a_symbol, a_indent);
         dumpType(a_symbol, a_indent);
@@ -62,35 +58,64 @@ private:
     {
         switch (a_tag)
         {
-        case SymTagNull:            return L"Null";
-        case SymTagExe:             return L"Exe";
-        case SymTagCompiland:       return L"Compiland";
-        case SymTagCompilandDetails:return L"CompilandDetails";
-        case SymTagCompilandEnv:    return L"CompilandEnv";
-        case SymTagFunction:        return L"Function";
-        case SymTagBlock:           return L"Block";
-        case SymTagData:            return L"Data";
-        case SymTagAnnotation:      return L"Annotation";
-        case SymTagLabel:           return L"Label";
-        case SymTagPublicSymbol:    return L"PublicSymbol";
-        case SymTagUDT:             return L"UDT";
-        case SymTagEnum:            return L"Enum";
-        case SymTagFunctionType:    return L"FunctionType";
-        case SymTagPointerType:     return L"PointerType";
-        case SymTagArrayType:       return L"ArrayType";
-        case SymTagBaseType:        return L"BaseType";
-        case SymTagTypedef:         return L"Typedef";
-        case SymTagBaseClass:       return L"BaseClass";
-        case SymTagFriend:          return L"Friend";
-        case SymTagFunctionArgType: return L"FunctionArgType";
-        case SymTagVTableShape:     return L"VTableShape";
-        case SymTagVTable:          return L"VTable";
-        case SymTagCustom:          return L"Custom";
-        case SymTagThunk:           return L"Thunk";
-        case SymTagCustomType:      return L"CustomType";
-        case SymTagManagedType:     return L"ManagedType";
-        case SymTagDimension:       return L"Dimension";
-        default:                    return L"Unknown";
+        case SymTagNull:
+            return L"Null";
+        case SymTagExe:
+            return L"Exe";
+        case SymTagCompiland:
+            return L"Compiland";
+        case SymTagCompilandDetails:
+            return L"CompilandDetails";
+        case SymTagCompilandEnv:
+            return L"CompilandEnv";
+        case SymTagFunction:
+            return L"Function";
+        case SymTagBlock:
+            return L"Block";
+        case SymTagData:
+            return L"Data";
+        case SymTagAnnotation:
+            return L"Annotation";
+        case SymTagLabel:
+            return L"Label";
+        case SymTagPublicSymbol:
+            return L"PublicSymbol";
+        case SymTagUDT:
+            return L"UDT";
+        case SymTagEnum:
+            return L"Enum";
+        case SymTagFunctionType:
+            return L"FunctionType";
+        case SymTagPointerType:
+            return L"PointerType";
+        case SymTagArrayType:
+            return L"ArrayType";
+        case SymTagBaseType:
+            return L"BaseType";
+        case SymTagTypedef:
+            return L"Typedef";
+        case SymTagBaseClass:
+            return L"BaseClass";
+        case SymTagFriend:
+            return L"Friend";
+        case SymTagFunctionArgType:
+            return L"FunctionArgType";
+        case SymTagVTableShape:
+            return L"VTableShape";
+        case SymTagVTable:
+            return L"VTable";
+        case SymTagCustom:
+            return L"Custom";
+        case SymTagThunk:
+            return L"Thunk";
+        case SymTagCustomType:
+            return L"CustomType";
+        case SymTagManagedType:
+            return L"ManagedType";
+        case SymTagDimension:
+            return L"Dimension";
+        default:
+            return L"Unknown";
         }
     }
 
@@ -98,17 +123,28 @@ private:
     {
         switch (a_kind)
         {
-        case DataIsUnknown:       return L"Unknown";
-        case DataIsLocal:         return L"Local";
-        case DataIsStaticLocal:   return L"StaticLocal";
-        case DataIsParam:         return L"Param";
-        case DataIsObjectPtr:     return L"ObjectPtr";
-        case DataIsFileStatic:    return L"FileStatic";
-        case DataIsGlobal:        return L"Global";
-        case DataIsMember:        return L"Member";
-        case DataIsStaticMember:  return L"StaticMember";
-        case DataIsConstant:      return L"Constant";
-        default:                  return L"Unknown";
+        case DataIsUnknown:
+            return L"Unknown";
+        case DataIsLocal:
+            return L"Local";
+        case DataIsStaticLocal:
+            return L"StaticLocal";
+        case DataIsParam:
+            return L"Param";
+        case DataIsObjectPtr:
+            return L"ObjectPtr";
+        case DataIsFileStatic:
+            return L"FileStatic";
+        case DataIsGlobal:
+            return L"Global";
+        case DataIsMember:
+            return L"Member";
+        case DataIsStaticMember:
+            return L"StaticMember";
+        case DataIsConstant:
+            return L"Constant";
+        default:
+            return L"Unknown";
         }
     }
 
@@ -116,18 +152,30 @@ private:
     {
         switch (a_type)
         {
-        case LocIsNull:        return L"Null";
-        case LocIsStatic:      return L"Static";
-        case LocIsTLS:         return L"TLS";
-        case LocIsRegRel:      return L"RegRel";
-        case LocIsThisRel:     return L"ThisRel";
-        case LocIsEnregistered:return L"Enregistered";
-        case LocIsBitField:    return L"BitField";
-        case LocIsSlot:        return L"Slot";
-        case LocIsIlRel:       return L"IlRel";
-        case LocInMetaData:    return L"MetaData";
-        case LocIsConstant:    return L"Constant";
-        default:               return L"Unknown";
+        case LocIsNull:
+            return L"Null";
+        case LocIsStatic:
+            return L"Static";
+        case LocIsTLS:
+            return L"TLS";
+        case LocIsRegRel:
+            return L"RegRel";
+        case LocIsThisRel:
+            return L"ThisRel";
+        case LocIsEnregistered:
+            return L"Enregistered";
+        case LocIsBitField:
+            return L"BitField";
+        case LocIsSlot:
+            return L"Slot";
+        case LocIsIlRel:
+            return L"IlRel";
+        case LocInMetaData:
+            return L"MetaData";
+        case LocIsConstant:
+            return L"Constant";
+        default:
+            return L"Unknown";
         }
     }
 
@@ -135,10 +183,14 @@ private:
     {
         switch (a_kind)
         {
-        case UdtStruct: return L"Struct";
-        case UdtClass:  return L"Class";
-        case UdtUnion:  return L"Union";
-        default:        return L"Unknown";
+        case UdtStruct:
+            return L"Struct";
+        case UdtClass:
+            return L"Class";
+        case UdtUnion:
+            return L"Union";
+        default:
+            return L"Unknown";
         }
     }
 
@@ -146,10 +198,14 @@ private:
     {
         switch (aaccess)
         {
-        case CV_private:   return L"private";
-        case CV_protected: return L"protected";
-        case CV_public:    return L"public";
-        default:           return L"unknown";
+        case CV_private:
+            return L"private";
+        case CV_protected:
+            return L"protected";
+        case CV_public:
+            return L"public";
+        default:
+            return L"unknown";
         }
     }
 
@@ -184,12 +240,10 @@ private:
             _type->get_name(&name);
 
             printIndent(a_indent);
-            wprintf(
-                L"type:           tag=%lu (%s), name=\"%s\"\n",
+            wprintf(L"type:           tag=%lu (%s), name=\"%s\"\n",
                 _tag,
                 symTagName(_tag),
-                name ? name : L"<none>"
-            );
+                name ? name : L"<none>");
 
             if (name)
                 SysFreeString(name);
@@ -211,10 +265,7 @@ private:
             _parent->get_name(&name);
 
             printIndent(a_indent);
-            wprintf(
-                L"classParent:    \"%s\"\n",
-                name ? name : L"<anonymous>"
-            );
+            wprintf(L"classParent:    \"%s\"\n", name ? name : L"<anonymous>");
 
             if (name)
                 SysFreeString(name);
@@ -233,10 +284,7 @@ private:
             _parent->get_name(&name);
 
             printIndent(a_indent);
-            wprintf(
-                L"lexicalParent:  \"%s\"\n",
-                name ? name : L"<anonymous>"
-            );
+            wprintf(L"lexicalParent:  \"%s\"\n", name ? name : L"<anonymous>");
 
             if (name)
                 SysFreeString(name);
@@ -255,11 +303,7 @@ private:
         if (SUCCEEDED(a_symbol->get_dataKind(&kind)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"dataKind:       %lu (%s)\n",
-                kind,
-                dataKindName(kind)
-            );
+            wprintf(L"dataKind:       %lu (%s)\n", kind, dataKindName(kind));
         }
 
         DWORD access = 0;
@@ -267,11 +311,7 @@ private:
         if (SUCCEEDED(a_symbol->get_access(&access)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"access:         %lu (%s)\n",
-                access,
-                accessName(access)
-            );
+            wprintf(L"access:         %lu (%s)\n", access, accessName(access));
         }
 
         BOOL _isStatic = FALSE;
@@ -279,10 +319,7 @@ private:
         if (SUCCEEDED(a_symbol->get_isStatic(&_isStatic)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"isStatic:       %s\n",
-                _isStatic ? L"true" : L"false"
-            );
+            wprintf(L"isStatic:       %s\n", _isStatic ? L"true" : L"false");
         }
 
         BOOL isConst = FALSE;
@@ -290,10 +327,7 @@ private:
         if (SUCCEEDED(a_symbol->get_constType(&isConst)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"isConst:        %s\n",
-                isConst ? L"true" : L"false"
-            );
+            wprintf(L"isConst:        %s\n", isConst ? L"true" : L"false");
         }
 
         BOOL isVolatile = FALSE;
@@ -301,10 +335,7 @@ private:
         if (SUCCEEDED(a_symbol->get_volatileType(&isVolatile)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"isVolatile:     %s\n",
-                isVolatile ? L"true" : L"false"
-            );
+            wprintf(L"isVolatile:     %s\n", isVolatile ? L"true" : L"false");
         }
     }
 
@@ -315,11 +346,7 @@ private:
         if (SUCCEEDED(a_symbol->get_locationType(&locationType)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"locationType:   %lu (%s)\n",
-                locationType,
-                locationTypeName(locationType)
-            );
+            wprintf(L"locationType:   %lu (%s)\n", locationType, locationTypeName(locationType));
         }
 
         LONG offset = 0;
@@ -327,11 +354,7 @@ private:
         if (SUCCEEDED(a_symbol->get_offset(&offset)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"offset:         %ld (0x%lX)\n",
-                offset,
-                offset
-            );
+            wprintf(L"offset:         %ld (0x%lX)\n", offset, offset);
         }
 
         DWORD bitPosition = 0;
@@ -339,11 +362,7 @@ private:
         if (SUCCEEDED(a_symbol->get_bitPosition(&bitPosition)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"bitPosition:    %lu (0x%lX)\n",
-                bitPosition,
-                bitPosition
-            );
+            wprintf(L"bitPosition:    %lu (0x%lX)\n", bitPosition, bitPosition);
         }
 
         ULONGLONG length = 0;
@@ -351,10 +370,7 @@ private:
         if (SUCCEEDED(a_symbol->get_length(&length)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"length:         %llu bytes\n",
-                length
-            );
+            wprintf(L"length:         %llu bytes\n", length);
         }
     }
 
@@ -392,10 +408,7 @@ private:
         if (SUCCEEDED(a_symbol->get_virtual(&isVirtual)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"isVirtual:      %s\n",
-                isVirtual ? L"true" : L"false"
-            );
+            wprintf(L"isVirtual:      %s\n", isVirtual ? L"true" : L"false");
         }
 
         BOOL isPure = FALSE;
@@ -403,10 +416,7 @@ private:
         if (SUCCEEDED(a_symbol->get_pure(&isPure)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"isPure:         %s\n",
-                isPure ? L"true" : L"false"
-            );
+            wprintf(L"isPure:         %s\n", isPure ? L"true" : L"false");
         }
 
         BOOL isIntroVirtual = FALSE;
@@ -414,10 +424,7 @@ private:
         if (SUCCEEDED(a_symbol->get_intro(&isIntroVirtual)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"isIntroVirtual: %s\n",
-                isIntroVirtual ? L"true" : L"false"
-            );
+            wprintf(L"isIntroVirtual: %s\n", isIntroVirtual ? L"true" : L"false");
         }
     }
 
@@ -428,10 +435,7 @@ private:
         if (SUCCEEDED(a_symbol->get_virtualBaseOffset(&vtableOffset)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"virtualOffset:  0x%lX\n",
-                vtableOffset
-            );
+            wprintf(L"virtualOffset:  0x%lX\n", vtableOffset);
         }
     }
 
@@ -442,11 +446,7 @@ private:
         if (SUCCEEDED(a_symbol->get_udtKind(&udtKind)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"udtKind:        %lu (%s)\n",
-                udtKind,
-                udtKindName(udtKind)
-            );
+            wprintf(L"udtKind:        %lu (%s)\n", udtKind, udtKindName(udtKind));
         }
 
         BOOL isNested = FALSE;
@@ -454,10 +454,7 @@ private:
         if (SUCCEEDED(a_symbol->get_nested(&isNested)))
         {
             printIndent(a_indent);
-            wprintf(
-                L"isNested:       %s\n",
-                isNested ? L"true" : L"false"
-            );
+            wprintf(L"isNested:       %s\n", isNested ? L"true" : L"false");
         }
     }
 

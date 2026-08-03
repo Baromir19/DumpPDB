@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write       # create tags and GitHub releases
+  issues: write         # comment on issues
+  pull-requests: write  # comment on pull requests
+
+jobs:
+  # ─── Stage 1: build both architectures in parallel ───────────────────────
+  build:
+    name: Build & Test (${{ matrix.arch }})
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history — semantic-release needs it
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
+        with:
+          path: build-ci-${{ matrix.arch }}/_deps
+          key: cmake-deps-${{ matrix.arch }}-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            cmake-deps-${{ matrix.arch }}-
+
+      - name: Configure CMake
+        run: cmake --preset ci-${{ matrix.arch }}-tests
+
+      # ── Debug build + tests ──────────────────────────────────────────────
+      - name: Build Debug
+        run: cmake --build build-ci-${{ matrix.arch }} --config Debug
+
+      - name: Test Debug
+        run: ctest --test-dir build-ci-${{ matrix.arch }} -C Debug --output-on-failure
+
+      # ── Release build + tests ────────────────────────────────────────────
+      - name: Build Release
+        run: cmake --build build-ci-${{ matrix.arch }} --config Release
+
+      - name: Test Release
+        run: ctest --test-dir build-ci-${{ matrix.arch }} -C Release --output-on-failure
+
+      # ── Package ──────────────────────────────────────────────────────────
+      - name: Package (${{ matrix.arch }})
+        shell: pwsh
+        run: |
+          $arch = "${{ matrix.arch }}"
+          $buildDir = "build-ci-$arch"
+          $stagingDir = "staging-$arch"
+          New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
+
+          Copy-Item "$buildDir\bin\Release\DumpPDB.exe"  $stagingDir
+          Copy-Item "$buildDir\bin\Release\PdbAPI.dll"   $stagingDir
+          Copy-Item "$buildDir\lib\Release\PdbAPI.lib"   $stagingDir
+          Copy-Item "API\PdbApi.h"                       $stagingDir
+
+          Compress-Archive -Path "$stagingDir\*" `
+            -DestinationPath "DumpPDB-$arch.zip" -Force
+
+      - name: Upload build artifact (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: DumpPDB-${{ matrix.arch }}
+          path: DumpPDB-${{ matrix.arch }}.zip
+          retention-days: 7
+
+  # ─── Stage 2: semantic-release — runs only after both builds succeed ──────
+  release:
+    name: Semantic Release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install semantic-release
+        run: npm ci
+
+      - name: Download x64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DumpPDB-x64
+          path: dist/
+
+      - name: Download x86 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DumpPDB-x86
+          path: dist/
+
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release

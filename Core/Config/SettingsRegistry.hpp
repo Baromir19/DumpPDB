@@ -12,13 +12,14 @@ class SettingsRegistry : public Singleton<SettingsRegistry>
 {
     SET_SINGLETON_FRIEND(SettingsRegistry)
 
-    std::vector<std::unique_ptr<ISettingDescriptor>>      m_settings;
+    std::vector<std::unique_ptr<ISettingDescriptor>> m_settings;
     std::unordered_map<std::wstring, ISettingDescriptor*> m_byName;
 
     SettingsRegistry() = default;
 
 public:
-    template<typename T>
+
+    template <typename T>
     void registerSetting(const std::wstring& a_name, T& a_ref)
     {
         auto descriptor = std::make_unique<SettingDescriptor<T>>(a_name, a_ref);
@@ -26,13 +27,13 @@ public:
         m_settings.push_back(std::move(descriptor));
     }
 
-    ISettingDescriptor* find(const std::wstring& a_name) const
+    [[nodiscard]] ISettingDescriptor* find(const std::wstring& a_name) const
     {
         const auto it = m_byName.find(a_name);
         return it != m_byName.end() ? it->second : nullptr;
     }
 
-    const std::vector<std::unique_ptr<ISettingDescriptor>>& all() const
+    [[nodiscard]] const std::vector<std::unique_ptr<ISettingDescriptor>>& all() const
     {
         return m_settings;
     }

@@ -7,6 +7,7 @@ include(FetchContent)
 FetchContent_Declare(
     googletest
     URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(googletest)
 
@@ -17,16 +18,12 @@ FetchContent_MakeAvailable(googletest)
 add_executable(DumpPDB_UnitTests
     Unit/ScopeContextTests.cpp
     Unit/TypeBuilderTests.cpp
-)
-
-target_include_directories(DumpPDB_UnitTests
-    PRIVATE
-        "${DUMPPDB_SOURCE_DIR}"
-        "${DIA_INCLUDE_DIR}"
+    Unit/TypeWalkerTests.cpp
 )
 
 target_link_libraries(DumpPDB_UnitTests
     PRIVATE
+        DumpPDBCore
         GTest::gtest_main
 )
 
@@ -34,33 +31,39 @@ target_link_libraries(DumpPDB_UnitTests
 # Integration tests — require TestCompiland PDB
 # ============================================================================
 
-# Find TestCompiland PDB — built separately (MSBuild project)
-set(TEST_COMPILAND_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../TestCompiland")
-set(TEST_COMPILAND_PDB "${TEST_COMPILAND_DIR}/x64/Debug/TestCompiland.pdb")
-
+# Find TestCompiland PDB — built by the TestCompiland target
 add_executable(DumpPDB_IntegrationTests
     Integration/PdbDumpTests.cpp
+    Integration/PropertyTests.cpp
 )
 
-target_include_directories(DumpPDB_IntegrationTests
-    PRIVATE
-        "${DUMPPDB_SOURCE_DIR}"
-        "${DIA_INCLUDE_DIR}"
+add_dependencies(
+    DumpPDB_IntegrationTests
+    TestCompiland
 )
 
 target_link_libraries(DumpPDB_IntegrationTests
     PRIVATE
+        DumpPDBCore
         GTest::gtest_main
         "${DIA_LIBRARY}"
         ole32
         shell32
 )
 
-target_compile_definitions(DumpPDB_IntegrationTests
+target_compile_definitions(
+    DumpPDB_IntegrationTests
     PRIVATE
-        UNICODE
-        _UNICODE
-        TEST_COMPILAND_PDB="${TEST_COMPILAND_PDB}"
+        TEST_COMPILAND_PDB="$<TARGET_PDB_FILE:TestCompiland>"
+)
+
+target_link_libraries(DumpPDB_IntegrationTests
+    PRIVATE
+        DumpPDBCore
+        GTest::gtest_main
+        "${DIA_LIBRARY}"
+        ole32
+        shell32
 )
 
 # ============================================================================
@@ -68,5 +71,5 @@ target_compile_definitions(DumpPDB_IntegrationTests
 # ============================================================================
 
 include(GoogleTest)
-gtest_discover_tests(DumpPDB_UnitTests)
-gtest_discover_tests(DumpPDB_IntegrationTests)
+gtest_discover_tests(DumpPDB_UnitTests DISCOVERY_MODE PRE_TEST)
+gtest_discover_tests(DumpPDB_IntegrationTests DISCOVERY_MODE PRE_TEST)

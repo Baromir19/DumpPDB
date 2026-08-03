@@ -27,24 +27,24 @@ typedef int32_t PdbApiResult;
 
 struct PdbApiDumpConfig
 {
-    int32_t  showSize;
-    int32_t  showOffset;
-    int32_t  showAccess;
-    int32_t  showInfoComment;
-    int32_t  showNonScoped;
-    int32_t  showEnumHex;
-    int32_t  showTypeSource;
-    int32_t  curlyBraceNewline;
-    int32_t  hideCompilerGenerated;
+    int32_t showSize;
+    int32_t showOffset;
+    int32_t showAccess;
+    int32_t showInfoComment;
+    int32_t showNonScoped;
+    int32_t showEnumHex;
+    int32_t showTypeSource;
+    int32_t curlyBraceNewline;
+    int32_t hideCompilerGenerated;
     uint32_t baseAccessType;
-    int32_t  intStyle; // 0 = MsvcNative, 1 = Cstdint — see IntStyle enum in Core
+    int32_t intStyle; // 0 = MsvcNative, 1 = Cstdint, see IntStyle enum in Core
 };
 
 // --- Lifecycle ---
 
 PDBAPI_API PdbApiResult PdbApi_Initialize(const wchar_t* a_pdbPath);
-PDBAPI_API void         PdbApi_Shutdown();
-PDBAPI_API int32_t      PdbApi_IsInitialized(); // 0/1, not bool (ABI safety)
+PDBAPI_API void PdbApi_Shutdown();
+PDBAPI_API int32_t PdbApi_IsInitialized(); // 0/1, not bool (ABI safety)
 
 // --- Config ---
 
@@ -61,23 +61,31 @@ PDBAPI_API PdbApiResult PdbApi_GetConfig(PdbApiDumpConfig* a_outConfig);
 //          can reallocate and call again.
 // a_outRequiredSize may be nullptr if the caller doesn't care.
 
-PDBAPI_API PdbApiResult PdbApi_DumpClassByName(
-    const wchar_t* a_name, int32_t a_caseSensitive,
-    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+PDBAPI_API PdbApiResult PdbApi_DumpClassByName(const wchar_t* a_name,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
 
-PDBAPI_API PdbApiResult PdbApi_DumpEnumByName(
-    const wchar_t* a_name, int32_t a_caseSensitive,
-    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+PDBAPI_API PdbApiResult PdbApi_DumpEnumByName(const wchar_t* a_name,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
 
-PDBAPI_API PdbApiResult PdbApi_DumpTypedefByName(
-    const wchar_t* a_name, int32_t a_caseSensitive,
-    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+PDBAPI_API PdbApiResult PdbApi_DumpTypedefByName(const wchar_t* a_name,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
 
 /// Exact name search across all tags, with namespace-prefix fallback,
 /// grouped into namespace blocks. Mirrors PdbToolset::dumpTypeByName.
-PDBAPI_API PdbApiResult PdbApi_DumpTypeByName(
-    const wchar_t* a_name, int32_t a_caseSensitive,
-    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+PDBAPI_API PdbApiResult PdbApi_DumpTypeByName(const wchar_t* a_name,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
 
 // --- Diagnostics ---
 

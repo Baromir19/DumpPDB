@@ -1,110 +1,129 @@
 #pragma once
 
+#include <memory>
+
 #include <Core/Util/Container/Singleton.hpp>
 
 #include <Core/System/ConsoleManager.hpp>
 #include <Core/Config/IniSerializer.hpp>
 
 #include <CLI/Application/Command/ICommand.hpp>
-#include <CLI/Application/Command/CommandType.hpp>
-#include <CLI/Application/Command/CommandCompiland.hpp>
-#include <CLI/Application/Command/CommandSource.hpp>
-#include <CLI/Application/Command/CommandSettings.hpp>
-#include <CLI/Application/Command/CommandHelp.hpp>
+#include <CLI/Application/Command/Commands/CommandType.hpp>
+#include <CLI/Application/Command/Commands/CommandCompiland.hpp>
+#include <CLI/Application/Command/Commands/CommandSource.hpp>
+#include <CLI/Application/Command/Commands/CommandSettings.hpp>
+#include <CLI/Application/Command/Commands/CommandHelp.hpp>
 
 class CommandManager : public Singleton<CommandManager>
 {
     SET_SINGLETON_FRIEND(CommandManager)
 
 protected:
-	std::vector<ICommand*> m_commands;
+
+    std::vector<std::unique_ptr<ICommand>> m_commands;
 
 public:
-	bool initialize(const CommandConfig& a_config, const DumpConfig& a_dumpConfig)
-	{
-		static bool initState = false;
-		if (initState) return true;
 
-		m_commands.push_back(new CommandType(a_config.m_useClipboard, a_dumpConfig));
-		m_commands.push_back(new CommandHelp());
-		m_commands.push_back(new CommandCompiland());
-		m_commands.push_back(new CommandSource());
-		m_commands.push_back(new CommandSettings());
+    bool initialize(const CommandConfig& a_config, const DumpConfig& a_dumpConfig)
+    {
+        static bool initState = false;
+        if (initState)
+        {
+            return true;
+        }
 
-		initState = true;
-		return true;
-	}
+        m_commands.push_back(std::make_unique<CommandType>(a_config.m_useClipboard, a_dumpConfig));
+        m_commands.push_back(std::make_unique<CommandHelp>());
+        m_commands.push_back(std::make_unique<CommandCompiland>());
+        m_commands.push_back(std::make_unique<CommandSource>());
+        m_commands.push_back(std::make_unique<CommandSettings>());
 
-	__declspec(noreturn) void displayCommandsInfo() const
-	{
-		ConsoleManager::print(L"Usage: DumpPDB.exe <commandname> <filename>\n");
-		ConsoleManager::print(L"Command list:\n");
+        initState = true;
+        return true;
+    }
 
-		/// TODO: get cmd size before ":"
+    [[noreturn]]
+    void displayCommandsInfo() const
+    {
+        ConsoleManager::print(L"Usage: DumpPDB.exe <commandname> <filename>\n");
+        ConsoleManager::print(L"Command list:\n");
 
-		for (const auto& command : m_commands)
-		{
-			ConsoleManager::print(L"  ");
+        /// TODO: get cmd size before ":"
 
-			const auto& names = command->getCommandNames();
+        for (const auto& command : m_commands)
+        {
+            ConsoleManager::print(L"  ");
 
-			for (auto i = 0; i < names.size(); ++i)
-			{
-				ConsoleManager::print(L"%s", names[i]);
+            const auto& names = command->getCommandNames();
 
-				if (i < names.size() - 1) ConsoleManager::print(L", ");
-			}
+            for (auto i = 0; i < names.size(); ++i)
+            {
+                ConsoleManager::print(L"%s", names[i]);
 
-			ConsoleManager::setCursor(20);
-			ConsoleManager::print(L" %s", command->getArgHelp());
+                if (i < names.size() - 1)
+                {
+                    ConsoleManager::print(L", ");
+                }
+            }
 
-			ConsoleManager::setCursor(44);
-			ConsoleManager::print(L" : %s\n", command->getUsageHelp());
-		}
+            ConsoleManager::setCursor(20);
+            ConsoleManager::print(L" %s", command->getArgHelp());
 
-		exit(EXIT_SUCCESS);
-	}
+            ConsoleManager::setCursor(44);
+            ConsoleManager::print(L" : %s\n", command->getUsageHelp());
+        }
 
-	ICommand* getCommand(const wchar_t* a_commandString) const
-	{
-		for (const auto& command : m_commands)
-		{
-			for (const auto& name : command->getCommandNames())
-			{
-				if (!wcscmp(name, a_commandString))
-				{
-					return command;
-				}
-			}
-		}
+        exit(EXIT_SUCCESS);
+    }
 
-		ConsoleManager::printError(L"No command defined as \"%s\"! \n", a_commandString);
-		// displayCommandsInfo();
-	}
+    ICommand* getCommand(const wchar_t* a_commandString) const
+    {
+        for (const auto& command : m_commands)
+        {
+            for (const auto& name : command->getCommandNames())
+            {
+                if (wcscmp(name, a_commandString) == 0)
+                {
+                    return command.get();
+                }
+            }
+        }
 
-	ICommand* getCommand(const wchar_t* a_commandString, int a_userMessageSize) const
-	{
-		auto ret = getCommand(a_commandString);
+        ConsoleManager::printError(L"No command defined as \"%s\"! \n", a_commandString);
+        return nullptr;
+        // displayCommandsInfo();
+    }
 
-		auto count = ret->getArgCount();
-		auto type = ret->getType();
+    ICommand* getCommand(const wchar_t* a_commandString, int a_userMessageSize) const
+    {
+        auto* ret = getCommand(a_commandString);
 
-		count += type & ret->s_executableMask ? 1 : 0; // is it need name of .pdb?
+        auto count = ret->getArgCount();
+        auto type = ret->getType();
 
-		count += 2; // executable path + command name
+        count += static_cast<unsigned int>(type) & ICommand::s_executableMask
+                     ? 1
+                     : 0; // is it need name of .pdb?
 
-		if (a_userMessageSize - count >= 0) { return ret; }
+        count += 2; // executable path + command name
 
-		ConsoleManager::printError(L"Command size (%u) is less than minimum (%u) \n", a_userMessageSize, count);
-	}
+        if (a_userMessageSize - count >= 0)
+        {
+            return ret;
+        }
 
-	void executeCommand(ICommand* a_command)
-	{
-		a_command->execute(ConsoleManager::instance().getCommandArguments());
+        ConsoleManager::printError(
+            L"Command size (%u) is less than minimum (%u) \n", a_userMessageSize, count);
+        return nullptr;
+    }
 
-		if (a_command->getType() == ICommand::COMMAND_HELP) /// ATTENTION
-		{
-			displayCommandsInfo();
-		}
-	}
+    void executeCommand(ICommand* a_command) const
+    {
+        a_command->execute(ConsoleManager::instance().getCommandArguments());
+
+        if (a_command->getType() == ICommand::Type::COMMAND_HELP) /// ATTENTION
+        {
+            displayCommandsInfo();
+        }
+    }
 };

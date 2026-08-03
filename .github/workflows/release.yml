@@ -1,0 +1,78 @@
+name: Release Candidate
+
+on:
+  push:
+    branches:
+      - "release/**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    name: Build & Test (${{ matrix.arch }})
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
+        with:
+          path: build-ci-${{ matrix.arch }}/_deps
+          key: cmake-deps-${{ matrix.arch }}-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            cmake-deps-${{ matrix.arch }}-
+
+      - name: Configure CMake
+        run: cmake --preset ci-${{ matrix.arch }}-tests
+
+      # ── Debug build + tests ──────────────────────────────────────────────
+      - name: Build Debug
+        run: cmake --build build-ci-${{ matrix.arch }} --config Debug
+
+      - name: Test Debug
+        run: ctest --test-dir build-ci-${{ matrix.arch }} -C Debug --output-on-failure
+
+      # ── Release build + tests ────────────────────────────────────────────
+      - name: Build Release
+        run: cmake --build build-ci-${{ matrix.arch }} --config Release
+
+      - name: Test Release
+        run: ctest --test-dir build-ci-${{ matrix.arch }} -C Release --output-on-failure
+
+      # ── Package candidate ────────────────────────────────────────────────
+      - name: Package candidate (${{ matrix.arch }})
+        shell: pwsh
+        run: |
+          $arch = "${{ matrix.arch }}"
+          $buildDir = "build-ci-$arch"
+          $stagingDir = "staging-$arch"
+          New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
+
+          Copy-Item "$buildDir\bin\Release\DumpPDB.exe"  $stagingDir
+          Copy-Item "$buildDir\bin\Release\PdbAPI.dll"   $stagingDir
+          Copy-Item "$buildDir\lib\Release\PdbAPI.lib"   $stagingDir
+          Copy-Item "API\PdbApi.h"                       $stagingDir
+
+          Compress-Archive -Path "$stagingDir\*" `
+            -DestinationPath "DumpPDB-candidate-$arch.zip" -Force
+          Write-Host "Created DumpPDB-candidate-$arch.zip"
+
+      - name: Upload candidate artifact (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: DumpPDB-candidate-${{ matrix.arch }}
+          path: DumpPDB-candidate-${{ matrix.arch }}.zip
+          retention-days: 14
