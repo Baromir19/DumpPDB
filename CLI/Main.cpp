@@ -7,7 +7,9 @@
 
 #include <Core/Util/Error/DumpError.hpp>
 
-int wmain(int argc, wchar_t* argv[]) 
+// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays)
+
+int wmain(int argc, wchar_t* argv[])
 {
     // DebugManager::WaitDebugger();
 
@@ -30,3 +32,5 @@ int wmain(int argc, wchar_t* argv[])
 
     return EXIT_SUCCESS;
 }
+
+// NOLINTEND(cppcoreguidelines-avoid-c-arrays)

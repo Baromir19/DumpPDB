@@ -27,12 +27,14 @@ class PdbToolset : public Singleton<PdbToolset>
     SET_SINGLETON_FRIEND(PdbToolset)
 
 protected:
+
     PdbToolset() = default;
 
-    DiaSession   m_session;
+    DiaSession m_session;
     SymbolDumper m_dumper;
 
 public:
+
     /// Initialize the DIA session and wire up the dumper.
     /// Returns true on success, false on any error (exceptions from DiaSession are caught).
     bool initialize(const std::wstring& a_pdbPath)
@@ -45,18 +47,28 @@ public:
         }
         catch (const DumpError& e)
         {
-            std::wcerr << L"PdbToolset initialize failed: "
-                << e.wideMessage()
-                << L'\n';
+            std::wcerr << L"PdbToolset initialize failed: " << e.wideMessage() << L'\n';
             return false;
         }
     }
 
     /// Access underlying DIA objects for advanced use.
-    IDiaSession* session() const { return m_session.session(); }
-    IDiaSymbol* globalScope() const { return m_session.globalScope(); }
-    SymbolDumper& dumper() { return m_dumper; }
-    const SymbolDumper& dumper() const { return m_dumper; }
+    IDiaSession* session() const
+    {
+        return m_session.session();
+    }
+    IDiaSymbol* globalScope() const
+    {
+        return m_session.globalScope();
+    }
+    SymbolDumper& dumper()
+    {
+        return m_dumper;
+    }
+    const SymbolDumper& dumper() const
+    {
+        return m_dumper;
+    }
 
     /// Dump all types matching the given name.
     /// Searches by exact name first (all tags), then falls back to namespace prefix search
@@ -65,7 +77,8 @@ public:
     std::wstring dumpTypeByName(const wchar_t* a_name, bool a_caseSensitive)
     {
         std::wstring out;
-        if (!a_name) return out;
+        if (!a_name)
+            return out;
 
         // Step 1: Search by exact name across all symbol types
         auto matches = SymbolFinder::findAll(m_session.globalScope(), SymTagNull, a_name, a_caseSensitive);
@@ -85,7 +98,8 @@ public:
     std::wstring dumpClassByName(const wchar_t* a_name, bool a_caseSensitive)
     {
         std::wstring out;
-        if (!a_name) return out;
+        if (!a_name)
+            return out;
 
         auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagUDT, a_name, a_caseSensitive);
         if (_sym)
@@ -98,7 +112,8 @@ public:
     std::wstring dumpEnumByName(const wchar_t* a_name, bool a_caseSensitive)
     {
         std::wstring out;
-        if (!a_name) return out;
+        if (!a_name)
+            return out;
 
         auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagEnum, a_name, a_caseSensitive);
         if (_sym)
@@ -111,7 +126,8 @@ public:
     std::wstring dumpTypedefByName(const wchar_t* a_name, bool a_caseSensitive)
     {
         std::wstring out;
-        if (!a_name) return out;
+        if (!a_name)
+            return out;
 
         auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagTypedef, a_name, a_caseSensitive);
         if (_sym)
@@ -127,7 +143,8 @@ public:
         std::wstring out;
 
         ComPtr<IDiaEnumSymbols> enum_symbolsSymbols;
-        if (FAILED(m_session.globalScope()->findChildren(SymTagCompiland, nullptr, nsNone, &enum_symbolsSymbols)) || !enum_symbolsSymbols)
+        if (FAILED(m_session.globalScope()->findChildren(SymTagCompiland, nullptr, nsNone, &enum_symbolsSymbols)) ||
+            !enum_symbolsSymbols)
             return out;
 
         ComPtr<IDiaSymbol> compiland;
@@ -153,7 +170,8 @@ public:
         std::wstring out;
 
         ComPtr<IDiaEnumSymbols> enum_symbols;
-        if (FAILED(m_session.globalScope()->findChildren(SymTagCompiland, nullptr, nsNone, &enum_symbols)) || !enum_symbols)
+        if (FAILED(m_session.globalScope()->findChildren(SymTagCompiland, nullptr, nsNone, &enum_symbols)) ||
+            !enum_symbols)
             return out;
 
         ComPtr<IDiaSymbol> compiland;
@@ -183,10 +201,15 @@ public:
                     _detail->get_hasDebugInfo(&_isDebug);
 
                     wchar_t buf[256];
-                    swprintf_s(buf, L"[ABOUT] Compiler: %s; Language: %u; Platform: %u; Debug: %s\n",
-                        _compilerName ? _compilerName : L"unknown", _language, _platform, _isDebug ? L"true" : L"false");
+                    swprintf_s(buf,
+                        L"[ABOUT] Compiler: %s; Language: %u; Platform: %u; Debug: %s\n",
+                        _compilerName ? _compilerName : L"unknown",
+                        _language,
+                        _platform,
+                        _isDebug ? L"true" : L"false");
                     out += buf;
-                    if (_compilerName) SysFreeString(_compilerName);
+                    if (_compilerName)
+                        SysFreeString(_compilerName);
                 }
             }
 
@@ -249,11 +272,10 @@ public:
     }
 
 private:
+
     /// Dump a set of symbols, grouping those in the same namespace into one
     /// "namespace X { ... }" block. Symbols without a namespace are dumped as-is.
-    void dumpSymbolsGrouped(
-        const std::vector<ComPtr<IDiaSymbol>>& a_symbols,
-        std::wstring& aoutput)
+    void dumpSymbolsGrouped(const std::vector<ComPtr<IDiaSymbol>>& a_symbols, std::wstring& aoutput)
     {
         // Group symbols by namespace key.
         // Key "<empty>" for global (no namespace) symbols.
@@ -295,10 +317,17 @@ private:
 
                     switch (symTag)
                     {
-                    case SymTagUDT:     aoutput += m_dumper.dumpClass(sym.get(), 1); break;
-                    case SymTagEnum:    aoutput += m_dumper.dumpEnum(sym.get(), 1); break;
-                    case SymTagTypedef: aoutput += m_dumper.dumpTypedef(sym.get(), 1); break;
-                    default: break;
+                    case SymTagUDT:
+                        aoutput += m_dumper.dumpClass(sym.get(), 1);
+                        break;
+                    case SymTagEnum:
+                        aoutput += m_dumper.dumpEnum(sym.get(), 1);
+                        break;
+                    case SymTagTypedef:
+                        aoutput += m_dumper.dumpTypedef(sym.get(), 1);
+                        break;
+                    default:
+                        break;
                     }
                 }
 

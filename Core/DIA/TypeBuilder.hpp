@@ -29,17 +29,18 @@ struct TypeQualifier
 
 struct Modifier
 {
-    ModifierKind  kind;
+    ModifierKind kind;
     TypeQualifier qualifier;
-    size_t        arrayCount = 0;     // for Array
-    std::wstring  functionArgs;       // for Function
-    DWORD         bitPosition = 0;    // for BitField
-    ULONGLONG     bitLength = 0;      // for BitField
+    size_t arrayCount = 0;     // for Array
+    std::wstring functionArgs; // for Function
+    DWORD bitPosition = 0;     // for BitField
+    ULONGLONG bitLength = 0;   // for BitField
 };
 
 class TypeBuilder
 {
 public:
+
     TypeBuilder& base(std::wstring_view a_type)
     {
         mbaseType = a_type;
@@ -54,37 +55,37 @@ public:
 
     TypeBuilder& pointer()
     {
-        m_chain.push_back({ ModifierKind::Pointer });
+        m_chain.push_back({ModifierKind::Pointer});
         return *this;
     }
 
     TypeBuilder& reference()
     {
-        m_chain.push_back({ ModifierKind::Reference });
+        m_chain.push_back({ModifierKind::Reference});
         return *this;
     }
 
     TypeBuilder& rvalueReference()
     {
-        m_chain.push_back({ ModifierKind::RValueReference });
+        m_chain.push_back({ModifierKind::RValueReference});
         return *this;
     }
 
     TypeBuilder& array(size_t acount)
     {
-        m_chain.push_back({ ModifierKind::Array, {}, acount });
+        m_chain.push_back({ModifierKind::Array, {}, acount});
         return *this;
     }
 
     TypeBuilder& function(std::wstring a_args)
     {
-        m_chain.push_back({ ModifierKind::Function, {}, 0, std::move(a_args) });
+        m_chain.push_back({ModifierKind::Function, {}, 0, std::move(a_args)});
         return *this;
     }
 
     TypeBuilder& bitField(DWORD a_pos, ULONGLONG a_len)
     {
-        m_chain.push_back({ ModifierKind::BitField, {}, 0, L"", a_pos, a_len });
+        m_chain.push_back({ModifierKind::BitField, {}, 0, L"", a_pos, a_len});
         return *this;
     }
 
@@ -127,11 +128,20 @@ public:
         std::wstring result;
 
         // 1. Base qualifiers (const, volatile) belong before the base type.
-        if (m_baseQualifier.isVolatile) { result += L"volatile "; }
-        if (m_baseQualifier.isConst)    { result += L"const "; }
+        if (m_baseQualifier.isVolatile)
+        {
+            result += L"volatile ";
+        }
+        if (m_baseQualifier.isConst)
+        {
+            result += L"const ";
+        }
 
         // 2. Base type
-        if (!mbaseType.empty()) { result += mbaseType; }
+        if (!mbaseType.empty())
+        {
+            result += mbaseType;
+        }
 
         // 3. Build prefix (before name) and postfix (after name) from the modifier chain.
         //    Walk from inner (begin) to outer (end) to correctly handle C++ declarators.
@@ -147,24 +157,51 @@ public:
             switch (it->kind)
             {
             case ModifierKind::Pointer:
-                if (seenPostfix) { needsParen = true; }
+                if (seenPostfix)
+                {
+                    needsParen = true;
+                }
                 prefix += L"*";
-                if (it->qualifier.isConst)    { prefix += L" const"; }
-                if (it->qualifier.isVolatile) { prefix += L" volatile"; }
+                if (it->qualifier.isConst)
+                {
+                    prefix += L" const";
+                }
+                if (it->qualifier.isVolatile)
+                {
+                    prefix += L" volatile";
+                }
                 break;
 
             case ModifierKind::Reference:
-                if (seenPostfix) { needsParen = true; }
+                if (seenPostfix)
+                {
+                    needsParen = true;
+                }
                 prefix += L"&";
-                if (it->qualifier.isConst)    { prefix += L" const"; }
-                if (it->qualifier.isVolatile) { prefix += L" volatile"; }
+                if (it->qualifier.isConst)
+                {
+                    prefix += L" const";
+                }
+                if (it->qualifier.isVolatile)
+                {
+                    prefix += L" volatile";
+                }
                 break;
 
             case ModifierKind::RValueReference:
-                if (seenPostfix) { needsParen = true; }
+                if (seenPostfix)
+                {
+                    needsParen = true;
+                }
                 prefix += L"&&";
-                if (it->qualifier.isConst)    { prefix += L" const"; }
-                if (it->qualifier.isVolatile) { prefix += L" volatile"; }
+                if (it->qualifier.isConst)
+                {
+                    prefix += L" const";
+                }
+                if (it->qualifier.isVolatile)
+                {
+                    prefix += L" volatile";
+                }
                 break;
 
             case ModifierKind::Array:
@@ -197,13 +234,21 @@ public:
         {
             result += L" (";
             result += prefix;
-            if (!m_name.empty()) { result += L" "; result += m_name; }
+            if (!m_name.empty())
+            {
+                result += L" ";
+                result += m_name;
+            }
             result += L")";
         }
         else
         {
             result += prefix;
-            if (!m_name.empty()) { result += L" "; result += m_name; }
+            if (!m_name.empty())
+            {
+                result += L" ";
+                result += m_name;
+            }
         }
 
         // 5. Postfix (function args, array dimensions)
@@ -233,8 +278,9 @@ public:
     }
 
 private:
-    std::vector<Modifier> m_chain;  // inner (closest to base) to outer
-    std::wstring          mbaseType;
-    std::wstring          m_name;
-    TypeQualifier         m_baseQualifier;
+
+    std::vector<Modifier> m_chain; // inner (closest to base) to outer
+    std::wstring mbaseType;
+    std::wstring m_name;
+    TypeQualifier m_baseQualifier;
 };

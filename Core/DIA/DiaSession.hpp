@@ -34,22 +34,12 @@ public:
         ComPtr<IDiaDataSource> source;
         HRESULT hr = E_FAIL;
 
-        hr = NoRegCoCreate(
-            L"msdia140.dll",
-            __uuidof(DiaSource),
-            __uuidof(IDiaDataSource),
-            (void**)&source
-        );
+        hr = NoRegCoCreate(L"msdia140.dll", __uuidof(DiaSource), __uuidof(IDiaDataSource), (void**)&source);
 
         if (FAILED(hr))
         {
             hr = CoCreateInstance(
-                __uuidof(DiaSource),
-                nullptr,
-                CLSCTX_INPROC_SERVER,
-                __uuidof(IDiaDataSource),
-                (void**)&source
-            );
+                __uuidof(DiaSource), nullptr, CLSCTX_INPROC_SERVER, __uuidof(IDiaDataSource), (void**)&source);
         }
 
         if (FAILED(hr))
@@ -91,8 +81,14 @@ public:
         return true;
     }
 
-    IDiaSession* session() const { return m_session.get(); }
-    IDiaSymbol* globalScope() const { return m_globalScope.get(); }
+    IDiaSession* session() const
+    {
+        return m_session.get();
+    }
+    IDiaSymbol* globalScope() const
+    {
+        return m_globalScope.get();
+    }
 
     ~DiaSession()
     {
@@ -105,6 +101,7 @@ public:
         }
     }
 
+    
     // Non-copyable
     DiaSession(const DiaSession&) = delete;
     DiaSession& operator=(const DiaSession&) = delete;
@@ -144,6 +141,7 @@ public:
     }
 
 private:
+
     ComPtr<IDiaDataSource> m_source;
     ComPtr<IDiaSession> m_session;
     ComPtr<IDiaSymbol> m_globalScope;

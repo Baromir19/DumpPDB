@@ -15,16 +15,16 @@
 /// Configuration for dumping output.
 struct DumpConfig
 {
-    bool m_showSize        = true;
-    bool m_showOffset      = true;
-    bool m_showAccess      = true;
+    bool m_showSize = true;
+    bool m_showOffset = true;
+    bool m_showAccess = true;
     bool m_showInfoComment = false;
-    bool m_showNonScoped   = true;
-    bool m_showEnumHex     = false;
-    bool m_showTypeSource  = false;
+    bool m_showNonScoped = true;
+    bool m_showEnumHex = false;
+    bool m_showTypeSource = false;
     bool m_curlyBraceNewline = true;
-    bool m_hideCompilerGenerated = true; // hide __local_vftable_ctor_closure, etc.
-    DWORD m_baseAccessType = 0; // override access type
+    bool m_hideCompilerGenerated = true;     // hide __local_vftable_ctor_closure, etc.
+    DWORD m_baseAccessType = 0;              // override access type
     IntStyle m_intStyle = IntStyle::Cstdint; // __int32 vs int32_t
 };
 
@@ -33,13 +33,20 @@ struct DumpConfig
 class SymbolDumper
 {
 public:
+
     explicit SymbolDumper(const DumpConfig& a_config = DumpConfig())
         : m_config(a_config)
     {
     }
 
-    void setConfig(const DumpConfig& a_config) { m_config = a_config; }
-    const DumpConfig& config() const { return m_config; }
+    void setConfig(const DumpConfig& a_config)
+    {
+        m_config = a_config;
+    }
+    const DumpConfig& config() const
+    {
+        return m_config;
+    }
 
     // --- Scope control (namespace/class hierarchy) ---
 
@@ -96,7 +103,7 @@ public:
         if (TypeWalker::isTopLevelSymbol(a_symbol))
         {
             auto qname = TypeWalker::parseQualifiedName(a_symbol);
-            ns    = qname.ns;
+            ns = qname.ns;
             hasNs = !ns.empty();
         }
 
@@ -115,10 +122,17 @@ public:
         int nesting = hasNs ? 1 : 0;
         switch (symTag)
         {
-        case SymTagUDT:     ret += dumpClass(a_symbol, nesting); break;
-        case SymTagEnum:    ret += dumpEnum(a_symbol, nesting); break;
-        case SymTagTypedef: ret += dumpTypedef(a_symbol, nesting); break;
-        default: break;
+        case SymTagUDT:
+            ret += dumpClass(a_symbol, nesting);
+            break;
+        case SymTagEnum:
+            ret += dumpEnum(a_symbol, nesting);
+            break;
+        case SymTagTypedef:
+            ret += dumpTypedef(a_symbol, nesting);
+            break;
+        default:
+            break;
         }
 
         if (hasNs)
@@ -249,12 +263,7 @@ public:
             if (SUCCEEDED(a_symbol->get_type(&underlyingType)) && underlyingType)
             {
                 // Build the underlying type's full declaration
-                TypeBuilder builder = TypeWalker::resolveType(
-                    underlyingType.get(), 
-                    m_scope, 
-                    true, 
-                    m_config.m_intStyle
-                );
+                TypeBuilder builder = TypeWalker::resolveType(underlyingType.get(), m_scope, true, m_config.m_intStyle);
                 // Set the typedef name as the "variable name" in the declaration
                 builder.name(typedefName);
                 typeText = builder.build();
@@ -284,12 +293,7 @@ public:
         std::wstring typeText;
         try
         {
-            typeText = TypeWalker::resolveType(
-                a_symbol, 
-                m_scope, 
-                true, 
-                m_config.m_intStyle
-            ).build();
+            typeText = TypeWalker::resolveType(a_symbol, m_scope, true, m_config.m_intStyle).build();
         }
         catch (...)
         {
@@ -306,8 +310,15 @@ public:
         ret += tab(a_nestingLevel);
 
         // Virtual/static qualifiers
-        const wchar_t* names[] = { getVirtualName(a_symbol), getStaticName(a_symbol) };
-        for (auto name : names) { if (name) { ret += name; ret += L" "; } }
+        const wchar_t* names[] = {getVirtualName(a_symbol), getStaticName(a_symbol)};
+        for (auto name : names)
+        {
+            if (name)
+            {
+                ret += name;
+                ret += L" ";
+            }
+        }
 
         auto functionType = getTypeCom(a_symbol); // SymTagFunctionType
 
@@ -339,12 +350,9 @@ public:
                 std::wstring retTypeStr;
                 try
                 {
-                    retTypeStr = TypeWalker::resolveType(
-                        retType.get(), 
-                        m_scope,
-                        m_config.m_showNonScoped, 
-                        m_config.m_intStyle
-                    ).build();
+                    retTypeStr =
+                        TypeWalker::resolveType(retType.get(), m_scope, m_config.m_showNonScoped, m_config.m_intStyle)
+                            .build();
                 }
                 catch (...)
                 {
@@ -367,13 +375,12 @@ public:
         // but not directly on the Function symbol.
         if (functionType && namedArgCount != (int)argCount)
         {
-            if (namedArgCount > 0) { ret += L", "; }
+            if (namedArgCount > 0)
+            {
+                ret += L", ";
+            }
             ret += TypeWalker::getFuncArgsString(
-                functionType.get(), 
-                m_scope, 
-                m_config.m_showNonScoped,
-                m_config.m_intStyle
-            );
+                functionType.get(), m_scope, m_config.m_showNonScoped, m_config.m_intStyle);
         }
 
         ret += L")";
@@ -386,7 +393,6 @@ public:
             {
                 ret += L" const";
             }
-
 
             BOOL isVolatile = FALSE;
             if (SUCCEEDED(functionType->get_volatileType(&isVolatile)) && isVolatile)
@@ -413,19 +419,29 @@ public:
         a_symbol->get_virtual(&isVirtual);
         if (isVirtual)
         {
-            BOOL isIntro = TRUE;  // TRUE = new, FALSE = old one
+            BOOL isIntro = TRUE; // TRUE = new, FALSE = old one
             a_symbol->get_intro(&isIntro);
 
             BOOL isSealed = FALSE;
             a_symbol->get_sealed(&isSealed);
 
-            if (!isIntro) { ret += L" override"; }
-            if (isSealed) { ret += L" final"; }
+            if (!isIntro)
+            {
+                ret += L" override";
+            }
+
+            if (isSealed)
+            {
+                ret += L" final";
+            }
 
             // pure virtual
             BOOL isPure = FALSE;
             a_symbol->get_pure(&isPure);
-            if (isPure) { ret += L" = 0"; }
+            if (isPure)
+            {
+                ret += L" = 0";
+            }
         }
 
         ret += L";";
@@ -457,7 +473,8 @@ public:
     /// Returns the new lastAccess value.
     DWORD emitAccessLabel(std::wstring& aout, IDiaSymbol* a_symbol, DWORD alastAccess, int a_nestingLevel) const
     {
-        if (!m_config.m_showAccess) return alastAccess;
+        if (!m_config.m_showAccess)
+            return alastAccess;
 
         DWORD access = 0;
         if (SUCCEEDED(a_symbol->get_access(&access)) && access != alastAccess)
@@ -465,13 +482,24 @@ public:
             alastAccess = access;
             aout += tab(a_nestingLevel - 1);
             const wchar_t* accessName = nullptr;
-            if (m_config.m_baseAccessType) { access = m_config.m_baseAccessType; }
+            if (m_config.m_baseAccessType)
+            {
+                access = m_config.m_baseAccessType;
+            }
             switch (access)
             {
-            case CV_private:   accessName = L"private"; break;
-            case CV_protected: accessName = L"protected"; break;
-            case CV_public:    accessName = L"public"; break;
-            case 0:            accessName = L"public"; break; // undefined !!!
+            case CV_private:
+                accessName = L"private";
+                break;
+            case CV_protected:
+                accessName = L"protected";
+                break;
+            case CV_public:
+                accessName = L"public";
+                break;
+            case 0:
+                accessName = L"public";
+                break; // undefined !!!
             }
             if (accessName)
             {
@@ -503,12 +531,24 @@ public:
             {
                 switch (symTag)
                 {
-                case SymTagData:        childContainers[0].push_back(child); break;
-                case SymTagFunction:    childContainers[1].push_back(child); break;
-                case SymTagUDT:         childContainers[2].push_back(child); break;
-                case SymTagEnum:        childContainers[3].push_back(child); break;
-                case SymTagTypedef:     childContainers[4].push_back(child); break;
-                case SymTagFriend:      childContainers[6].push_back(child); break;
+                case SymTagData:
+                    childContainers[0].push_back(child);
+                    break;
+                case SymTagFunction:
+                    childContainers[1].push_back(child);
+                    break;
+                case SymTagUDT:
+                    childContainers[2].push_back(child);
+                    break;
+                case SymTagEnum:
+                    childContainers[3].push_back(child);
+                    break;
+                case SymTagTypedef:
+                    childContainers[4].push_back(child);
+                    break;
+                case SymTagFriend:
+                    childContainers[6].push_back(child);
+                    break;
                 default:
                     // SymTagVTable, etc. - skip
                     break;
@@ -574,13 +614,17 @@ public:
             BOOL isVirtual = FALSE;
             if (SUCCEEDED(func->get_virtual(&isVirtual)) && isVirtual)
             {
-                if (m_config.m_hideCompilerGenerated && isCompilerGenerated(func.get())) { continue; }
+                if (m_config.m_hideCompilerGenerated && isCompilerGenerated(func.get()))
+                {
+                    continue;
+                }
                 // lastAccess = emitAccessLabel(ret, func.get(), lastAccess, a_nestingLevel);
                 vfuncs.push_back(func);
             }
         }
 
-        std::sort(vfuncs.begin(), vfuncs.end(),
+        std::sort(vfuncs.begin(),
+            vfuncs.end(),
             [](const ComPtr<IDiaSymbol>& a, const ComPtr<IDiaSymbol>& b)
             {
                 DWORD offsetA = 0, offsetB = 0;
@@ -622,20 +666,23 @@ public:
         if (!fields.empty() && m_config.m_showInfoComment)
             hasContent = headerComment(ret, L" FIELDS:", a_nestingLevel, hasContent);
 
-        struct FieldGroup {
+        struct FieldGroup
+        {
             std::vector<ComPtr<IDiaSymbol>> fields;
             LONG beginOffset;
             LONG endOffset;
         };
 
-        struct FieldBranch {
+        struct FieldBranch
+        {
             std::vector<FieldGroup> groups;
         };
 
         // Helper: get the byte-range end offset for a field.
         // For bit-fields, uses the storage type size (storage unit in bytes, not bit width).
         // For regular fields, uses the type size.
-        auto getFieldByteEnd = [](ComPtr<IDiaSymbol>& f) -> LONG {
+        auto getFieldByteEnd = [](ComPtr<IDiaSymbol>& f) -> LONG
+        {
             LONG off = 0;
             f->get_offset(&off);
 
@@ -655,26 +702,29 @@ public:
             return off + static_cast<LONG>(length);
         };
 
-        auto getBitPos = [](ComPtr<IDiaSymbol>& f) -> DWORD {
+        auto getBitPos = [](ComPtr<IDiaSymbol>& f) -> DWORD
+        {
             DWORD bitPos = 0;
             f->get_bitPosition(&bitPos);
             return bitPos;
-            };
+        };
 
         // Check if a field is a bit-field (any bitPosition, including 0).
         // A field is a bit-field if it has both bitPosition AND length < 64 bits.
-        auto isBitfield = [](ComPtr<IDiaSymbol>& f) -> bool {
+        auto isBitfield = [](ComPtr<IDiaSymbol>& f) -> bool
+        {
             DWORD bitPos = 0;
             ULONGLONG bitWidth = 0;
-            return SUCCEEDED(f->get_bitPosition(&bitPos)) &&
-                   SUCCEEDED(f->get_length(&bitWidth)) &&
-                   bitWidth > 0 && bitWidth < 64;
+            return SUCCEEDED(f->get_bitPosition(&bitPos)) && SUCCEEDED(f->get_length(&bitWidth)) && bitWidth > 0 &&
+                   bitWidth < 64;
         };
 
         // Find overlapping fields starting at the same byte offset as field[i].
         // Returns (j) if fields[i..j-1] share the same offset, or fields.size() if none found.
-        auto findOverlapEnd = [&](size_t startIdx) -> size_t {
-            if (startIdx + 1 >= fields.size()) return fields.size();
+        auto findOverlapEnd = [&](size_t startIdx) -> size_t
+        {
+            if (startIdx + 1 >= fields.size())
+                return fields.size();
 
             LONG off = 0;
             fields[startIdx]->get_offset(&off);
@@ -696,7 +746,8 @@ public:
         };
 
         // Build group from fields[i..j) sharing the same offset (union overlap).
-        auto makeGroup = [&](size_t i, size_t j) -> FieldGroup {
+        auto makeGroup = [&](size_t i, size_t j) -> FieldGroup
+        {
             FieldGroup group;
             group.beginOffset = 0;
             if (i < fields.size())
@@ -716,7 +767,8 @@ public:
             FieldBranch curBranch;
             bool startsNewBranch = true;
 
-            for (size_t i = 0; i < fields.size(); ++i) {
+            for (size_t i = 0; i < fields.size(); ++i)
+            {
                 auto& field = fields[i];
                 LONG off = 0;
                 field->get_offset(&off);
@@ -816,9 +868,9 @@ public:
                 curBranch.groups.push_back(group);
             }
 
-            if (!curBranch.groups.empty()) 
-            { 
-                branches.push_back(std::move(curBranch)); 
+            if (!curBranch.groups.empty())
+            {
+                branches.push_back(std::move(curBranch));
             }
         }
 
@@ -861,8 +913,14 @@ public:
             }
 
             ret += tab(_level);
-            try { ret += TypeWalker::resolveType(field.get(), m_scope, true, m_config.m_intStyle).build(); }
-            catch (...) { ret += L"/* <error resolving field type> */"; }
+            try
+            {
+                ret += TypeWalker::resolveType(field.get(), m_scope, true, m_config.m_intStyle).build();
+            }
+            catch (...)
+            {
+                ret += L"/* <error resolving field type> */";
+            }
             ret += L";";
 
             if (m_config.m_showOffset)
@@ -882,7 +940,6 @@ public:
 
         if (branches.empty())
         {
-            
         }
         else
         {
@@ -945,10 +1002,16 @@ public:
         for (auto& func : childContainers[1])
         {
             BOOL isVirtual = TRUE;
-            if (FAILED(func->get_virtual(&isVirtual)) || isVirtual) { continue; }
+            if (FAILED(func->get_virtual(&isVirtual)) || isVirtual)
+            {
+                continue;
+            }
 
             // Skip compiler-generated functions (e.g. __local_vftable_ctor_closure)
-            if (m_config.m_hideCompilerGenerated && isCompilerGenerated(func.get())) { continue; }
+            if (m_config.m_hideCompilerGenerated && isCompilerGenerated(func.get()))
+            {
+                continue;
+            }
 
             if (firstFunc && m_config.m_showInfoComment)
             {
@@ -966,7 +1029,10 @@ public:
         for (auto& field : childContainers[0])
         {
             DWORD kind = 0;
-            if (FAILED(field->get_dataKind(&kind)) || kind == DataIsMember) { continue; }
+            if (FAILED(field->get_dataKind(&kind)) || kind == DataIsMember)
+            {
+                continue;
+            }
 
             if (firstStatic && m_config.m_showInfoComment)
             {
@@ -980,19 +1046,19 @@ public:
 
             switch (kind)
             {
-            case DataIsStaticMember: ret += L"static "; break;
-            case DataIsConstant: ret += L"constexpr "; break;
-            default: break;
+            case DataIsStaticMember:
+                ret += L"static ";
+                break;
+            case DataIsConstant:
+                ret += L"constexpr ";
+                break;
+            default:
+                break;
             }
 
             try
             {
-                ret += TypeWalker::resolveType(
-                    field.get(), 
-                    m_scope, 
-                    true,
-                    m_config.m_intStyle
-                ).build();
+                ret += TypeWalker::resolveType(field.get(), m_scope, true, m_config.m_intStyle).build();
             }
             catch (...)
             {
@@ -1013,7 +1079,8 @@ public:
     /// Register source file info for a symbol (stores for later output).
     void registerTypeSource(IDiaSymbol* a_symbol)
     {
-        if (!m_config.m_showTypeSource) return;
+        if (!m_config.m_showTypeSource)
+            return;
 
         ComPtr<IDiaEnumLineNumbers> enum_symbolsLines;
         ComPtr<IDiaSourceFile> sourceFile;
@@ -1025,8 +1092,9 @@ public:
         if (SUCCEEDED(a_symbol->get_addressSection(&addressSection)) &&
             SUCCEEDED(a_symbol->get_addressOffset(&addressOffset)))
         {
-            if (m_session && SUCCEEDED(m_session->findLinesByAddr(
-                addressSection, addressOffset, 1, &enum_symbolsLines)) && enum_symbolsLines)
+            if (m_session &&
+                SUCCEEDED(m_session->findLinesByAddr(addressSection, addressOffset, 1, &enum_symbolsLines)) &&
+                enum_symbolsLines)
             {
                 ULONG celt = 0;
                 if (SUCCEEDED(enum_symbolsLines->Next(1, &lineNumber, &celt)) && celt == 1)
@@ -1047,11 +1115,15 @@ public:
         }
     }
 
-    void setSession(IDiaSession* a_session) { m_session = a_session; }
+    void setSession(IDiaSession* a_session)
+    {
+        m_session = a_session;
+    }
 
     std::wstring typeSources()
     {
-        if (m_typeSources.empty()) return L"";
+        if (m_typeSources.empty())
+            return L"";
 
         std::wstring ret;
         for (const auto& _src : m_typeSources)
@@ -1079,8 +1151,14 @@ public:
             case SymTagData:
             {
                 std::wstring typeText;
-                try { typeText = TypeWalker::resolveType(a_symbol, m_scope, true, m_config.m_intStyle).build(); }
-                catch (...) { typeText = L"/* <error> */"; }
+                try
+                {
+                    typeText = TypeWalker::resolveType(a_symbol, m_scope, true, m_config.m_intStyle).build();
+                }
+                catch (...)
+                {
+                    typeText = L"/* <error> */";
+                }
                 aoutput += typeText;
                 break;
             }
@@ -1094,6 +1172,7 @@ public:
     // --- Helpers ---
 
 private:
+
     std::wstring tab(int a_repeat = 1) const
     {
         return std::wstring(a_repeat * 4, L' ');
@@ -1101,7 +1180,8 @@ private:
 
     std::wstring sizeComment(IDiaSymbol* a_symbol) const
     {
-        if (!m_config.m_showSize) return L"";
+        if (!m_config.m_showSize)
+            return L"";
 
         ULONGLONG len;
         if (SUCCEEDED(a_symbol->get_length(&len)))
@@ -1118,8 +1198,10 @@ private:
         std::wstring ret;
         BOOL isConst = FALSE;
         BOOL isVol = FALSE;
-        if (SUCCEEDED(a_symbol->get_constType(&isConst)) && isConst) ret += L"const ";
-        if (SUCCEEDED(a_symbol->get_volatileType(&isVol)) && isVol) ret += L"volatile ";
+        if (SUCCEEDED(a_symbol->get_constType(&isConst)) && isConst)
+            ret += L"const ";
+        if (SUCCEEDED(a_symbol->get_volatileType(&isVol)) && isVol)
+            ret += L"volatile ";
         return ret;
     }
 
@@ -1140,9 +1222,12 @@ private:
             a_symbol->get_udtKind(&udtKind);
             switch (udtKind)
             {
-            case UdtStruct: return L"struct ";
-            case UdtUnion:  return L"union ";
-            default: break;
+            case UdtStruct:
+                return L"struct ";
+            case UdtUnion:
+                return L"union ";
+            default:
+                break;
             }
         }
 
@@ -1165,11 +1250,16 @@ private:
                 _isBegin = false;
 
                 auto access = TypeWalker::getAccessName(baseSymbol.get(), m_config.m_baseAccessType);
-                if (access) { ret += access; ret += L" "; }
+                if (access)
+                {
+                    ret += access;
+                    ret += L" ";
+                }
 
                 BOOL isVirtualBase = FALSE;
                 baseSymbol->get_virtualBaseClass(&isVirtualBase); // get_indirectVirtualBaseClass
-                if (isVirtualBase) ret += L"virtual ";
+                if (isVirtualBase)
+                    ret += L"virtual ";
 
                 ret += TypeWalker::getName(baseSymbol.get(), m_scope);
             }
@@ -1230,7 +1320,10 @@ private:
                 if (SUCCEEDED(param->get_dataKind(&_kind)) && _kind == DataIsParam)
                 {
                     ++count;
-                    if (!isFirst) { aout += L", "; }
+                    if (!isFirst)
+                    {
+                        aout += L", ";
+                    }
 
                     try
                     {
@@ -1259,23 +1352,79 @@ private:
             if (m_config.m_showEnumHex)
             {
                 wchar_t buf[32];
-                swprintf_s(buf, L" = 0x%llX", v.llVal); 
+                swprintf_s(buf, L" = 0x%llX", v.llVal);
                 ret = buf;
             }
             else
             {
                 switch (v.vt)
                 {
-                case VT_I4:  { wchar_t buf[32]; swprintf_s(buf, L" = %d", v.lVal);   ret = buf; break; }
-                case VT_UI4: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.ulVal);  ret = buf; break; }
-                case VT_I2:  { wchar_t buf[32]; swprintf_s(buf, L" = %d", v.iVal);   ret = buf; break; }
-                case VT_UI2: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.uiVal);  ret = buf; break; }
-                case VT_I1:  { wchar_t buf[32]; swprintf_s(buf, L" = %d", (int)v.cVal);   ret = buf; break; }
-                case VT_UI1: { wchar_t buf[32]; swprintf_s(buf, L" = %u", v.bVal);   ret = buf; break; }
-                case VT_R4:  { wchar_t buf[32]; swprintf_s(buf, L" = %ff", v.fltVal); ret = buf; break; }
-                case VT_R8:  { wchar_t buf[32]; swprintf_s(buf, L" = %f", v.dblVal); ret = buf; break; }
-                case VT_BSTR: if (v.bstrVal) { ret = L" = L\""; ret += v.bstrVal; ret += L"\""; } break;
-                default: /*printf("VALUE: Undefined type : %d", v.vt);*/ break;
+                case VT_I4:
+                {
+                    wchar_t buf[32];
+                    swprintf_s(buf, L" = %d", v.lVal);
+                    ret = buf;
+                    break;
+                }
+                case VT_UI4:
+                {
+                    wchar_t buf[32];
+                    swprintf_s(buf, L" = %u", v.ulVal);
+                    ret = buf;
+                    break;
+                }
+                case VT_I2:
+                {
+                    wchar_t buf[32];
+                    swprintf_s(buf, L" = %d", v.iVal);
+                    ret = buf;
+                    break;
+                }
+                case VT_UI2:
+                {
+                    wchar_t buf[32];
+                    swprintf_s(buf, L" = %u", v.uiVal);
+                    ret = buf;
+                    break;
+                }
+                case VT_I1:
+                {
+                    wchar_t buf[32];
+                    swprintf_s(buf, L" = %d", (int)v.cVal);
+                    ret = buf;
+                    break;
+                }
+                case VT_UI1:
+                {
+                    wchar_t buf[32];
+                    swprintf_s(buf, L" = %u", v.bVal);
+                    ret = buf;
+                    break;
+                }
+                case VT_R4:
+                {
+                    wchar_t buf[32];
+                    swprintf_s(buf, L" = %ff", v.fltVal);
+                    ret = buf;
+                    break;
+                }
+                case VT_R8:
+                {
+                    wchar_t buf[32];
+                    swprintf_s(buf, L" = %f", v.dblVal);
+                    ret = buf;
+                    break;
+                }
+                case VT_BSTR:
+                    if (v.bstrVal)
+                    {
+                        ret = L" = L\"";
+                        ret += v.bstrVal;
+                        ret += L"\"";
+                    }
+                    break;
+                default: /*printf("VALUE: Undefined type : %d", v.vt);*/
+                    break;
                 }
             }
             VariantClear(&v);
@@ -1286,7 +1435,10 @@ private:
 
     bool headerComment(std::wstring& o_out, const wchar_t* a_label, int a_nesting, bool a_hasContent)
     {
-        if (a_hasContent) { o_out += L"\n"; }
+        if (a_hasContent)
+        {
+            o_out += L"\n";
+        }
         o_out += tab(a_nesting);
         o_out += L"///";
         o_out += a_label;
@@ -1305,7 +1457,7 @@ private:
 
         if (kind == DataIsStaticMember)
         {
-			ComPtr<IDiaSymbol> subType;
+            ComPtr<IDiaSymbol> subType;
             if (SUCCEEDED(a_field->get_type(&subType)))
             {
                 BOOL isConst = FALSE;
@@ -1332,7 +1484,8 @@ private:
     static ComPtr<IDiaSymbol> getTypeCom(IDiaSymbol* a_symbol)
     {
         ComPtr<IDiaSymbol> type;
-        if (SUCCEEDED(a_symbol->get_type(&type))) return type;
+        if (SUCCEEDED(a_symbol->get_type(&type)))
+            return type;
         return ComPtr<IDiaSymbol>();
     }
 

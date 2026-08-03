@@ -31,6 +31,7 @@ namespace fs = std::filesystem;
 class PropertyTest : public ::testing::Test
 {
 protected:
+
     void SetUp() override
     {
         fs::path pdbPath = TEST_COMPILAND_PDB;
@@ -41,38 +42,23 @@ protected:
 
     ComPtr<IDiaSymbol> findType(const wchar_t* a_name) const
     {
-        return SymbolFinder::findFirst(
-            PdbToolset::instance().globalScope(),
-            SymTagNull,
-            a_name,
-            false);
+        return SymbolFinder::findFirst(PdbToolset::instance().globalScope(), SymTagNull, a_name, false);
     }
 
     ComPtr<IDiaSymbol> findUdt(const wchar_t* a_name) const
     {
-        return SymbolFinder::findFirst(
-            PdbToolset::instance().globalScope(),
-            SymTagUDT,
-            a_name,
-            false);
+        return SymbolFinder::findFirst(PdbToolset::instance().globalScope(), SymTagUDT, a_name, false);
     }
 
     ComPtr<IDiaSymbol> findEnum(const wchar_t* a_name) const
     {
-        return SymbolFinder::findFirst(
-            PdbToolset::instance().globalScope(),
-            SymTagEnum,
-            a_name,
-            false);
+        return SymbolFinder::findFirst(PdbToolset::instance().globalScope(), SymTagEnum, a_name, false);
     }
 
     // --- Children enumeration helpers ---
 
-    template<typename Pred>
-    std::vector<ComPtr<IDiaSymbol>> children(
-        IDiaSymbol* a_symbol,
-        enum SymTagEnum a_tag,
-        Pred a_pred) const
+    template <typename Pred>
+    std::vector<ComPtr<IDiaSymbol>> children(IDiaSymbol* a_symbol, enum SymTagEnum a_tag, Pred a_pred) const
     {
         std::vector<ComPtr<IDiaSymbol>> result;
         ComPtr<IDiaEnumSymbols> enum_symbols;
@@ -91,10 +77,13 @@ protected:
 
     std::vector<ComPtr<IDiaSymbol>> dataMembers(IDiaSymbol* a_symbol) const
     {
-        return children(a_symbol, SymTagData, [](IDiaSymbol* sym) {
-            DWORD kind = 0;
-            return SUCCEEDED(sym->get_dataKind(&kind)) && kind == DataIsMember;
-        });
+        return children(a_symbol,
+            SymTagData,
+            [](IDiaSymbol* sym)
+            {
+                DWORD kind = 0;
+                return SUCCEEDED(sym->get_dataKind(&kind)) && kind == DataIsMember;
+            });
     }
 
     std::vector<ComPtr<IDiaSymbol>> functions(IDiaSymbol* a_symbol) const
@@ -120,6 +109,7 @@ protected:
     // --- Symbol property helpers ---
 
 public:
+
     static std::wstring getName(IDiaSymbol* a_symbol)
     {
         BSTR bstrName = nullptr;
@@ -141,9 +131,7 @@ public:
 
     static bool isAnonUdtName(const std::wstring& a_name)
     {
-        return a_name.empty()
-            || a_name == L"<unnamed-tag>"
-            || (!a_name.empty() && a_name[0] == L'$');
+        return a_name.empty() || a_name == L"<unnamed-tag>" || (!a_name.empty() && a_name[0] == L'$');
     }
 
     static bool isNoexcept(IDiaSymbol* a_symbol)
@@ -219,42 +207,42 @@ TEST_F(PropertyTest, PrimitiveTypes_FieldNames)
 
 namespace
 {
-    struct PointerFieldInfo
-    {
-        std::wstring name;
-        BOOL isConst = FALSE;
-        BOOL isVolatile = FALSE;
-        BOOL isReference = FALSE;
-        BOOL isRValueRef = FALSE;
-        bool isArray = false;
-        DWORD arrayCount = 0;
-        DWORD tag = SymTagNull;
-    };
+struct PointerFieldInfo
+{
+    std::wstring name;
+    BOOL isConst = FALSE;
+    BOOL isVolatile = FALSE;
+    BOOL isReference = FALSE;
+    BOOL isRValueRef = FALSE;
+    bool isArray = false;
+    DWORD arrayCount = 0;
+    DWORD tag = SymTagNull;
+};
 
-    PointerFieldInfo buildInfo(ComPtr<IDiaSymbol>& field)
-    {
-        PointerFieldInfo info;
-        info.name = PropertyTest::getName(field.get());
+PointerFieldInfo buildInfo(ComPtr<IDiaSymbol>& field)
+{
+    PointerFieldInfo info;
+    info.name = PropertyTest::getName(field.get());
 
-        ComPtr<IDiaSymbol> type;
-        if (SUCCEEDED(field->get_type(&type)) && type)
+    ComPtr<IDiaSymbol> type;
+    if (SUCCEEDED(field->get_type(&type)) && type)
+    {
+        type->get_symTag(&info.tag);
+
+        type->get_constType(&info.isConst);
+        type->get_volatileType(&info.isVolatile);
+        type->get_reference(&info.isReference);
+        type->get_RValueReference(&info.isRValueRef);
+
+        if (info.tag == SymTagArrayType)
         {
-            type->get_symTag(&info.tag);
-
-            type->get_constType(&info.isConst);
-            type->get_volatileType(&info.isVolatile);
-            type->get_reference(&info.isReference);
-            type->get_RValueReference(&info.isRValueRef);
-
-            if (info.tag == SymTagArrayType)
-            {
-                info.isArray = true;
-                type->get_count(&info.arrayCount);
-            }
+            info.isArray = true;
+            type->get_count(&info.arrayCount);
         }
-        return info;
     }
+    return info;
 }
+} // namespace
 
 TEST_F(PropertyTest, PointerTypes_FieldCount)
 {
@@ -359,47 +347,47 @@ TEST_F(PropertyTest, PointerTypes_FieldProperties)
 
 namespace
 {
-    struct FunctionInfo
+struct FunctionInfo
+{
+    std::wstring name;
+    BOOL isCtor = FALSE;
+    bool isDtor = false;
+    bool isNoexcept = false;
+    BOOL isVirtual = FALSE;
+    BOOL isPure = FALSE;
+    BOOL isStatic = FALSE;
+    BOOL isConst = FALSE;
+    bool isOverride = false;
+};
+
+FunctionInfo buildFuncInfo(ComPtr<IDiaSymbol>& func)
+{
+    FunctionInfo info;
+    info.name = PropertyTest::getName(func.get());
+    func->get_constructor(&info.isCtor);
+    func->get_virtual(&info.isVirtual);
+    func->get_pure(&info.isPure);
+    func->get_isStatic(&info.isStatic);
+
+    if (!info.name.empty() && info.name[0] == L'~')
+        info.isDtor = true;
+
+    info.isNoexcept = PropertyTest::isNoexcept(func.get());
+
+    ComPtr<IDiaSymbol> funcType;
+    if (SUCCEEDED(func->get_type(&funcType)) && funcType)
     {
-        std::wstring name;
-        BOOL isCtor = FALSE;
-        bool isDtor = false;
-        bool isNoexcept = false;
-        BOOL isVirtual = FALSE;
-        BOOL isPure = FALSE;
-        BOOL isStatic = FALSE;
-        BOOL isConst = FALSE;
-        bool isOverride = false;
-    };
-
-    FunctionInfo buildFuncInfo(ComPtr<IDiaSymbol>& func)
-    {
-        FunctionInfo info;
-        info.name = PropertyTest::getName(func.get());
-        func->get_constructor(&info.isCtor);
-        func->get_virtual(&info.isVirtual);
-        func->get_pure(&info.isPure);
-        func->get_isStatic(&info.isStatic);
-
-        if (!info.name.empty() && info.name[0] == L'~')
-            info.isDtor = true;
-
-        info.isNoexcept = PropertyTest::isNoexcept(func.get());
-
-        ComPtr<IDiaSymbol> funcType;
-        if (SUCCEEDED(func->get_type(&funcType)) && funcType)
-        {
-            funcType->get_constType(&info.isConst);
-        }
-
-        // override = virtual && !intro (new virtual)
-        BOOL isIntro = TRUE;
-        func->get_intro(&isIntro);
-        info.isOverride = info.isVirtual && !isIntro;
-
-        return info;
+        funcType->get_constType(&info.isConst);
     }
+
+    // override = virtual && !intro (new virtual)
+    BOOL isIntro = TRUE;
+    func->get_intro(&isIntro);
+    info.isOverride = info.isVirtual && !isIntro;
+
+    return info;
 }
+} // namespace
 
 TEST_F(PropertyTest, ConstructorTest_MethodCount)
 {
@@ -574,9 +562,7 @@ TEST_F(PropertyTest, PublicDerived_SingleBase)
     {
         // The base class name in DIA (may or may not be namespace-qualified)
         std::wstring baseName = getName(bases[0].get());
-        EXPECT_TRUE(
-            baseName == L"Base" ||
-            baseName == L"Test::Base");
+        EXPECT_TRUE(baseName == L"Base" || baseName == L"Test::Base");
     }
 }
 
@@ -604,14 +590,14 @@ TEST_F(PropertyTest, DiamondDerived_TwoBases)
 
 namespace
 {
-    struct BitFieldInfo
-    {
-        std::wstring name;
-        DWORD bitPos = 0;
-        ULONGLONG bitWidth = 0;
-        bool isBitField = false;
-    };
-}
+struct BitFieldInfo
+{
+    std::wstring name;
+    DWORD bitPos = 0;
+    ULONGLONG bitWidth = 0;
+    bool isBitField = false;
+};
+} // namespace
 
 TEST_F(PropertyTest, BitfieldTest_Widths)
 {
@@ -626,8 +612,7 @@ TEST_F(PropertyTest, BitfieldTest_Widths)
     {
         BitFieldInfo info;
         info.name = getName(f.get());
-        if (SUCCEEDED(f->get_bitPosition(&info.bitPos)) &&
-            SUCCEEDED(f->get_length(&info.bitWidth)) &&
+        if (SUCCEEDED(f->get_bitPosition(&info.bitPos)) && SUCCEEDED(f->get_length(&info.bitWidth)) &&
             info.bitWidth > 0 && info.bitWidth < 64)
         {
             info.isBitField = true;

@@ -3,10 +3,10 @@
 #include <Core/Config/IniFile.hpp>
 #include <Core/DIA/SymbolDumper.hpp>
 
-template<typename T>
+template <typename T>
 struct IniSerializer;
 
-template<>
+template <>
 struct IniSerializer<DumpConfig>
 {
     static constexpr const char* kSection = "DumpConfig";
@@ -40,9 +40,7 @@ struct IniSerializer<DumpConfig>
         a_cfg.m_baseAccessType = a_ini.getUlong(kSection, "BaseAccessType", a_cfg.m_baseAccessType);
 
         const long rawStyle = a_ini.getLong(kSection, "IntStyle", static_cast<long>(a_cfg.m_intStyle));
-        a_cfg.m_intStyle = isValidIntStyle(rawStyle)
-            ? static_cast<IntStyle>(rawStyle)
-            : IntStyle::Cstdint;
+        a_cfg.m_intStyle = isValidIntStyle(rawStyle) ? static_cast<IntStyle>(rawStyle) : IntStyle::Cstdint;
     }
 };
 
@@ -51,7 +49,7 @@ struct CommandConfig
     bool m_useClipboard = true;
 };
 
-template<>
+template <>
 struct IniSerializer<CommandConfig>
 {
     static constexpr const char* kSection = "CommandConfig";

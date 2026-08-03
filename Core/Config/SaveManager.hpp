@@ -10,10 +10,10 @@ class SaveManager : public Singleton<SaveManager>
 {
     SET_SINGLETON_FRIEND(SaveManager)
 
-    IniFile               m_ini;
+    IniFile m_ini;
     std::filesystem::path m_path;
 
-    DumpConfig    m_dumpConfig;
+    DumpConfig m_dumpConfig;
     CommandConfig m_commandConfig;
 
     SaveManager() = default;
@@ -38,10 +38,12 @@ class SaveManager : public Singleton<SaveManager>
     }
 
 public:
+
     bool initialize(std::filesystem::path a_path = "config.ini")
     {
         static bool initState = false;
-        if (initState) return true;
+        if (initState)
+            return true;
 
         m_path = std::move(a_path);
         m_ini.load(m_path);
@@ -62,6 +64,12 @@ public:
         m_ini.save(m_path);
     }
 
-    DumpConfig& dumpConfig() { return m_dumpConfig; }
-    CommandConfig& commandConfig() { return m_commandConfig; }
+    DumpConfig& dumpConfig()
+    {
+        return m_dumpConfig;
+    }
+    CommandConfig& commandConfig()
+    {
+        return m_commandConfig;
+    }
 };

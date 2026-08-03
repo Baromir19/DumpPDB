@@ -30,12 +30,12 @@ namespace fs = std::filesystem;
 class PdbDumpTest : public ::testing::Test
 {
 protected:
+
     void SetUp() override
     {
         fs::path pdbPath = TEST_COMPILAND_PDB;
 
-        ASSERT_TRUE(fs::exists(pdbPath))
-            << "Missing PDB: " << pdbPath.string();
+        ASSERT_TRUE(fs::exists(pdbPath)) << "Missing PDB: " << pdbPath.string();
 
         /*std::wstring targetPath = pdbPath.wstring();
 
@@ -47,10 +47,9 @@ protected:
             targetPath = exePath.wstring();
         }*/
 
-		printf("Loading PDB: %ls\n", pdbPath.c_str());
+        printf("Loading PDB: %ls\n", pdbPath.c_str());
 
-        bool initialized =
-            PdbToolset::instance().initialize(pdbPath);
+        bool initialized = PdbToolset::instance().initialize(pdbPath);
 
         ASSERT_TRUE(initialized);
     }
@@ -63,10 +62,7 @@ protected:
 /// Find a type by exact fully-qualified name.
 static ComPtr<IDiaSymbol> findType(const wchar_t* a_name)
 {
-    return SymbolFinder::findFirst(
-        PdbToolset::instance().globalScope(),
-        SymTagNull,
-        a_name,
+    return SymbolFinder::findFirst(PdbToolset::instance().globalScope(), SymTagNull, a_name,
         false); // case-insensitive
 }
 

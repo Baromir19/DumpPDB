@@ -74,6 +74,18 @@
       "cacheVariables": {
         "BUILD_TESTS": "ON"
       }
+    },
+    {
+      "name": "clang-tidy",
+      "displayName": "[Local] Ninja (clang-tidy DB)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-tidy",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl"
+      }
     }
   ]
 }

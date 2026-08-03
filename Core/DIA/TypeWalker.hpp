@@ -11,14 +11,13 @@
 /// Integer style for base type names.
 enum class IntStyle
 {
-    MsvcNative,  // __int32, __int64, etc.
-    Cstdint      // int32_t, int64_t, etc.
+    MsvcNative, // __int32, __int64, etc.
+    Cstdint     // int32_t, int64_t, etc.
 };
 
 inline bool isValidIntStyle(long a_value) noexcept
 {
-    return a_value >= static_cast<long>(IntStyle::MsvcNative)
-        && a_value <= static_cast<long>(IntStyle::Cstdint);
+    return a_value >= static_cast<long>(IntStyle::MsvcNative) && a_value <= static_cast<long>(IntStyle::Cstdint);
 }
 
 /// Scope context that tracks the current nested class/struct hierarchy.
@@ -34,10 +33,16 @@ struct ScopeContext
 
     void pop()
     {
-        if (!m_parts.empty()) { m_parts.pop_back(); }
+        if (!m_parts.empty())
+        {
+            m_parts.pop_back();
+        }
     }
 
-    std::wstring top() const { return m_parts.empty() ? L"" : m_parts.back(); }
+    std::wstring top() const
+    {
+        return m_parts.empty() ? L"" : m_parts.back();
+    }
 
     std::wstring full() const
     {
@@ -72,6 +77,7 @@ struct QualifiedName
 class TypeWalker
 {
 public:
+
     /// Returns true if a_symbol's lexical parent is SymTagExe (i.e. it's a true
     /// top-level symbol — global, or inside a namespace but NOT a nested class).
     static bool isTopLevelSymbol(IDiaSymbol* a_symbol)
@@ -100,7 +106,7 @@ public:
             return result;
         }
 
-        result.ns   = a_fullyQualifiedName.substr(0, lastSep);
+        result.ns = a_fullyQualifiedName.substr(0, lastSep);
         result.leaf = a_fullyQualifiedName.substr(lastSep + 2);
         return result;
     }
@@ -137,59 +143,89 @@ public:
 
             switch (baseType)
             {
-            case btCurrency: return L"CY";
-            case btDate: return L"DATE";
-            case btVariant: return L"VARIANT";
-            case btComplex: return L"std::complex";
-            case btBSTR: return L"BSTR";
-            case btHresult: return L"HRESULT";
+            case btCurrency:
+                return L"CY";
+            case btDate:
+                return L"DATE";
+            case btVariant:
+                return L"VARIANT";
+            case btComplex:
+                return L"std::complex";
+            case btBSTR:
+                return L"BSTR";
+            case btHresult:
+                return L"HRESULT";
 
-            case btChar16: return L"char16_t";
-            case btChar32: return L"char32_t";
-            case btChar8: return L"char8_t";
+            case btChar16:
+                return L"char16_t";
+            case btChar32:
+                return L"char32_t";
+            case btChar8:
+                return L"char8_t";
 
-            case btVoid: return L"void";
+            case btVoid:
+                return L"void";
 
             case btFloat:
                 switch (length)
                 {
-                case 4: return L"float";
-                case 8: return L"double";
-                case 0x10: return L"long double";
-                default: return L"float";
+                case 4:
+                    return L"float";
+                case 8:
+                    return L"double";
+                case 0x10:
+                    return L"long double";
+                default:
+                    return L"float";
                 }
 
-            case btBool: return L"bool";
-            case btChar: return L"char";
-            case btWChar: return L"wchar_t";
+            case btBool:
+                return L"bool";
+            case btChar:
+                return L"char";
+            case btWChar:
+                return L"wchar_t";
 
             case btInt:
                 switch (length)
                 {
-                case 1: return a_intStyle == IntStyle::Cstdint ? L"int8_t"  : L"__int8";
-                case 2: return a_intStyle == IntStyle::Cstdint ? L"int16_t" : L"__int16";
-                case 4: return a_intStyle == IntStyle::Cstdint ? L"int32_t" : L"__int32";
-                case 8: return a_intStyle == IntStyle::Cstdint ? L"int64_t" : L"__int64";
-                default: return L"int";
+                case 1:
+                    return a_intStyle == IntStyle::Cstdint ? L"int8_t" : L"__int8";
+                case 2:
+                    return a_intStyle == IntStyle::Cstdint ? L"int16_t" : L"__int16";
+                case 4:
+                    return a_intStyle == IntStyle::Cstdint ? L"int32_t" : L"__int32";
+                case 8:
+                    return a_intStyle == IntStyle::Cstdint ? L"int64_t" : L"__int64";
+                default:
+                    return L"int";
                 }
 
             case btUInt:
                 switch (length)
                 {
-                case 1: return a_intStyle == IntStyle::Cstdint ? L"uint8_t"  : L"unsigned __int8";
-                case 2: return a_intStyle == IntStyle::Cstdint ? L"uint16_t" : L"unsigned __int16";
-                case 4: return a_intStyle == IntStyle::Cstdint ? L"uint32_t" : L"unsigned __int32";
-                case 8: return a_intStyle == IntStyle::Cstdint ? L"uint64_t" : L"unsigned __int64";
-                default: return L"unsigned int";
+                case 1:
+                    return a_intStyle == IntStyle::Cstdint ? L"uint8_t" : L"unsigned __int8";
+                case 2:
+                    return a_intStyle == IntStyle::Cstdint ? L"uint16_t" : L"unsigned __int16";
+                case 4:
+                    return a_intStyle == IntStyle::Cstdint ? L"uint32_t" : L"unsigned __int32";
+                case 8:
+                    return a_intStyle == IntStyle::Cstdint ? L"uint64_t" : L"unsigned __int64";
+                default:
+                    return L"unsigned int";
                 }
 
-            case btLong: return L"long";
-            case btULong: return L"unsigned long";
+            case btLong:
+                return L"long";
+            case btULong:
+                return L"unsigned long";
 
             case btBCD:
             case btBit:
             case btNoType:
-            default: break;
+            default:
+                break;
             }
         }
         return nullptr;
@@ -202,11 +238,16 @@ public:
         {
             switch (_udt)
             {
-            case UdtStruct: return L"struct";
-            case UdtClass: return L"class";
-            case UdtUnion: return L"union";
-            case UdtInterface: return L"interface";
-            default: return nullptr;
+            case UdtStruct:
+                return L"struct";
+            case UdtClass:
+                return L"class";
+            case UdtUnion:
+                return L"union";
+            case UdtInterface:
+                return L"interface";
+            default:
+                return nullptr;
             }
         }
         return nullptr;
@@ -216,16 +257,15 @@ public:
     /// Returns a TypeBuilder populated with the full type chain.
     /// @param a_stripScope Controls whether current scope prefix is stripped from names
     ///                     (corresponds to DumpConfig::m_showNonScoped).
-    static TypeBuilder resolveType(
-        IDiaSymbol* a_symbol, 
+    static TypeBuilder resolveType(IDiaSymbol* a_symbol,
         const ScopeContext& a_scope = ScopeContext(),
         bool a_stripScope = true,
-        IntStyle a_intStyle = IntStyle::MsvcNative
-    )
+        IntStyle a_intStyle = IntStyle::MsvcNative)
     {
         TypeBuilder builder;
 
-        if (!a_symbol) return builder;
+        if (!a_symbol)
+            return builder;
 
         DWORD symTag = SymTagNull;
         a_symbol->get_symTag((DWORD*)&symTag);
@@ -243,12 +283,7 @@ public:
         ComPtr<IDiaSymbol> subType;
         if (SUCCEEDED(a_symbol->get_type(&subType)))
         {
-            TypeBuilder subBuilder = resolveType(
-                subType.get(), 
-                a_scope, 
-                a_stripScope,
-                a_intStyle
-            );
+            TypeBuilder subBuilder = resolveType(subType.get(), a_scope, a_stripScope, a_intStyle);
             // Merge sub-builder into this one (inner type becomes the builder state)
             builder = std::move(subBuilder);
         }
@@ -281,12 +316,27 @@ public:
             a_symbol->get_reference(&isRef);
             a_symbol->get_RValueReference(&isRVRef);
 
-            if (isRVRef)    { builder.rvalueReference(); }
-            else if (isRef) { builder.reference(); }
-            else            { builder.pointer(); }
+            if (isRVRef)
+            {
+                builder.rvalueReference();
+            }
+            else if (isRef)
+            {
+                builder.reference();
+            }
+            else
+            {
+                builder.pointer();
+            }
 
-            if (isConst)    { builder.constPointer(); }
-            if (isVolatile) { builder.volatilePointer(); }
+            if (isConst)
+            {
+                builder.constPointer();
+            }
+            if (isVolatile)
+            {
+                builder.volatilePointer();
+            }
             break;
         }
 
@@ -313,13 +363,15 @@ public:
 
         case SymTagData:
         {
-            if (!name.empty()) { builder.name(name); }
+            if (!name.empty())
+            {
+                builder.name(name);
+            }
 
             // Bit field
             DWORD bitPos = 0;
             ULONGLONG bitLen = 0;
-            if (SUCCEEDED(a_symbol->get_bitPosition(&bitPos)) &&
-                SUCCEEDED(a_symbol->get_length(&bitLen)) &&
+            if (SUCCEEDED(a_symbol->get_bitPosition(&bitPos)) && SUCCEEDED(a_symbol->get_length(&bitLen)) &&
                 bitLen > 0 && bitLen != MAXULONGLONG)
             {
                 builder.bitField(bitPos, bitLen);
@@ -330,17 +382,35 @@ public:
         case SymTagUDT:
         case SymTagEnum:
         {
-            if (!name.empty()) { builder.base(name); }
-            if (isConst) { builder.constQual(); }
-            if (isVolatile) { builder.volatileQual(); }
+            if (!name.empty())
+            {
+                builder.base(name);
+            }
+            if (isConst)
+            {
+                builder.constQual();
+            }
+            if (isVolatile)
+            {
+                builder.volatileQual();
+            }
             break;
         }
 
         case SymTagTypedef:
         {
-            if (!name.empty()) { builder.base(name); }
-            if (isConst) { builder.constQual(); }
-            if (isVolatile) { builder.volatileQual(); }
+            if (!name.empty())
+            {
+                builder.base(name);
+            }
+            if (isConst)
+            {
+                builder.constQual();
+            }
+            if (isVolatile)
+            {
+                builder.volatileQual();
+            }
             break;
         }
 
@@ -352,18 +422,17 @@ public:
     }
 
     /// Get function arguments as a comma-separated string.
-    static std::wstring getFuncArgsString(
-        IDiaSymbol* a_symbol, 
+    static std::wstring getFuncArgsString(IDiaSymbol* a_symbol,
         const ScopeContext& a_scope = ScopeContext(),
-        bool a_stripScope = true, 
-        IntStyle a_intStyle = IntStyle::MsvcNative
-    )
+        bool a_stripScope = true,
+        IntStyle a_intStyle = IntStyle::MsvcNative)
     {
         std::wstring result;
         bool isFirst = true;
 
         ComPtr<IDiaEnumSymbols> enum_symbolsParams;
-        if (SUCCEEDED(a_symbol->findChildren(SymTagFunctionArgType, nullptr, nsNone, &enum_symbolsParams)) && enum_symbolsParams)
+        if (SUCCEEDED(a_symbol->findChildren(SymTagFunctionArgType, nullptr, nsNone, &enum_symbolsParams)) &&
+            enum_symbolsParams)
         {
             ComPtr<IDiaSymbol> child;
             ULONG celt = 0;
@@ -372,7 +441,10 @@ public:
                 ComPtr<IDiaSymbol> _argType;
                 if (SUCCEEDED(child->get_type(&_argType)) && _argType)
                 {
-                    if (!isFirst) { result += L", "; }
+                    if (!isFirst)
+                    {
+                        result += L", ";
+                    }
                     result += resolveType(_argType.get(), a_scope, a_stripScope, a_intStyle).build();
                     isFirst = false;
                 }
@@ -385,9 +457,7 @@ public:
     /// Check if a name is a compiler-generated synthetic name (anonymous or hash-based).
     static bool isSyntheticName(const std::wstring& a_name)
     {
-        return a_name.empty()
-            || a_name == L"<unnamed-tag>"
-            || (a_name.size() > 0 && a_name[0] == L'$');
+        return a_name.empty() || a_name == L"<unnamed-tag>" || (a_name.size() > 0 && a_name[0] == L'$');
     }
 
     /// Get the name of a symbol, optionally stripping the current scope prefix.
@@ -398,10 +468,7 @@ public:
     ///                         short/non-scoped name is returned. When false, the full scoped
     ///                         name (e.g. "ParentClass::Child") is preserved.
     static std::wstring getName(
-        IDiaSymbol* a_symbol, 
-        const ScopeContext& a_scope = ScopeContext(),
-        bool a_stripScope = true
-    )
+        IDiaSymbol* a_symbol, const ScopeContext& a_scope = ScopeContext(), bool a_stripScope = true)
     {
         BSTR bstrName = nullptr;
         if (SUCCEEDED(a_symbol->get_name(&bstrName)) && bstrName)
@@ -414,8 +481,7 @@ public:
                 const std::wstring scope = a_scope.full();
                 const std::wstring prefix = scope + L"::";
 
-                if (name.size() > prefix.size() &&
-                    name.compare(0, prefix.size(), prefix) == 0)
+                if (name.size() > prefix.size() && name.compare(0, prefix.size(), prefix) == 0)
                 {
                     return name.substr(prefix.size());
                 }
@@ -451,7 +517,8 @@ public:
             DWORD symTag = SymTagNull;
             a_symbol->get_symTag((DWORD*)&symTag);
 
-            if (symTag != SymTagUDT) return false;
+            if (symTag != SymTagUDT)
+                return false;
 
             DWORD udtKind = 0;
             a_symbol->get_udtKind(&udtKind);
@@ -467,14 +534,21 @@ public:
         DWORD access = 0;
         if (SUCCEEDED(a_symbol->get_access(&access)))
         {
-            if (abaseAccessType) { access = abaseAccessType; }
+            if (abaseAccessType)
+            {
+                access = abaseAccessType;
+            }
 
             switch (access)
             {
-            case CV_private:   return L"private";
-            case CV_protected: return L"protected";
-            case CV_public:    return L"public";
-            default: return nullptr;
+            case CV_private:
+                return L"private";
+            case CV_protected:
+                return L"protected";
+            case CV_public:
+                return L"public";
+            default:
+                return nullptr;
             }
         }
         return nullptr;
@@ -500,13 +574,20 @@ public:
         {
             switch (_cc)
             {
-            case CV_CALL_NEAR_C:    return CallingConvention::Cdecl;
-            case CV_CALL_NEAR_FAST: return CallingConvention::Fastcall;
-            case CV_CALL_NEAR_STD:  return CallingConvention::Stdcall;
-            case CV_CALL_NEAR_SYS:  return CallingConvention::Syscall;
-            case CV_CALL_THISCALL:  return CallingConvention::Thiscall;
-            case CV_CALL_CLRCALL:   return CallingConvention::Clrcall;
-            default:                return CallingConvention::Unknown;
+            case CV_CALL_NEAR_C:
+                return CallingConvention::Cdecl;
+            case CV_CALL_NEAR_FAST:
+                return CallingConvention::Fastcall;
+            case CV_CALL_NEAR_STD:
+                return CallingConvention::Stdcall;
+            case CV_CALL_NEAR_SYS:
+                return CallingConvention::Syscall;
+            case CV_CALL_THISCALL:
+                return CallingConvention::Thiscall;
+            case CV_CALL_CLRCALL:
+                return CallingConvention::Clrcall;
+            default:
+                return CallingConvention::Unknown;
             }
         }
         return CallingConvention::Unknown;
@@ -517,13 +598,20 @@ public:
     {
         switch (a_cc)
         {
-        case CallingConvention::Cdecl:    return L"__cdecl";
-        case CallingConvention::Fastcall: return L"__fastcall";
-        case CallingConvention::Stdcall:  return L"__stdcall";
-        case CallingConvention::Syscall:  return L"__syscall";
-        case CallingConvention::Thiscall: return L"__thiscall";
-        case CallingConvention::Clrcall:  return L"__clrcall";
-        default:                          return nullptr;
+        case CallingConvention::Cdecl:
+            return L"__cdecl";
+        case CallingConvention::Fastcall:
+            return L"__fastcall";
+        case CallingConvention::Stdcall:
+            return L"__stdcall";
+        case CallingConvention::Syscall:
+            return L"__syscall";
+        case CallingConvention::Thiscall:
+            return L"__thiscall";
+        case CallingConvention::Clrcall:
+            return L"__clrcall";
+        default:
+            return nullptr;
         }
     }
 };

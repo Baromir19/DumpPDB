@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <Windows.h>
+
 #include <vector>
 #include <string>
 #include <cstdarg>
@@ -7,274 +9,281 @@
 #include <Core/Util/Container/Singleton.hpp>
 #include <Core/Util/Error/DumpError.hpp>
 
-
 class ConsoleManager : public Singleton<ConsoleManager>
 {
-	SET_SINGLETON_FRIEND(ConsoleManager)
+    SET_SINGLETON_FRIEND(ConsoleManager)
 
 protected:
-	std::vector<std::wstring> m_arguments;
-	std::wstring m_path;
-	std::wstring m_command;
 
-	static constexpr wchar_t s_pdbFormat[] = L".pdb";
+    std::vector<std::wstring> m_arguments;
+    std::wstring m_path;
+    std::wstring m_command;
 
-	static constexpr int s_minArgPathSize = 3; // Program path (.exe) + call type + .pdb path
-	static constexpr int s_minArgCmdSize = 2;
+    static constexpr wchar_t s_pdbFormat[] = L".pdb";
 
-	static constexpr size_t s_bufferSize = 0x2000;
-	static inline wchar_t s_lineBuffer[s_bufferSize];
-	static inline int s_bufferPointer = 0;
+    static constexpr int s_minArgPathSize = 3; // Program path (.exe) + call type + .pdb path
+    static constexpr int s_minArgCmdSize = 2;
+
+    static constexpr size_t s_bufferSize = 0x2000;
+    static inline wchar_t s_lineBuffer[s_bufferSize];
+    static inline int s_bufferPointer = 0;
 
 public:
-	bool initialize(int a_argc, wchar_t* a_argv[])
-	{
-		static bool initState = false;
-		if (initState) return true;
 
-		// verifyArgumentsNumber(a_argc);
+    bool initialize(int a_argc, wchar_t* a_argv[])
+    {
+        static bool initState = false;
+        if (initState)
+            return true;
 
-		m_arguments.reserve(a_argc);  
+        // verifyArgumentsNumber(a_argc);
 
-		for (int i = 0; i < a_argc; ++i) 
-		{
-			m_arguments.emplace_back(a_argv[i]); 
-		}
+        m_arguments.reserve(a_argc);
 
-		// verifyFormat(m_arguments.back());
+        for (int i = 0; i < a_argc; ++i)
+        {
+            m_arguments.emplace_back(a_argv[i]);
+        }
 
-		initState = true;
-		return true;
-	}
+        // verifyFormat(m_arguments.back());
 
-	void printArguments() const // DBG:
-	{
-		print(L"Args count: %u \nArgs: ", m_arguments.size());
+        initState = true;
+        return true;
+    }
 
-		for (auto i = 0; i < m_arguments.size(); ++i)
-		{ 
-			print(L"%s", m_arguments[i].c_str());
-			(i < m_arguments.size() - 1) ? print(L", ") : print(L";");
-		}
+    void printArguments() const // DBG:
+    {
+        print(L"Args count: %u \nArgs: ", m_arguments.size());
 
-		print(L"\n");
-	}
+        for (auto i = 0; i < m_arguments.size(); ++i)
+        {
+            print(L"%s", m_arguments[i].c_str());
+            (i < m_arguments.size() - 1) ? print(L", ") : print(L";");
+        }
 
-	static inline void print(const wchar_t* a_format, va_list a_args) { vfwprintf(stdout, a_format, a_args); }
+        print(L"\n");
+    }
 
-	static inline void print(const wchar_t* a_format, ...)
-	{
-		va_list args;
-		va_start(args, a_format);
-		print(a_format, args);
-		va_end(args);
-	}
+    static inline void print(const wchar_t* a_format, va_list a_args)
+    {
+        vfwprintf(stdout, a_format, a_args);
+    }
 
-	[[noreturn]] 
-	static void printError(const wchar_t* a_format, ...)
-	{
-		wchar_t buffer[0x2000];
-		buffer[0] = L'\0';
+    static inline void print(const wchar_t* a_format, ...)
+    {
+        va_list args;
+        va_start(args, a_format);
+        print(a_format, args);
+        va_end(args);
+    }
 
-		va_list args;
-		va_start(args, a_format);
-		vswprintf(buffer, 0x2000, a_format, args);
-		va_end(args);
+    [[noreturn]]
+    static void printError(const wchar_t* a_format, ...)
+    {
+        wchar_t buffer[0x2000];
+        buffer[0] = L'\0';
 
-		std::wstring msg = L"Error: ";
-		msg += buffer;
+        va_list args;
+        va_start(args, a_format);
+        vswprintf(buffer, 0x2000, a_format, args);
+        va_end(args);
 
-		throw DumpError(msg);
-	}
+        std::wstring msg = L"Error: ";
+        msg += buffer;
 
-	static bool setCursorNoDiscard(
-		int a_pos, 
-		int a_repeatTime = 10, 
-		bool a_tabulation = true
-	)
-	{
-		while (!setCursor(a_pos, a_tabulation) && a_repeatTime--)
-		{
-			a_pos += a_pos / 1.5;
-		}
+        throw DumpError(msg);
+    }
 
-		return true;
-	}
+    static bool setCursorNoDiscard(int a_pos, int a_repeatTime = 10, bool a_tabulation = true)
+    {
+        while (!setCursor(a_pos, a_tabulation) && a_repeatTime--)
+        {
+            a_pos += a_pos / 1.5;
+        }
 
-	static bool setCursor(int a_pos, bool a_tabulation = true)
-	{
-		if (!a_tabulation) { return true; }
+        return true;
+    }
 
-		int ret = false;
+    static bool setCursor(int a_pos, bool a_tabulation = true)
+    {
+        if (!a_tabulation)
+        {
+            return true;
+        }
 
-		CONSOLE_SCREEN_BUFFER_INFO csbi;
-		GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
-		SHORT currentX = csbi.dwCursorPosition.X;
+        int ret = false;
 
-		COORD newPos = csbi.dwCursorPosition;
+        CONSOLE_SCREEN_BUFFER_INFO csbi;
+        GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+        SHORT currentX = csbi.dwCursorPosition.X;
 
-		const SHORT padTo = std::max(a_pos, currentX + 1);
-		newPos.X = padTo;
+        COORD newPos = csbi.dwCursorPosition;
 
-		if (padTo == a_pos) { ret = true; }
+        const SHORT padTo = std::max(a_pos, currentX + 1);
+        newPos.X = padTo;
 
-		SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), newPos);
+        if (padTo == a_pos)
+        {
+            ret = true;
+        }
 
-		return ret;
-	}
+        SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), newPos);
 
-	const std::wstring& getPath()
-	{
-		if (!m_path.empty()) { return m_path; }
+        return ret;
+    }
 
-		if (!m_arguments.empty() 
-			&& verifyArgumentsNumber(m_arguments.size(), s_minArgPathSize))
-		{ 
-			m_path =  m_arguments.back();
+    const std::wstring& getPath()
+    {
+        if (!m_path.empty())
+        {
+            return m_path;
+        }
 
-			if (m_path.size() < 2 || m_path[1] != L':')
-			{
-				WCHAR currentDir[MAX_PATH];
-				auto currentDirLen = GetCurrentDirectoryW(MAX_PATH, (LPWSTR)currentDir);
+        if (!m_arguments.empty() && verifyArgumentsNumber(m_arguments.size(), s_minArgPathSize))
+        {
+            m_path = m_arguments.back();
 
-				if (currentDirLen == 0 || currentDirLen >= MAX_PATH)
-				{
-					printError(L"Failed to get current directory (path size: \"%u\")! \n", currentDirLen);
-				}
+            if (m_path.size() < 2 || m_path[1] != L':')
+            {
+                WCHAR currentDir[MAX_PATH];
+                auto currentDirLen = GetCurrentDirectoryW(MAX_PATH, (LPWSTR)currentDir);
 
-				if (currentDir[currentDirLen - 1] != L'\\') 
-				{
-					m_path = std::wstring(currentDir) + L'\\' + m_path;
-				}
-				else 
-				{
-					m_path = std::wstring(currentDir) + m_path;
-				}
-				
-				if (GetFileAttributesW(m_path.c_str()) == INVALID_FILE_ATTRIBUTES)
-				{
-					printError(L"Path \"%s\" does not exist! \n", m_path.c_str());
-				}
-			}
+                if (currentDirLen == 0 || currentDirLen >= MAX_PATH)
+                {
+                    printError(L"Failed to get current directory (path size: \"%u\")! \n", currentDirLen);
+                }
 
-			return m_path;
-		}
-		else
-		{
-			printError(L"No arguments! \n");
-			return m_path;
-		}
-	}
+                if (currentDir[currentDirLen - 1] != L'\\')
+                {
+                    m_path = std::wstring(currentDir) + L'\\' + m_path;
+                }
+                else
+                {
+                    m_path = std::wstring(currentDir) + m_path;
+                }
 
-	const std::wstring& getCommand()
-	{
-		if (!m_command.empty()) { return m_command; }
+                if (GetFileAttributesW(m_path.c_str()) == INVALID_FILE_ATTRIBUTES)
+                {
+                    printError(L"Path \"%s\" does not exist! \n", m_path.c_str());
+                }
+            }
 
-		if (verifyArgumentsNumber(m_arguments.size(), s_minArgCmdSize))
-		{
-			m_command = m_arguments[1];
-		}
+            return m_path;
+        }
+        else
+        {
+            printError(L"No arguments! \n");
+            return m_path;
+        }
+    }
 
-		return m_command;
-	}
+    const std::wstring& getCommand()
+    {
+        if (!m_command.empty())
+        {
+            return m_command;
+        }
 
-	const std::wstring* getCommandArguments()
-	{
-		if (m_arguments.size() > s_cmdArgsOffset)
-		{
-			return &m_arguments[s_cmdArgsOffset]; // .exe + command name
-		}
+        if (verifyArgumentsNumber(m_arguments.size(), s_minArgCmdSize))
+        {
+            m_command = m_arguments[1];
+        }
 
-		return nullptr;
-	}
+        return m_command;
+    }
 
-	int getCommandArgumentCount() const
-	{
-		const int total = static_cast<int>(m_arguments.size());
-		return total > s_cmdArgsOffset ? total - s_cmdArgsOffset : 0;
-	}
+    const std::wstring* getCommandArguments()
+    {
+        if (m_arguments.size() > s_cmdArgsOffset)
+        {
+            return &m_arguments[s_cmdArgsOffset]; // .exe + command name
+        }
 
-	/// Line Tools
+        return nullptr;
+    }
 
-	static void printLine()
-	{
-		print(s_lineBuffer);
-		s_lineBuffer[0] = L'\0';
-		s_bufferPointer = 0;
-	}
+    int getCommandArgumentCount() const
+    {
+        const int total = static_cast<int>(m_arguments.size());
+        return total > s_cmdArgsOffset ? total - s_cmdArgsOffset : 0;
+    }
 
-	static void appendToLine(const wchar_t* a_format, va_list a_args)
-	{
-		if (s_bufferPointer >= s_bufferSize) { return; }
+    /// Line Tools
 
-		int written = vswprintf(s_lineBuffer + s_bufferPointer,
-			s_bufferSize - s_bufferPointer,
-			a_format,
-			a_args);
+    static void printLine()
+    {
+        print(s_lineBuffer);
+        s_lineBuffer[0] = L'\0';
+        s_bufferPointer = 0;
+    }
 
-		if (written > 0) { s_bufferPointer += written; }
-	}
+    static void appendToLine(const wchar_t* a_format, va_list a_args)
+    {
+        if (s_bufferPointer >= s_bufferSize)
+        {
+            return;
+        }
 
-	static void appendToLine(const wchar_t* a_format, ...)
-	{
-		va_list args;
-		va_start(args, a_format);
-		appendToLine(a_format, args);
-		va_end(args);
-	}
+        int written = vswprintf(s_lineBuffer + s_bufferPointer, s_bufferSize - s_bufferPointer, a_format, a_args);
+
+        if (written > 0)
+        {
+            s_bufferPointer += written;
+        }
+    }
+
+    static void appendToLine(const wchar_t* a_format, ...)
+    {
+        va_list args;
+        va_start(args, a_format);
+        appendToLine(a_format, args);
+        va_end(args);
+    }
 
 protected:
-	static inline bool verifyArgumentsNumber(int a_argc, int a_minimum)
-	{
-		if (a_argc < a_minimum)
-		{
-			printError(
-				L"Argument count (%u) is less than the minimum (%u)!", 
-				a_argc, 
-				s_minArgPathSize
-			);
-		}
 
-		return true;
-	}
+    static inline bool verifyArgumentsNumber(int a_argc, int a_minimum)
+    {
+        if (a_argc < a_minimum)
+        {
+            printError(L"Argument count (%u) is less than the minimum (%u)!", a_argc, s_minArgPathSize);
+        }
 
-	static inline bool verifyFormat(const std::wstring& a_path)
-	{
-		auto size = a_path.size();
+        return true;
+    }
 
-		if (size >= 4 && wcscmp(&a_path.end()[-4], s_pdbFormat) == 0)
-		{
-			return true;
-		}
+    static inline bool verifyFormat(const std::wstring& a_path)
+    {
+        auto size = a_path.size();
 
-		auto begin = a_path.c_str();
+        if (size >= 4 && wcscmp(&a_path.end()[-4], s_pdbFormat) == 0)
+        {
+            return true;
+        }
 
-		for (auto i = a_path.size(); i > 0; --i)
-		{
-			if (begin[i] == L'.') 
-			{ 
-				printError(
-					L"Extension \"%s\" must be \".pdb\"! \n", 
-					&(begin[i])
-				); 
-			}
-		}
+        auto begin = a_path.c_str();
 
-		printError(
-			L"No extension for \"%s\" (must be \".pdb\")!\n ",
-			a_path.c_str()
-		);
+        for (auto i = a_path.size(); i > 0; --i)
+        {
+            if (begin[i] == L'.')
+            {
+                printError(L"Extension \"%s\" must be \".pdb\"! \n", &(begin[i]));
+            }
+        }
 
-		return false;
-	}
+        printError(L"No extension for \"%s\" (must be \".pdb\")!\n ", a_path.c_str());
+
+        return false;
+    }
 
 public:
-	inline bool verifyPDBFormat() const
-	{
-		return verifyFormat(m_arguments.back());
-	}
 
-	static constexpr int s_executableOffset = 0;
-	static constexpr int s_cmdOffset = 1;
-	static constexpr int s_cmdArgsOffset = 2;
+    inline bool verifyPDBFormat() const
+    {
+        return verifyFormat(m_arguments.back());
+    }
+
+    static constexpr int s_executableOffset = 0;
+    static constexpr int s_cmdOffset = 1;
+    static constexpr int s_cmdArgsOffset = 2;
 };

@@ -6,6 +6,7 @@
 class ClipboardManager
 {
 public:
+
     static bool copy(const std::wstring& a_text)
     {
         if (!OpenClipboard(nullptr))
@@ -13,8 +14,7 @@ public:
 
         EmptyClipboard();
 
-        const SIZE_T _size =
-            (a_text.size() + 1) * sizeof(wchar_t);
+        const SIZE_T _size = (a_text.size() + 1) * sizeof(wchar_t);
 
         HGLOBAL _memory = GlobalAlloc(GMEM_MOVEABLE, _size);
         if (!_memory)

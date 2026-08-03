@@ -9,6 +9,7 @@
 class IniFile
 {
 public:
+
     using Section = std::string;
     using Key = std::string;
 
@@ -67,24 +68,39 @@ public:
     bool getBool(const Section& s, const Key& k, bool a_default) const
     {
         const auto raw = getRaw(s, k);
-        if (!raw) return a_default;
+        if (!raw)
+            return a_default;
         return *raw == "1" || *raw == "true" || *raw == "True";
     }
 
     long getLong(const Section& s, const Key& k, long a_default) const
     {
         const auto raw = getRaw(s, k);
-        if (!raw) return a_default;
-        try { return std::stol(*raw); }
-        catch (...) { return a_default; }
+        if (!raw)
+            return a_default;
+        try
+        {
+            return std::stol(*raw);
+        }
+        catch (...)
+        {
+            return a_default;
+        }
     }
 
     unsigned long getUlong(const Section& s, const Key& k, unsigned long a_default) const
     {
         const auto raw = getRaw(s, k);
-        if (!raw) return a_default;
-        try { return std::stoul(*raw); }
-        catch (...) { return a_default; }
+        if (!raw)
+            return a_default;
+        try
+        {
+            return std::stoul(*raw);
+        }
+        catch (...)
+        {
+            return a_default;
+        }
     }
 
     std::string getString(const Section& s, const Key& k, const std::string& a_default) const
@@ -93,19 +109,34 @@ public:
         return raw ? *raw : a_default;
     }
 
-    void set(const Section& s, const Key& k, bool a_value) { m_data[s][k] = a_value ? "true" : "false"; }
-    void set(const Section& s, const Key& k, long a_value) { m_data[s][k] = std::to_string(a_value); }
-    void set(const Section& s, const Key& k, unsigned long a_value) { m_data[s][k] = std::to_string(a_value); }
-    void set(const Section& s, const Key& k, const std::string& a_value) { m_data[s][k] = a_value; }
+    void set(const Section& s, const Key& k, bool a_value)
+    {
+        m_data[s][k] = a_value ? "true" : "false";
+    }
+    void set(const Section& s, const Key& k, long a_value)
+    {
+        m_data[s][k] = std::to_string(a_value);
+    }
+    void set(const Section& s, const Key& k, unsigned long a_value)
+    {
+        m_data[s][k] = std::to_string(a_value);
+    }
+    void set(const Section& s, const Key& k, const std::string& a_value)
+    {
+        m_data[s][k] = a_value;
+    }
 
 private:
+
     std::optional<std::string> getRaw(const Section& s, const Key& k) const
     {
         const auto sectionIt = m_data.find(s);
-        if (sectionIt == m_data.end()) return std::nullopt;
+        if (sectionIt == m_data.end())
+            return std::nullopt;
 
         const auto keyIt = sectionIt->second.find(k);
-        if (keyIt == sectionIt->second.end()) return std::nullopt;
+        if (keyIt == sectionIt->second.end())
+            return std::nullopt;
 
         return keyIt->second;
     }

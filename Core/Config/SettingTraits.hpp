@@ -4,13 +4,13 @@
 
 #include <Core/DIA/TypeWalker.hpp>
 
-template<typename T>
+template <typename T>
 struct SettingTraits; // primary — only specialisations below are valid
 
 // ---------------------------------------------------------------------------
 // bool
 // ---------------------------------------------------------------------------
-template<>
+template <>
 struct SettingTraits<bool>
 {
     static std::wstring toString(bool a_value)
@@ -20,8 +20,16 @@ struct SettingTraits<bool>
 
     static bool fromString(const std::wstring& a_str, bool& a_out)
     {
-        if (a_str == L"1" || a_str == L"true"  || a_str == L"True")  { a_out = true;  return true; }
-        if (a_str == L"0" || a_str == L"false" || a_str == L"False") { a_out = false; return true; }
+        if (a_str == L"1" || a_str == L"true" || a_str == L"True")
+        {
+            a_out = true;
+            return true;
+        }
+        if (a_str == L"0" || a_str == L"false" || a_str == L"False")
+        {
+            a_out = false;
+            return true;
+        }
         return false;
     }
 };
@@ -29,7 +37,7 @@ struct SettingTraits<bool>
 // ---------------------------------------------------------------------------
 // DWORD  (unsigned long on Windows)
 // ---------------------------------------------------------------------------
-template<>
+template <>
 struct SettingTraits<DWORD>
 {
     static std::wstring toString(DWORD a_value)
@@ -44,14 +52,17 @@ struct SettingTraits<DWORD>
             a_out = static_cast<DWORD>(std::stoul(a_str, nullptr, 0)); // base=0 accepts "0x…"
             return true;
         }
-        catch (...) { return false; }
+        catch (...)
+        {
+            return false;
+        }
     }
 };
 
 // ---------------------------------------------------------------------------
 // IntStyle  — numeric format, consistent with IniSerializer<DumpConfig>
 // ---------------------------------------------------------------------------
-template<>
+template <>
 struct SettingTraits<IntStyle>
 {
     static std::wstring toString(IntStyle a_value)
@@ -62,8 +73,14 @@ struct SettingTraits<IntStyle>
     static bool fromString(const std::wstring& a_str, IntStyle& a_out)
     {
         long rawValue;
-        try { rawValue = std::stol(a_str); }
-        catch (...) { return false; }
+        try
+        {
+            rawValue = std::stol(a_str);
+        }
+        catch (...)
+        {
+            return false;
+        }
 
         if (!isValidIntStyle(rawValue))
             return false;

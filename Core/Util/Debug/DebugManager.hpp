@@ -5,5 +5,11 @@
 class DebugManager
 {
 public:
-	static inline void WaitDebugger() { while (!IsDebuggerPresent()) {}; }
+
+    static inline void WaitDebugger()
+    {
+        while (!IsDebuggerPresent())
+        {
+        };
+    }
 };
