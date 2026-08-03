@@ -1,12 +1,8 @@
 $files = Get-ChildItem `
-    -Path . `
     -Recurse `
+    -Path Core, API, CLI, tests `
     -Include *.cpp,*.h,*.hpp `
-    -File `
-    | Where-Object {
-        $_.FullName -notmatch "\\build\\" -and
-        $_.FullName -notmatch "\\_deps\\"
-    }
+    -File
 
 foreach ($file in $files)
 {
