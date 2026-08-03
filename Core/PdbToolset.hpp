@@ -148,6 +148,80 @@ public:
         return out;
     }
 
+    /// Enumerate names of all top-level UDT/enum/typedef symbols,
+    /// newline-separated (mirrors dumpCompilands separator convention).
+    std::wstring enumerateSymbolNames()
+    {
+        std::wstring out;
+
+        ComPtr<IDiaEnumSymbols> enum_symbolsSymbols;
+        if (FAILED(m_session.globalScope()->findChildren(
+                SymTagNull, nullptr, nsNone, &enum_symbolsSymbols))
+            || !enum_symbolsSymbols)
+        {
+            return out;
+        }
+
+        ComPtr<IDiaSymbol> symbol;
+        ULONG celt = 0;
+        while (SUCCEEDED(enum_symbolsSymbols->Next(1, &symbol, &celt)) && celt == 1)
+        {
+            DWORD symTag = SymTagNull;
+            if (SUCCEEDED(symbol->get_symTag(&symTag)))
+            {
+                if (symTag == SymTagUDT || symTag == SymTagEnum || symTag == SymTagTypedef)
+                {
+                    BSTR name = nullptr;
+                    if (SUCCEEDED(symbol->get_name(&name)) && name)
+                    {
+                        out += name;
+                        out += L"\n";
+                        SysFreeString(name);
+                    }
+                }
+            }
+        }
+
+        return out;
+    }
+
+    /// Get source files for a named type, newline-separated.
+    /// Uses the same address->line->sourceFile lookup as registerTypeSource.
+    std::wstring getTypeSourceFilesByName(const wchar_t* a_name, bool a_caseSensitive)
+    {
+        std::wstring out;
+        if (!a_name)
+        {
+            return out;
+        }
+
+        auto searchType = a_caseSensitive ? nsCaseSensitive : nsCaseInsensitive;
+
+        ComPtr<IDiaEnumSymbols> enum_symbolsSymbols;
+        if (FAILED(m_session.globalScope()->findChildren(
+                SymTagNull, a_name, searchType, &enum_symbolsSymbols))
+            || !enum_symbolsSymbols)
+        {
+            return out;
+        }
+
+        ComPtr<IDiaSymbol> symbol;
+        ULONG celt = 0;
+        while (SUCCEEDED(enum_symbolsSymbols->Next(1, &symbol, &celt)) && celt == 1)
+        {
+            DWORD symTag = SymTagNull;
+            if (SUCCEEDED(symbol->get_symTag(&symTag)))
+            {
+                if (symTag == SymTagUDT || symTag == SymTagEnum || symTag == SymTagTypedef)
+                {
+                    out += m_dumper.getTypeSourceFilesRecursive(symbol.get());
+                }
+            }
+        }
+
+        return out;
+    }
+
     // Dump all compilands
     std::wstring dumpCompilands()
     {

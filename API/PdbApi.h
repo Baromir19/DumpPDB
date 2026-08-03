@@ -87,6 +87,22 @@ PDBAPI_API PdbApiResult PdbApi_DumpTypeByName(const wchar_t* a_name,
     uint32_t a_bufferSize,
     uint32_t* a_outRequiredSize);
 
+// --- Symbol enumeration ---
+
+/// Enumerate names of all UDT/enum/typedef symbols, newline-separated
+/// (same separator convention as dumpCompilands).
+/// Uses the standard Dump*/GetLastError buffer convention.
+PDBAPI_API PdbApiResult PdbApi_EnumerateSymbolNames(
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+
+/// Get source file names for a type by name, newline-separated.
+/// Uses the standard Dump*/GetLastError buffer convention.
+PDBAPI_API PdbApiResult PdbApi_GetSymbolSourceFiles(const wchar_t* a_name,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
 // --- Diagnostics ---
 
 /// Returns the last error message via the same buffer convention.

@@ -674,8 +674,8 @@ public:
         struct FieldGroup
         {
             std::vector<ComPtr<IDiaSymbol>> fields;
-            LONG beginOffset;
-            LONG endOffset;
+            LONG beginOffset = 0L;
+            LONG endOffset = 0L;
         };
 
         struct FieldBranch
@@ -1083,11 +1083,14 @@ public:
         return ret;
     }
 
-    /// Register source file info for a symbol (stores for later output).
-    void registerTypeSource(IDiaSymbol* a_symbol)
+    /// Get source file names for a symbol, newline-separated.
+    /// Uses the same address->line->sourceFile lookup as registerTypeSource,
+    /// but returns the result instead of storing it for later output.
+    std::wstring getTypeSourceFiles(IDiaSymbol* a_symbol)
     {
-        if (!m_config.m_showTypeSource)
-            return;
+        std::wstring ret;
+        if (!a_symbol)
+            return ret;
 
         ComPtr<IDiaEnumLineNumbers> enum_symbolsLines;
         ComPtr<IDiaSourceFile> sourceFile;
@@ -1105,7 +1108,7 @@ public:
                 && enum_symbolsLines)
             {
                 ULONG celt = 0;
-                if (SUCCEEDED(enum_symbolsLines->Next(1, &lineNumber, &celt)) && celt == 1)
+                while (SUCCEEDED(enum_symbolsLines->Next(1, &lineNumber, &celt)) && celt == 1)
                 {
                     if (SUCCEEDED(lineNumber->get_sourceFile(&sourceFile)) && sourceFile)
                     {
@@ -1114,12 +1117,39 @@ public:
                         {
                             // Convert BSTR to std::wstring immediately to avoid
                             // ownership issues (double-free, use-after-free, leaks)
-                            m_typeSources.emplace_back(_filename, SysStringLen(_filename));
+                            ret += _filename;
+                            ret += L"\n";
                             SysFreeString(_filename);
                         }
                     }
                 }
             }
+        }
+        return ret;
+    }
+
+    /// Register source file info for a symbol (stores for later output).
+    void registerTypeSource(IDiaSymbol* a_symbol)
+    {
+        if (!m_config.m_showTypeSource)
+            return;
+
+        std::wstring srcs = getTypeSourceFiles(a_symbol);
+        if (srcs.empty())
+            return;
+
+        // Split the newline-separated result and store each file.
+        size_t start = 0;
+        while (start < srcs.size())
+        {
+            auto nl = srcs.find(L'\n', start);
+            if (nl == std::wstring::npos)
+            {
+                m_typeSources.emplace_back(srcs.substr(start));
+                break;
+            }
+            m_typeSources.emplace_back(srcs.substr(start, nl - start));
+            start = nl + 1;
         }
     }
 
@@ -1179,6 +1209,50 @@ public:
     }
 
     // --- Helpers ---
+
+public:
+
+    std::wstring getTypeSourceFilesRecursive(IDiaSymbol* a_symbol)
+    {
+        std::wstring ret;
+
+        if (!a_symbol)
+            return ret;
+
+        ret += getTypeSourceFiles(a_symbol);
+
+        ComPtr<IDiaEnumSymbols> children;
+
+        if (FAILED(a_symbol->findChildren(SymTagNull, nullptr, nsNone, &children)) || !children)
+        {
+            return ret;
+        }
+
+        ComPtr<IDiaSymbol> child;
+        ULONG celt = 0;
+
+        while (SUCCEEDED(children->Next(1, &child, &celt)) && celt == 1)
+        {
+            DWORD tag = SymTagNull;
+            child->get_symTag(&tag);
+
+            switch (tag)
+            {
+            case SymTagFunction:
+            case SymTagData:
+            case SymTagUDT:
+            case SymTagEnum:
+            case SymTagTypedef:
+                ret += getTypeSourceFilesRecursive(child.get());
+                break;
+
+            default:
+                break;
+            }
+        }
+
+        return ret;
+    }
 
 private:
 
