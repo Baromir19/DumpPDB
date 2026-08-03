@@ -216,7 +216,8 @@ public:
         ret += L"enum";
 
         // Filter synthetic names like <unnamed-tag> or $HASH names
-        std::wstring enum_symbolsName = TypeWalker::getName(a_symbol, m_scope, m_config.m_showNonScoped);
+        std::wstring enum_symbolsName
+            = TypeWalker::getName(a_symbol, m_scope, m_config.m_showNonScoped);
         if (!TypeWalker::isSyntheticName(enum_symbolsName))
         {
             ret += L" ";
@@ -263,7 +264,8 @@ public:
             if (SUCCEEDED(a_symbol->get_type(&underlyingType)) && underlyingType)
             {
                 // Build the underlying type's full declaration
-                TypeBuilder builder = TypeWalker::resolveType(underlyingType.get(), m_scope, true, m_config.m_intStyle);
+                TypeBuilder builder = TypeWalker::resolveType(
+                    underlyingType.get(), m_scope, true, m_config.m_intStyle);
                 // Set the typedef name as the "variable name" in the declaration
                 builder.name(typedefName);
                 typeText = builder.build();
@@ -293,7 +295,8 @@ public:
         std::wstring typeText;
         try
         {
-            typeText = TypeWalker::resolveType(a_symbol, m_scope, true, m_config.m_intStyle).build();
+            typeText
+                = TypeWalker::resolveType(a_symbol, m_scope, true, m_config.m_intStyle).build();
         }
         catch (...)
         {
@@ -350,9 +353,9 @@ public:
                 std::wstring retTypeStr;
                 try
                 {
-                    retTypeStr =
-                        TypeWalker::resolveType(retType.get(), m_scope, m_config.m_showNonScoped, m_config.m_intStyle)
-                            .build();
+                    retTypeStr = TypeWalker::resolveType(
+                        retType.get(), m_scope, m_config.m_showNonScoped, m_config.m_intStyle)
+                                     .build();
                 }
                 catch (...)
                 {
@@ -404,7 +407,8 @@ public:
         // NOTE: noexcept support
         {
             IDiaSymbol4* symbol4 = nullptr;
-            if (SUCCEEDED(a_symbol->QueryInterface(__uuidof(IDiaSymbol4), (void**)&symbol4)) && symbol4)
+            if (SUCCEEDED(a_symbol->QueryInterface(__uuidof(IDiaSymbol4), (void**)&symbol4))
+                && symbol4)
             {
                 BOOL isNoExcept = FALSE;
                 if (SUCCEEDED(symbol4->get_noexcept(&isNoExcept)) && isNoExcept)
@@ -471,7 +475,8 @@ public:
 
     /// Emit access specifier label if access has changed.
     /// Returns the new lastAccess value.
-    DWORD emitAccessLabel(std::wstring& aout, IDiaSymbol* a_symbol, DWORD alastAccess, int a_nestingLevel) const
+    DWORD emitAccessLabel(
+        std::wstring& aout, IDiaSymbol* a_symbol, DWORD alastAccess, int a_nestingLevel) const
     {
         if (!m_config.m_showAccess)
             return alastAccess;
@@ -715,8 +720,8 @@ public:
         {
             DWORD bitPos = 0;
             ULONGLONG bitWidth = 0;
-            return SUCCEEDED(f->get_bitPosition(&bitPos)) && SUCCEEDED(f->get_length(&bitWidth)) && bitWidth > 0 &&
-                   bitWidth < 64;
+            return SUCCEEDED(f->get_bitPosition(&bitPos)) && SUCCEEDED(f->get_length(&bitWidth))
+                   && bitWidth > 0 && bitWidth < 64;
         };
 
         // Find overlapping fields starting at the same byte offset as field[i].
@@ -915,7 +920,8 @@ public:
             ret += tab(_level);
             try
             {
-                ret += TypeWalker::resolveType(field.get(), m_scope, true, m_config.m_intStyle).build();
+                ret += TypeWalker::resolveType(field.get(), m_scope, true, m_config.m_intStyle)
+                           .build();
             }
             catch (...)
             {
@@ -1058,7 +1064,8 @@ public:
 
             try
             {
-                ret += TypeWalker::resolveType(field.get(), m_scope, true, m_config.m_intStyle).build();
+                ret += TypeWalker::resolveType(field.get(), m_scope, true, m_config.m_intStyle)
+                           .build();
             }
             catch (...)
             {
@@ -1089,12 +1096,13 @@ public:
         DWORD addressSection = 0;
         DWORD addressOffset = 0;
 
-        if (SUCCEEDED(a_symbol->get_addressSection(&addressSection)) &&
-            SUCCEEDED(a_symbol->get_addressOffset(&addressOffset)))
+        if (SUCCEEDED(a_symbol->get_addressSection(&addressSection))
+            && SUCCEEDED(a_symbol->get_addressOffset(&addressOffset)))
         {
-            if (m_session &&
-                SUCCEEDED(m_session->findLinesByAddr(addressSection, addressOffset, 1, &enum_symbolsLines)) &&
-                enum_symbolsLines)
+            if (m_session
+                && SUCCEEDED(m_session->findLinesByAddr(
+                    addressSection, addressOffset, 1, &enum_symbolsLines))
+                && enum_symbolsLines)
             {
                 ULONG celt = 0;
                 if (SUCCEEDED(enum_symbolsLines->Next(1, &lineNumber, &celt)) && celt == 1)
@@ -1153,7 +1161,8 @@ public:
                 std::wstring typeText;
                 try
                 {
-                    typeText = TypeWalker::resolveType(a_symbol, m_scope, true, m_config.m_intStyle).build();
+                    typeText = TypeWalker::resolveType(a_symbol, m_scope, true, m_config.m_intStyle)
+                                   .build();
                 }
                 catch (...)
                 {
@@ -1249,7 +1258,8 @@ private:
                 ret += _isBegin ? L" : " : L", ";
                 _isBegin = false;
 
-                auto access = TypeWalker::getAccessName(baseSymbol.get(), m_config.m_baseAccessType);
+                auto access
+                    = TypeWalker::getAccessName(baseSymbol.get(), m_config.m_baseAccessType);
                 if (access)
                 {
                     ret += access;
@@ -1327,7 +1337,9 @@ private:
 
                     try
                     {
-                        aout += TypeWalker::resolveType(param.get(), m_scope, true, m_config.m_intStyle).build();
+                        aout += TypeWalker::resolveType(
+                            param.get(), m_scope, true, m_config.m_intStyle)
+                                    .build();
                     }
                     catch (...)
                     {
@@ -1433,7 +1445,8 @@ private:
         return L"";
     }
 
-    bool headerComment(std::wstring& o_out, const wchar_t* a_label, int a_nesting, bool a_hasContent)
+    bool headerComment(
+        std::wstring& o_out, const wchar_t* a_label, int a_nesting, bool a_hasContent)
     {
         if (a_hasContent)
         {
@@ -1493,7 +1506,8 @@ private:
     {
         DWORD count = 0;
         ComPtr<IDiaEnumSymbols> enum_symbols;
-        if (SUCCEEDED(a_symbol->findChildren(a_tag, nullptr, nsNone, &enum_symbols)) && enum_symbols)
+        if (SUCCEEDED(a_symbol->findChildren(a_tag, nullptr, nsNone, &enum_symbols))
+            && enum_symbols)
         {
             ComPtr<IDiaSymbol> child;
             ULONG celt = 0;

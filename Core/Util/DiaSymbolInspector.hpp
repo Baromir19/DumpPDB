@@ -240,7 +240,10 @@ private:
             _type->get_name(&name);
 
             printIndent(a_indent);
-            wprintf(L"type:           tag=%lu (%s), name=\"%s\"\n", _tag, symTagName(_tag), name ? name : L"<none>");
+            wprintf(L"type:           tag=%lu (%s), name=\"%s\"\n",
+                _tag,
+                symTagName(_tag),
+                name ? name : L"<none>");
 
             if (name)
                 SysFreeString(name);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <Core/Util/Container/Singleton.hpp>
 
 #include <Core/System/ConsoleManager.hpp>
@@ -18,20 +20,23 @@ class CommandManager : public Singleton<CommandManager>
 
 protected:
 
-    std::vector<ICommand*> m_commands;
+    std::vector<std::unique_ptr<ICommand>> m_commands;
 
 public:
+
     bool initialize(const CommandConfig& a_config, const DumpConfig& a_dumpConfig)
     {
         static bool initState = false;
         if (initState)
+        {
             return true;
+        }
 
-        m_commands.push_back(new CommandType(a_config.m_useClipboard, a_dumpConfig));
-        m_commands.push_back(new CommandHelp());
-        m_commands.push_back(new CommandCompiland());
-        m_commands.push_back(new CommandSource());
-        m_commands.push_back(new CommandSettings());
+        m_commands.push_back(std::make_unique<CommandType>(a_config.m_useClipboard, a_dumpConfig));
+        m_commands.push_back(std::make_unique<CommandHelp>());
+        m_commands.push_back(std::make_unique<CommandCompiland>());
+        m_commands.push_back(std::make_unique<CommandSource>());
+        m_commands.push_back(std::make_unique<CommandSettings>());
 
         initState = true;
         return true;
@@ -77,9 +82,9 @@ public:
         {
             for (const auto& name : command->getCommandNames())
             {
-                if (!wcscmp(name, a_commandString))
+                if (wcscmp(name, a_commandString) == 0)
                 {
-                    return command;
+                    return command.get();
                 }
             }
         }
@@ -91,12 +96,14 @@ public:
 
     ICommand* getCommand(const wchar_t* a_commandString, int a_userMessageSize) const
     {
-        auto ret = getCommand(a_commandString);
+        auto* ret = getCommand(a_commandString);
 
         auto count = ret->getArgCount();
         auto type = ret->getType();
 
-        count += type & ret->s_executableMask ? 1 : 0; // is it need name of .pdb?
+        count += static_cast<unsigned int>(type) & ICommand::s_executableMask
+                     ? 1
+                     : 0; // is it need name of .pdb?
 
         count += 2; // executable path + command name
 
@@ -105,15 +112,16 @@ public:
             return ret;
         }
 
-        ConsoleManager::printError(L"Command size (%u) is less than minimum (%u) \n", a_userMessageSize, count);
+        ConsoleManager::printError(
+            L"Command size (%u) is less than minimum (%u) \n", a_userMessageSize, count);
         return nullptr;
     }
 
-    void executeCommand(ICommand* a_command)
+    void executeCommand(ICommand* a_command) const
     {
         a_command->execute(ConsoleManager::instance().getCommandArguments());
 
-        if (a_command->getType() == ICommand::COMMAND_HELP) /// ATTENTION
+        if (a_command->getType() == ICommand::Type::COMMAND_HELP) /// ATTENTION
         {
             displayCommandsInfo();
         }

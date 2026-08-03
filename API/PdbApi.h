@@ -90,4 +90,5 @@ PDBAPI_API PdbApiResult PdbApi_DumpTypeByName(const wchar_t* a_name,
 // --- Diagnostics ---
 
 /// Returns the last error message via the same buffer convention.
-PDBAPI_API PdbApiResult PdbApi_GetLastError(wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+PDBAPI_API PdbApiResult PdbApi_GetLastError(
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);

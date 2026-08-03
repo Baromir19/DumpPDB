@@ -16,25 +16,28 @@ private:
 public:
 
     CommandType(bool a_useClipboard, const DumpConfig& config)
-        : ICommand(1, COMMAND_EXECUTE)
+        : ICommand(1, Type::COMMAND_EXECUTE)
+        , m_useClipboard(a_useClipboard)
+        , m_dumpConfig(config)
     {
-        m_useClipboard = a_useClipboard;
-        m_dumpConfig = config;
         m_names.push_back(L"-type");
     }
 
     // virtual const wchar_t* getCommandName() const override { return L"-type"; }
 
-    virtual const wchar_t* getArgHelp() const override
+    [[nodiscard]]
+    const wchar_t* getArgHelp() const override
     {
         return L"<typename>";
     }
-    virtual const wchar_t* getUsageHelp() const override
+
+    [[nodiscard]]
+    const wchar_t* getUsageHelp() const override
     {
         return L"print type info";
     }
 
-    virtual bool execute(const std::wstring a_commandArgs[]) override
+    virtual bool execute(const std::wstring* a_commandArgs) override
     {
         if (a_commandArgs == nullptr)
         {

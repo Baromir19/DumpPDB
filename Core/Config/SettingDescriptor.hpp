@@ -18,12 +18,12 @@ public:
     {
     }
 
-    const wchar_t* getName() const override
+    [[nodiscard]] const wchar_t* getName() const override
     {
         return m_name.c_str();
     }
 
-    std::wstring getValueAsString() const override
+    [[nodiscard]] std::wstring getValueAsString() const override
     {
         return SettingTraits<T>::toString(m_ref);
     }

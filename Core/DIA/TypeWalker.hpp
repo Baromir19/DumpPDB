@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <dia2.h>
 #include <string>
 #include <vector>
@@ -9,7 +10,7 @@
 #include <Core/Util/Com/ComPtr.hpp>
 
 /// Integer style for base type names.
-enum class IntStyle
+enum class IntStyle : std::uint8_t
 {
     MsvcNative, // __int32, __int64, etc.
     Cstdint     // int32_t, int64_t, etc.
@@ -17,7 +18,8 @@ enum class IntStyle
 
 inline bool isValidIntStyle(long a_value) noexcept
 {
-    return a_value >= static_cast<long>(IntStyle::MsvcNative) && a_value <= static_cast<long>(IntStyle::Cstdint);
+    return a_value >= static_cast<long>(IntStyle::MsvcNative)
+           && a_value <= static_cast<long>(IntStyle::Cstdint);
 }
 
 /// Scope context that tracks the current nested class/struct hierarchy.
@@ -39,19 +41,21 @@ struct ScopeContext
         }
     }
 
-    std::wstring top() const
+    [[nodiscard]] std::wstring top() const
     {
         return m_parts.empty() ? L"" : m_parts.back();
     }
 
-    std::wstring full() const
+    [[nodiscard]] std::wstring full() const
     {
         std::wstring result;
 
         for (size_t i = 0; i < m_parts.size(); ++i)
         {
             if (i > 0)
+            {
                 result += L"::";
+            }
 
             result += m_parts[i];
         }
@@ -59,7 +63,7 @@ struct ScopeContext
         return result;
     }
 
-    bool empty() const
+    [[nodiscard]] bool empty() const
     {
         return m_parts.empty();
     }
@@ -132,7 +136,8 @@ public:
     }
 
     /// Get the base type name for a SymTagBaseType symbol.
-    static const wchar_t* getBaseTypeName(IDiaSymbol* a_symbol, IntStyle a_intStyle = IntStyle::MsvcNative)
+    static const wchar_t* getBaseTypeName(
+        IDiaSymbol* a_symbol, IntStyle a_intStyle = IntStyle::MsvcNative)
     {
         DWORD baseType = 0;
         ULONGLONG length = 0;
@@ -233,7 +238,7 @@ public:
 
     static const wchar_t* getUDTKindName(IDiaSymbol* a_symbol)
     {
-        DWORD _udt;
+        DWORD _udt = 0;
         if (SUCCEEDED(a_symbol->get_udtKind(&_udt)))
         {
             switch (_udt)
@@ -371,8 +376,8 @@ public:
             // Bit field
             DWORD bitPos = 0;
             ULONGLONG bitLen = 0;
-            if (SUCCEEDED(a_symbol->get_bitPosition(&bitPos)) && SUCCEEDED(a_symbol->get_length(&bitLen)) &&
-                bitLen > 0 && bitLen != MAXULONGLONG)
+            if (SUCCEEDED(a_symbol->get_bitPosition(&bitPos))
+                && SUCCEEDED(a_symbol->get_length(&bitLen)) && bitLen > 0 && bitLen != MAXULONGLONG)
             {
                 builder.bitField(bitPos, bitLen);
             }
@@ -431,8 +436,9 @@ public:
         bool isFirst = true;
 
         ComPtr<IDiaEnumSymbols> enum_symbolsParams;
-        if (SUCCEEDED(a_symbol->findChildren(SymTagFunctionArgType, nullptr, nsNone, &enum_symbolsParams)) &&
-            enum_symbolsParams)
+        if (SUCCEEDED(
+                a_symbol->findChildren(SymTagFunctionArgType, nullptr, nsNone, &enum_symbolsParams))
+            && enum_symbolsParams)
         {
             ComPtr<IDiaSymbol> child;
             ULONG celt = 0;
@@ -445,7 +451,8 @@ public:
                     {
                         result += L", ";
                     }
-                    result += resolveType(_argType.get(), a_scope, a_stripScope, a_intStyle).build();
+                    result
+                        += resolveType(_argType.get(), a_scope, a_stripScope, a_intStyle).build();
                     isFirst = false;
                 }
             }
@@ -457,7 +464,8 @@ public:
     /// Check if a name is a compiler-generated synthetic name (anonymous or hash-based).
     static bool isSyntheticName(const std::wstring& a_name)
     {
-        return a_name.empty() || a_name == L"<unnamed-tag>" || (a_name.size() > 0 && a_name[0] == L'$');
+        return a_name.empty() || a_name == L"<unnamed-tag>"
+               || (!a_name.empty() && a_name.front() == L'$');
     }
 
     /// Get the name of a symbol, optionally stripping the current scope prefix.
@@ -467,8 +475,9 @@ public:
     ///                         Controls the "m_showNonScoped" behavior: when true, only the
     ///                         short/non-scoped name is returned. When false, the full scoped
     ///                         name (e.g. "ParentClass::Child") is preserved.
-    static std::wstring getName(
-        IDiaSymbol* a_symbol, const ScopeContext& a_scope = ScopeContext(), bool a_stripScope = true)
+    static std::wstring getName(IDiaSymbol* a_symbol,
+        const ScopeContext& a_scope = ScopeContext(),
+        bool a_stripScope = true)
     {
         BSTR bstrName = nullptr;
         if (SUCCEEDED(a_symbol->get_name(&bstrName)) && bstrName)
@@ -555,7 +564,7 @@ public:
     }
 
     /// C++ calling convention enum.
-    enum class CallingConvention
+    enum class CallingConvention : std::uint8_t
     {
         Unknown,
         Cdecl,

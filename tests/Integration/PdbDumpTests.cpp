@@ -62,7 +62,9 @@ protected:
 /// Find a type by exact fully-qualified name.
 static ComPtr<IDiaSymbol> findType(const wchar_t* a_name)
 {
-    return SymbolFinder::findFirst(PdbToolset::instance().globalScope(), SymTagNull, a_name,
+    return SymbolFinder::findFirst(PdbToolset::instance().globalScope(),
+        SymTagNull,
+        a_name,
         false); // case-insensitive
 }
 

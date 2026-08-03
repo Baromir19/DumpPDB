@@ -1,11 +1,12 @@
 #pragma once
 
 #include <windows.h>
+#include <cstdint>
 #include <string>
 
 #define LANGUAGE_STRINGprefix STR_
 
-#define GENERATE_STRING(id, val_c)                                                                                     \
+#define GENERATE_STRING(id, val_c)                                                                 \
     StringLanguageSytnax _CONCAT(LANGUAGE_STRINGprefix, id) = StringLanguageSytnax(L## #id, val_c);
 #define GENERATE_STATIC_STRING(id, val_c) static inline GENERATE_STRING(id, val_c)
 #define GET_STRING(id) StringUtils::Table::##_CONCAT(LANGUAGE_STRINGprefix, id)##.getValue()
@@ -16,30 +17,38 @@ public:
 
     static std::string convertWCharToChar(const wchar_t* a_string)
     {
-        if (!a_string)
+        if (a_string == nullptr)
+        {
             return "";
+        }
 
         int size = WideCharToMultiByte(CP_UTF8, 0, a_string, -1, nullptr, 0, nullptr, nullptr);
         if (size <= 0)
+        {
             return "";
+        }
 
         std::string result(size - 1, 0); // -1 to remove null terminator
-        WideCharToMultiByte(CP_UTF8, 0, a_string, -1, &result[0], size, nullptr, nullptr);
+        WideCharToMultiByte(CP_UTF8, 0, a_string, -1, result.data(), size, nullptr, nullptr);
 
         return result;
     }
 
     static std::wstring convertCharToWChar(const char* a_string)
     {
-        if (!a_string)
+        if (a_string == nullptr)
+        {
             return L"";
+        }
 
         int size = MultiByteToWideChar(CP_UTF8, 0, a_string, -1, nullptr, 0);
         if (size <= 0)
+        {
             return L"";
+        }
 
         std::wstring result(size - 1, 0); // -1 to remove null terminator
-        MultiByteToWideChar(CP_UTF8, 0, a_string, -1, &result[0], size);
+        MultiByteToWideChar(CP_UTF8, 0, a_string, -1, result.data(), size);
 
         return result;
     }
@@ -50,13 +59,11 @@ public:
         return static_cast<T>(wcstoll(a_string, nullptr, 10));
     }
 
-public:
-
     class Table
     {
     protected:
 
-        const class StringLanguageSytnax
+        class StringLanguageSytnax
         {
         private:
 
@@ -72,12 +79,12 @@ public:
             {
             }
 
-            const wchar_t* getId() const
+            [[nodiscard]] const wchar_t* getId() const
             {
                 return m_id;
             }
 
-            const wchar_t* getValue() const
+            [[nodiscard]] const wchar_t* getValue() const
             {
                 return *this;
             }
@@ -104,7 +111,7 @@ public:
 
     public:
 
-        enum class LanguageSyntax : unsigned int
+        enum class LanguageSyntax : std::uint8_t
         {
             LANGUAGE_ID = 0, // dbg
             LANGUAGE_C

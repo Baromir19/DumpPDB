@@ -1,22 +1,29 @@
 #pragma once
 
+#include <cstdint>
+#include <cstring>
 #include <string>
 
 class HashManager
 {
 public:
 
-    static constexpr uint32_t crc32(const uint8_t* a_data, unsigned int a_beginValue = 0xFFFFFFFF)
+    static uint32_t crc32(const uint8_t* a_data, unsigned int a_beginValue = 0xFFFFFFFF)
     {
-        return crc32(a_data, strlen((const char*)a_data), a_beginValue);
+        return crc32(a_data,
+            static_cast<unsigned int>(strlen(reinterpret_cast<const char*>(a_data))),
+            a_beginValue);
     }
 
-    static constexpr uint32_t crc32(const char* a_data, unsigned int a_beginValue = 0xFFFFFFFF)
+    static uint32_t crc32(const char* a_data, unsigned int a_beginValue = 0xFFFFFFFF)
     {
-        return crc32((const uint8_t*)a_data, strlen((const char*)a_data), a_beginValue);
+        return crc32(reinterpret_cast<const uint8_t*>(a_data),
+            static_cast<unsigned int>(strlen(a_data)),
+            a_beginValue);
     }
 
-    static constexpr uint32_t crc32(const uint8_t* a_data, unsigned int a_size, unsigned int a_beginValue = 0xFFFFFFFF)
+    static constexpr uint32_t crc32(
+        const uint8_t* a_data, unsigned int a_size, unsigned int a_beginValue = 0xFFFFFFFF)
     {
         uint32_t _crc = a_beginValue;
 

@@ -25,7 +25,8 @@ public:
         auto searchType = a_caseSensitive ? nsCaseSensitive : nsCaseInsensitive;
 
         ComPtr<IDiaEnumSymbols> enum_symbolsSymbols;
-        if (FAILED(a_scope->findChildren(a_tag, a_name, searchType, &enum_symbolsSymbols)) || !enum_symbolsSymbols)
+        if (FAILED(a_scope->findChildren(a_tag, a_name, searchType, &enum_symbolsSymbols))
+            || !enum_symbolsSymbols)
             return ComPtr<IDiaSymbol>();
 
         ComPtr<IDiaSymbol> symbol;
@@ -50,7 +51,8 @@ public:
         auto _searchType = a_caseSensitive ? nsCaseSensitive : nsCaseInsensitive;
 
         ComPtr<IDiaEnumSymbols> enum_symbolsSymbols;
-        if (FAILED(a_scope->findChildren(a_tag, a_name, _searchType, &enum_symbolsSymbols)) || !enum_symbolsSymbols)
+        if (FAILED(a_scope->findChildren(a_tag, a_name, _searchType, &enum_symbolsSymbols))
+            || !enum_symbolsSymbols)
             return results;
 
         ComPtr<IDiaSymbol> symbol;
@@ -58,6 +60,7 @@ public:
         while (SUCCEEDED(enum_symbolsSymbols->Next(1, &symbol, &celt)) && celt == 1)
         {
             results.push_back(std::move(symbol));
+            symbol = nullptr;
         }
 
         return results;
@@ -75,12 +78,14 @@ public:
             return results;
 
         ComPtr<IDiaEnumSymbols> enum_symbolsSymbols;
-        if (FAILED(a_scope->findChildren(SymTagNull, nullptr, nsNone, &enum_symbolsSymbols)) || !enum_symbolsSymbols)
+        if (FAILED(a_scope->findChildren(SymTagNull, nullptr, nsNone, &enum_symbolsSymbols))
+            || !enum_symbolsSymbols)
             return results;
 
         // Build the prefix to search for
         std::wstring prefix = a_prefix;
-        if (prefix.size() < 2 || prefix[prefix.size() - 2] != L':' || prefix[prefix.size() - 1] != L':')
+        if (prefix.size() < 2 || prefix[prefix.size() - 2] != L':'
+            || prefix[prefix.size() - 1] != L':')
         {
             prefix += L"::";
         }
@@ -90,7 +95,7 @@ public:
         while (SUCCEEDED(enum_symbolsSymbols->Next(1, &symbol, &celt)) && celt == 1)
         {
             BSTR bstrName = nullptr;
-            if (SUCCEEDED(symbol->get_name(&bstrName)) && bstrName)
+            if (SUCCEEDED(symbol->get_name(&bstrName)) && bstrName != nullptr)
             {
                 std::wstring name(bstrName);
                 SysFreeString(bstrName);
@@ -99,25 +104,30 @@ public:
                 bool matches = false;
                 if (a_caseSensitive)
                 {
-                    matches = (name.compare(0, prefix.size(), prefix) == 0 &&
-                               name.find(L"::", prefix.size()) == std::wstring::npos);
+                    matches = (name.compare(0, prefix.size(), prefix) == 0
+                               && name.find(L"::", prefix.size()) == std::wstring::npos);
                 }
                 else
                 {
                     // Case-insensitive comparison
                     std::wstring lowerName = name;
                     std::wstring lowerPrefix = prefix;
-                    for (auto& c : lowerName)
-                        c = towlower(c);
-                    for (auto& c : lowerPrefix)
-                        c = towlower(c);
-                    matches = (lowerName.compare(0, lowerPrefix.size(), lowerPrefix) == 0 &&
-                               lowerName.find(L"::", lowerPrefix.size()) == std::wstring::npos);
+                    for (auto& ch : lowerName)
+                    {
+                        ch = towlower(ch);
+                    }
+                    for (auto& ch : lowerPrefix)
+                    {
+                        ch = towlower(ch);
+                    }
+                    matches = (lowerName.compare(0, lowerPrefix.size(), lowerPrefix) == 0
+                               && lowerName.find(L"::", lowerPrefix.size()) == std::wstring::npos);
                 }
 
                 if (matches)
                 {
                     results.push_back(std::move(symbol));
+                    symbol = nullptr;
                 }
             }
         }

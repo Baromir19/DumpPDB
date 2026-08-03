@@ -5,6 +5,7 @@ on:
     branches:
       - develop
       - "hotfix/**"
+      - "ci/**"
   pull_request:
     branches:
       - develop
@@ -54,3 +55,57 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build-ci-${{ matrix.arch }} -C ${{ matrix.config }} --output-on-failure
+
+  # Runs in parallel with build-and-test and never blocks it.
+  # Runs clang-tidy over the codebase and verifies formatting.
+  quality:
+    name: Quality (clang-tidy & format)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Activates MSVC environment (cl.exe) so the clang-tidy preset can
+      # configure and clang-tidy can resolve MSVC headers via compile_commands.json.
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # GitHub-hosted Windows runners ship LLVM (clang-tidy / clang-format).
+      # Fall back to a Chocolatey install if they're not on PATH for any reason.
+      - name: Ensure clang-tidy & clang-format
+        shell: pwsh
+        run: |
+          if (-not (Get-Command clang-tidy -ErrorAction SilentlyContinue)) {
+            choco install llvm -y --no-progress
+            $env:Path = "C:\Program Files\LLVM\bin;$env:Path"
+            Add-Content -Path $env:GITHUB_PATH -Value "C:\Program Files\LLVM\bin"
+            Write-Host "::warning::clang-tidy was not found on PATH, installed LLVM via Chocolatey"
+          }
+
+          clang-tidy --version
+          clang-format --version
+
+      # Cache CMake FetchContent downloads (_deps). Shares the same key
+      # namespace as build-and-test (x64) so both jobs can reuse the cache.
+      - name: Cache CMake dependencies
+        uses: actions/cache@v4
+        with:
+          path: build-tidy/_deps
+          key: cmake-deps-x64-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            cmake-deps-x64-
+
+      # Generates build-tidy/compile_commands.json consumed by clang-tidy.
+      - name: Configure CMake
+        run: cmake --preset clang-tidy
+
+      - name: Run clang-tidy
+        shell: pwsh
+        run: .\tools\tidy.ps1
+
+      - name: Check formatting
+        shell: pwsh
+        run: .\tools\check-format.ps1

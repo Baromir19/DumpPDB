@@ -72,7 +72,7 @@ struct SettingTraits<IntStyle>
 
     static bool fromString(const std::wstring& a_str, IntStyle& a_out)
     {
-        long rawValue;
+        long rawValue = 0;
         try
         {
             rawValue = std::stol(a_str);
@@ -83,7 +83,9 @@ struct SettingTraits<IntStyle>
         }
 
         if (!isValidIntStyle(rawValue))
+        {
             return false;
+        }
 
         a_out = static_cast<IntStyle>(rawValue);
         return true;

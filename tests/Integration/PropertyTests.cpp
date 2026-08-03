@@ -42,23 +42,27 @@ protected:
 
     ComPtr<IDiaSymbol> findType(const wchar_t* a_name) const
     {
-        return SymbolFinder::findFirst(PdbToolset::instance().globalScope(), SymTagNull, a_name, false);
+        return SymbolFinder::findFirst(
+            PdbToolset::instance().globalScope(), SymTagNull, a_name, false);
     }
 
     ComPtr<IDiaSymbol> findUdt(const wchar_t* a_name) const
     {
-        return SymbolFinder::findFirst(PdbToolset::instance().globalScope(), SymTagUDT, a_name, false);
+        return SymbolFinder::findFirst(
+            PdbToolset::instance().globalScope(), SymTagUDT, a_name, false);
     }
 
     ComPtr<IDiaSymbol> findEnum(const wchar_t* a_name) const
     {
-        return SymbolFinder::findFirst(PdbToolset::instance().globalScope(), SymTagEnum, a_name, false);
+        return SymbolFinder::findFirst(
+            PdbToolset::instance().globalScope(), SymTagEnum, a_name, false);
     }
 
     // --- Children enumeration helpers ---
 
     template <typename Pred>
-    std::vector<ComPtr<IDiaSymbol>> children(IDiaSymbol* a_symbol, enum SymTagEnum a_tag, Pred a_pred) const
+    std::vector<ComPtr<IDiaSymbol>> children(
+        IDiaSymbol* a_symbol, enum SymTagEnum a_tag, Pred a_pred) const
     {
         std::vector<ComPtr<IDiaSymbol>> result;
         ComPtr<IDiaEnumSymbols> enum_symbols;
@@ -131,7 +135,8 @@ public:
 
     static bool isAnonUdtName(const std::wstring& a_name)
     {
-        return a_name.empty() || a_name == L"<unnamed-tag>" || (!a_name.empty() && a_name[0] == L'$');
+        return a_name.empty() || a_name == L"<unnamed-tag>"
+               || (!a_name.empty() && a_name[0] == L'$');
     }
 
     static bool isNoexcept(IDiaSymbol* a_symbol)
@@ -612,8 +617,8 @@ TEST_F(PropertyTest, BitfieldTest_Widths)
     {
         BitFieldInfo info;
         info.name = getName(f.get());
-        if (SUCCEEDED(f->get_bitPosition(&info.bitPos)) && SUCCEEDED(f->get_length(&info.bitWidth)) &&
-            info.bitWidth > 0 && info.bitWidth < 64)
+        if (SUCCEEDED(f->get_bitPosition(&info.bitPos)) && SUCCEEDED(f->get_length(&info.bitWidth))
+            && info.bitWidth > 0 && info.bitWidth < 64)
         {
             info.isBitField = true;
         }

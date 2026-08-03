@@ -150,7 +150,8 @@ public:
 
                 if (currentDirLen == 0 || currentDirLen >= MAX_PATH)
                 {
-                    printError(L"Failed to get current directory (path size: \"%u\")! \n", currentDirLen);
+                    printError(
+                        L"Failed to get current directory (path size: \"%u\")! \n", currentDirLen);
                 }
 
                 if (currentDir[currentDirLen - 1] != L'\\')
@@ -224,7 +225,8 @@ public:
             return;
         }
 
-        int written = vswprintf(s_lineBuffer + s_bufferPointer, s_bufferSize - s_bufferPointer, a_format, a_args);
+        int written = vswprintf(
+            s_lineBuffer + s_bufferPointer, s_bufferSize - s_bufferPointer, a_format, a_args);
 
         if (written > 0)
         {
@@ -246,7 +248,8 @@ protected:
     {
         if (a_argc < a_minimum)
         {
-            printError(L"Argument count (%u) is less than the minimum (%u)!", a_argc, s_minArgPathSize);
+            printError(
+                L"Argument count (%u) is less than the minimum (%u)!", a_argc, s_minArgPathSize);
         }
 
         return true;

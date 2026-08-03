@@ -16,6 +16,7 @@
 class DiaSession
 {
 public:
+
     DiaSession() = default;
 
     bool initialize(const std::wstring& a_pdbPath)
@@ -32,46 +33,52 @@ public:
         m_comInitialized = true;
 
         ComPtr<IDiaDataSource> source;
-        HRESULT hr = E_FAIL;
+        HRESULT hrResult = E_FAIL;
 
-        hr = NoRegCoCreate(L"msdia140.dll", __uuidof(DiaSource), __uuidof(IDiaDataSource), (void**)&source);
+        hrResult = NoRegCoCreate(L"msdia140.dll",
+            __uuidof(DiaSource),
+            __uuidof(IDiaDataSource),
+            reinterpret_cast<void**>(&source));
 
-        if (FAILED(hr))
+        if (FAILED(hrResult))
         {
-            hr = CoCreateInstance(
-                __uuidof(DiaSource), nullptr, CLSCTX_INPROC_SERVER, __uuidof(IDiaDataSource), (void**)&source);
+            hrResult = CoCreateInstance(__uuidof(DiaSource),
+                nullptr,
+                CLSCTX_INPROC_SERVER,
+                __uuidof(IDiaDataSource),
+                reinterpret_cast<void**>(&source));
         }
 
-        if (FAILED(hr))
+        if (FAILED(hrResult))
         {
             wchar_t buf[64];
-            swprintf_s(buf, L"Unable to create DIA source: 0x%08X", hr);
+            swprintf_s(buf, L"Unable to create DIA source: 0x%08X", hrResult);
             throw DumpError(buf);
         }
 
-        hr = source->loadDataFromPdb(a_pdbPath.c_str());
-        if (FAILED(hr))
+        hrResult = source->loadDataFromPdb(a_pdbPath.c_str());
+        if (FAILED(hrResult))
         {
             wchar_t buf[64];
-            swprintf_s(buf, L"loadDataFromPdb failed: 0x%X", hr);
+            swprintf_s(buf, L"loadDataFromPdb failed: 0x%X", hrResult);
             throw DumpError(buf);
         }
 
         ComPtr<IDiaSession> session;
-        hr = source->openSession(&session);
-        if (FAILED(hr))
+        hrResult = source->openSession(&session);
+        if (FAILED(hrResult))
         {
             wchar_t buf[64];
-            swprintf_s(buf, L"openSession failed: 0x%X", hr);
+            swprintf_s(buf, L"openSession failed: 0x%X", hrResult);
             throw DumpError(buf);
         }
 
         ComPtr<IDiaSymbol> globalScope;
-        hr = session->get_globalScope(&globalScope);
-        if (FAILED(hr))
+        hrResult = session->get_globalScope(&globalScope);
+        if (FAILED(hrResult))
         {
             wchar_t buf[64];
-            swprintf_s(buf, L"get_globalScope failed: 0x%X", hr);
+            swprintf_s(buf, L"get_globalScope failed: 0x%X", hrResult);
             throw DumpError(buf);
         }
 
@@ -81,11 +88,11 @@ public:
         return true;
     }
 
-    IDiaSession* session() const
+    [[nodiscard]] IDiaSession* session() const
     {
         return m_session.get();
     }
-    IDiaSymbol* globalScope() const
+    [[nodiscard]] IDiaSymbol* globalScope() const
     {
         return m_globalScope.get();
     }
@@ -101,7 +108,6 @@ public:
         }
     }
 
-    
     // Non-copyable
     DiaSession(const DiaSession&) = delete;
     DiaSession& operator=(const DiaSession&) = delete;

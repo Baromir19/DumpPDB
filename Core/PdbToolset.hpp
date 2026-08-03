@@ -53,18 +53,24 @@ public:
     }
 
     /// Access underlying DIA objects for advanced use.
+    [[nodiscard]]
     IDiaSession* session() const
     {
         return m_session.session();
     }
+
+    [[nodiscard]]
     IDiaSymbol* globalScope() const
     {
         return m_session.globalScope();
     }
+
     SymbolDumper& dumper()
     {
         return m_dumper;
     }
+
+    [[nodiscard]]
     const SymbolDumper& dumper() const
     {
         return m_dumper;
@@ -81,12 +87,14 @@ public:
             return out;
 
         // Step 1: Search by exact name across all symbol types
-        auto matches = SymbolFinder::findAll(m_session.globalScope(), SymTagNull, a_name, a_caseSensitive);
+        auto matches
+            = SymbolFinder::findAll(m_session.globalScope(), SymTagNull, a_name, a_caseSensitive);
 
         // Step 2: Fallback to namespace prefix search (like old displayTypePrefixed)
         if (matches.empty())
         {
-            matches = SymbolFinder::findByNamespacePrefix(m_session.globalScope(), a_name, a_caseSensitive);
+            matches = SymbolFinder::findByNamespacePrefix(
+                m_session.globalScope(), a_name, a_caseSensitive);
         }
 
         dumpSymbolsGrouped(matches, out);
@@ -101,7 +109,8 @@ public:
         if (!a_name)
             return out;
 
-        auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagUDT, a_name, a_caseSensitive);
+        auto _sym
+            = SymbolFinder::findFirst(m_session.globalScope(), SymTagUDT, a_name, a_caseSensitive);
         if (_sym)
         {
             out += m_dumper.dumpTopLevelAny(_sym.get());
@@ -115,7 +124,8 @@ public:
         if (!a_name)
             return out;
 
-        auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagEnum, a_name, a_caseSensitive);
+        auto _sym
+            = SymbolFinder::findFirst(m_session.globalScope(), SymTagEnum, a_name, a_caseSensitive);
         if (_sym)
         {
             out += m_dumper.dumpTopLevelAny(_sym.get());
@@ -129,7 +139,8 @@ public:
         if (!a_name)
             return out;
 
-        auto _sym = SymbolFinder::findFirst(m_session.globalScope(), SymTagTypedef, a_name, a_caseSensitive);
+        auto _sym = SymbolFinder::findFirst(
+            m_session.globalScope(), SymTagTypedef, a_name, a_caseSensitive);
         if (_sym)
         {
             out += m_dumper.dumpTopLevelAny(_sym.get());
@@ -143,8 +154,9 @@ public:
         std::wstring out;
 
         ComPtr<IDiaEnumSymbols> enum_symbolsSymbols;
-        if (FAILED(m_session.globalScope()->findChildren(SymTagCompiland, nullptr, nsNone, &enum_symbolsSymbols)) ||
-            !enum_symbolsSymbols)
+        if (FAILED(m_session.globalScope()->findChildren(
+                SymTagCompiland, nullptr, nsNone, &enum_symbolsSymbols))
+            || !enum_symbolsSymbols)
             return out;
 
         ComPtr<IDiaSymbol> compiland;
@@ -170,8 +182,9 @@ public:
         std::wstring out;
 
         ComPtr<IDiaEnumSymbols> enum_symbols;
-        if (FAILED(m_session.globalScope()->findChildren(SymTagCompiland, nullptr, nsNone, &enum_symbols)) ||
-            !enum_symbols)
+        if (FAILED(m_session.globalScope()->findChildren(
+                SymTagCompiland, nullptr, nsNone, &enum_symbols))
+            || !enum_symbols)
             return out;
 
         ComPtr<IDiaSymbol> compiland;
@@ -185,7 +198,9 @@ public:
 
             // Compiland details
             ComPtr<IDiaEnumSymbols> _details;
-            if (SUCCEEDED(compiland->findChildren(SymTagCompilandDetails, nullptr, nsNone, &_details)) && _details)
+            if (SUCCEEDED(
+                    compiland->findChildren(SymTagCompilandDetails, nullptr, nsNone, &_details))
+                && _details)
             {
                 ComPtr<IDiaSymbol> _detail;
                 while (SUCCEEDED(_details->Next(1, &_detail, &celt)) && celt == 1)
@@ -215,7 +230,8 @@ public:
 
             // Compiland environment
             ComPtr<IDiaEnumSymbols> env;
-            if (SUCCEEDED(compiland->findChildren(SymTagCompilandEnv, nullptr, nsNone, &env)) && env)
+            if (SUCCEEDED(compiland->findChildren(SymTagCompilandEnv, nullptr, nsNone, &env))
+                && env)
             {
                 ComPtr<IDiaSymbol> envSym;
                 while (SUCCEEDED(env->Next(1, &envSym, &celt)) && celt == 1)
@@ -252,7 +268,8 @@ public:
         std::wstring out;
 
         ComPtr<IDiaEnumSourceFiles> enumSourceFiles;
-        if (FAILED(m_session.session()->findFile(nullptr, nullptr, nsNone, &enumSourceFiles)) || !enumSourceFiles)
+        if (FAILED(m_session.session()->findFile(nullptr, nullptr, nsNone, &enumSourceFiles))
+            || !enumSourceFiles)
             return out;
 
         ComPtr<IDiaSourceFile> sourceFile;
@@ -281,7 +298,7 @@ private:
         // Key "<empty>" for global (no namespace) symbols.
         std::map<std::wstring, std::vector<ComPtr<IDiaSymbol>>> groups;
 
-        for (auto& sym : a_symbols)
+        for (const auto& sym : a_symbols)
         {
             std::wstring ns;
             if (TypeWalker::isTopLevelSymbol(sym.get()))
@@ -291,12 +308,12 @@ private:
             groups[ns].push_back(sym);
         }
 
-        for (auto& [ns, syms] : groups)
+        for (const auto& [ns, syms] : groups)
         {
             if (ns.empty())
             {
                 // Global scope — dump each symbol directly.
-                for (auto& sym : syms)
+                for (const auto& sym : syms)
                 {
                     aoutput += m_dumper.dumpTopLevelAny(sym.get());
                 }
@@ -310,10 +327,10 @@ private:
 
                 m_dumper.pushQualifiedScope(ns);
 
-                for (auto& sym : syms)
+                for (const auto& sym : syms)
                 {
                     DWORD symTag = SymTagNull;
-                    sym->get_symTag((DWORD*)&symTag);
+                    sym->get_symTag(&symTag);
 
                     switch (symTag)
                     {

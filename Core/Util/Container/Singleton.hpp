@@ -1,8 +1,8 @@
 ﻿#pragma once
 
-#define SET_SINGLETON_FRIEND(type)                                                                                     \
-protected:                                                                                                             \
-                                                                                                                       \
+#define SET_SINGLETON_FRIEND(type)                                                                 \
+protected:                                                                                         \
+                                                                                                   \
     friend class Singleton<type>;
 
 template <typename T>

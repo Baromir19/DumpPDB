@@ -27,13 +27,13 @@ public:
         m_settings.push_back(std::move(descriptor));
     }
 
-    ISettingDescriptor* find(const std::wstring& a_name) const
+    [[nodiscard]] ISettingDescriptor* find(const std::wstring& a_name) const
     {
         const auto it = m_byName.find(a_name);
         return it != m_byName.end() ? it->second : nullptr;
     }
 
-    const std::vector<std::unique_ptr<ISettingDescriptor>>& all() const
+    [[nodiscard]] const std::vector<std::unique_ptr<ISettingDescriptor>>& all() const
     {
         return m_settings;
     }

@@ -40,7 +40,8 @@ public:
         const auto& cmdString = ConsoleManager::instance().getCommand().c_str();
         const auto& cmd = CommandManager::instance().getCommand(cmdString, a_argc);
 
-        if (cmd->getType() & cmd->s_executableMask && ConsoleManager::instance().verifyPDBFormat())
+        if (static_cast<unsigned int>(cmd->getType()) & ICommand::s_executableMask
+            && ConsoleManager::instance().verifyPDBFormat())
         {
             const auto& path = ConsoleManager::instance().getPath();
 

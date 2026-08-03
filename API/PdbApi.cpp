@@ -9,16 +9,15 @@
 
 namespace
 {
-// DIA / PdbToolset::instance() is a single shared session — serialize all
+// DIA / PdbToolset::instance() is a single shared session ï¿½ serialize all
 // access to it. If you need concurrent sessions for different PDBs later,
 // this whole file needs to move to a handle-based design instead of the
 // Singleton
-// 
+//
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 std::mutex g_mutex;
 std::wstring g_lastError;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
-
 
 void setLastError(std::wstring a_msg)
 {
@@ -32,10 +31,9 @@ std::wstring exceptionToWString(const std::exception& a_ex)
 }
 
 /// Shared buffer-copy logic implementing the two-phase size/copy convention.
-PdbApiResult copyToBuffer(
-    const std::wstring& a_source, 
-    wchar_t* a_outBuffer, 
-    uint32_t a_bufferSize, 
+PdbApiResult copyToBuffer(const std::wstring& a_source,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
     uint32_t* a_outRequiredSize)
 {
     const auto needed = static_cast<uint32_t>(a_source.size() + 1); // + '\0'
@@ -125,8 +123,7 @@ PdbApiResult guarded(Fn&& a_fn)
 }
 
 /// Shared implementation for all "find by name -> dump -> copy" entry points.
-PdbApiResult dumpByNameImpl(
-    std::wstring (PdbToolset::*a_method)(const wchar_t*, bool),
+PdbApiResult dumpByNameImpl(std::wstring (PdbToolset::*a_method)(const wchar_t*, bool),
     const wchar_t* a_name,
     int32_t a_caseSensitive,
     wchar_t* a_outBuffer,
@@ -236,8 +233,7 @@ PdbApiResult PdbApi_GetConfig(PdbApiDumpConfig* a_outConfig)
 
 // --- Dump API ---
 
-PdbApiResult PdbApi_DumpClassByName(
-    const wchar_t* a_name,
+PdbApiResult PdbApi_DumpClassByName(const wchar_t* a_name,
     int32_t a_caseSensitive,
     wchar_t* a_outBuffer,
     uint32_t a_bufferSize,
@@ -246,38 +242,16 @@ PdbApiResult PdbApi_DumpClassByName(
     return guarded(
         [&]()
         {
-            return dumpByNameImpl(
-                &PdbToolset::dumpClassByName, 
-                a_name, 
-                a_caseSensitive, 
-                a_outBuffer, 
-                a_bufferSize, 
-                a_outRequiredSize);
-        });
-}
-
-PdbApiResult PdbApi_DumpEnumByName(
-    const wchar_t* a_name,
-    int32_t a_caseSensitive,
-    wchar_t* a_outBuffer,
-    uint32_t a_bufferSize,
-    uint32_t* a_outRequiredSize)
-{
-    return guarded(
-        [&]()
-        {
-            return dumpByNameImpl(
-                &PdbToolset::dumpEnumByName,
-                a_name, 
+            return dumpByNameImpl(&PdbToolset::dumpClassByName,
+                a_name,
                 a_caseSensitive,
                 a_outBuffer,
-                a_bufferSize, 
+                a_bufferSize,
                 a_outRequiredSize);
         });
 }
 
-PdbApiResult PdbApi_DumpTypedefByName(
-    const wchar_t* a_name,
+PdbApiResult PdbApi_DumpEnumByName(const wchar_t* a_name,
     int32_t a_caseSensitive,
     wchar_t* a_outBuffer,
     uint32_t a_bufferSize,
@@ -286,18 +260,16 @@ PdbApiResult PdbApi_DumpTypedefByName(
     return guarded(
         [&]()
         {
-            return dumpByNameImpl(
-                &PdbToolset::dumpTypedefByName,
-                a_name, 
-                a_caseSensitive, 
-                a_outBuffer, 
-                a_bufferSize, 
+            return dumpByNameImpl(&PdbToolset::dumpEnumByName,
+                a_name,
+                a_caseSensitive,
+                a_outBuffer,
+                a_bufferSize,
                 a_outRequiredSize);
         });
 }
 
-PdbApiResult PdbApi_DumpTypeByName(
-    const wchar_t* a_name,
+PdbApiResult PdbApi_DumpTypedefByName(const wchar_t* a_name,
     int32_t a_caseSensitive,
     wchar_t* a_outBuffer,
     uint32_t a_bufferSize,
@@ -306,8 +278,25 @@ PdbApiResult PdbApi_DumpTypeByName(
     return guarded(
         [&]()
         {
-            return dumpByNameImpl(
-                &PdbToolset::dumpTypeByName,
+            return dumpByNameImpl(&PdbToolset::dumpTypedefByName,
+                a_name,
+                a_caseSensitive,
+                a_outBuffer,
+                a_bufferSize,
+                a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_DumpTypeByName(const wchar_t* a_name,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]()
+        {
+            return dumpByNameImpl(&PdbToolset::dumpTypeByName,
                 a_name,
                 a_caseSensitive,
                 a_outBuffer,
@@ -319,9 +308,7 @@ PdbApiResult PdbApi_DumpTypeByName(
 // --- Diagnostics ---
 
 PdbApiResult PdbApi_GetLastError(
-    wchar_t* a_outBuffer,
-    uint32_t a_bufferSize, 
-    uint32_t* a_outRequiredSize)
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize)
 {
     std::scoped_lock lock(g_mutex);
     return copyToBuffer(g_lastError, a_outBuffer, a_bufferSize, a_outRequiredSize);

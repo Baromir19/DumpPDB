@@ -30,7 +30,8 @@ class SaveManager : public Singleton<SaveManager>
         reg.registerSetting(L"DumpConfig.ShowEnumHex", m_dumpConfig.m_showEnumHex);
         reg.registerSetting(L"DumpConfig.ShowTypeSource", m_dumpConfig.m_showTypeSource);
         reg.registerSetting(L"DumpConfig.CurlyBraceNewline", m_dumpConfig.m_curlyBraceNewline);
-        reg.registerSetting(L"DumpConfig.HideCompilerGenerated", m_dumpConfig.m_hideCompilerGenerated);
+        reg.registerSetting(
+            L"DumpConfig.HideCompilerGenerated", m_dumpConfig.m_hideCompilerGenerated);
         reg.registerSetting(L"DumpConfig.BaseAccessType", m_dumpConfig.m_baseAccessType);
         reg.registerSetting(L"DumpConfig.IntStyle", m_dumpConfig.m_intStyle);
 
@@ -43,10 +44,12 @@ public:
     {
         static bool initState = false;
         if (initState)
+        {
             return true;
+        }
 
         m_path = std::move(a_path);
-        m_ini.load(m_path);
+        (void)m_ini.load(m_path);
 
         IniSerializer<DumpConfig>::load(m_ini, m_dumpConfig);
         IniSerializer<CommandConfig>::load(m_ini, m_commandConfig);
@@ -61,7 +64,7 @@ public:
     {
         IniSerializer<DumpConfig>::save(m_ini, m_dumpConfig);
         IniSerializer<CommandConfig>::save(m_ini, m_commandConfig);
-        m_ini.save(m_path);
+        (void)m_ini.save(m_path);
     }
 
     DumpConfig& dumpConfig()

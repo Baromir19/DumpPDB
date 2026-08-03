@@ -67,7 +67,8 @@ TEST(ScopeContextTest, PopEmptyDoesNothing)
 // ============================================================================
 
 /// Simulates TypeWalker::getName() scope stripping logic.
-static std::wstring stripCurrentScope(const std::wstring& a_name, const std::wstring& a_currentScope)
+static std::wstring stripCurrentScope(
+    const std::wstring& a_name, const std::wstring& a_currentScope)
 {
     if (a_currentScope.empty())
         return a_name;
@@ -89,7 +90,8 @@ TEST(ScopeStrippingTest, ExactPrefixMatch)
 
 TEST(ScopeStrippingTest, ExternalTypeNotStripped)
 {
-    EXPECT_EQ(stripCurrentScope(L"Actor::User::Weapon", L"Actor::SaveData"), L"Actor::User::Weapon");
+    EXPECT_EQ(
+        stripCurrentScope(L"Actor::User::Weapon", L"Actor::SaveData"), L"Actor::User::Weapon");
 }
 
 TEST(ScopeStrippingTest, PartialPrefixNotStripped)
@@ -120,12 +122,14 @@ TEST(ScopeStrippingTest, DestructorName)
 
 TEST(ScopeStrippingTest, DeepNestedConstructor)
 {
-    EXPECT_EQ(stripCurrentScope(L"Actor::SaveData::Inner::Inner", L"Actor::SaveData::Inner"), L"Inner");
+    EXPECT_EQ(
+        stripCurrentScope(L"Actor::SaveData::Inner::Inner", L"Actor::SaveData::Inner"), L"Inner");
 }
 
 TEST(ScopeStrippingTest, DeepNestedDestructor)
 {
-    EXPECT_EQ(stripCurrentScope(L"Actor::SaveData::Inner::~Inner", L"Actor::SaveData::Inner"), L"~Inner");
+    EXPECT_EQ(
+        stripCurrentScope(L"Actor::SaveData::Inner::~Inner", L"Actor::SaveData::Inner"), L"~Inner");
 }
 
 TEST(ScopeStrippingTest, SameNameDifferentScope)

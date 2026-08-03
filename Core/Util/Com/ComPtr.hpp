@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Windows.h>
+
 #include <cstdlib>
 
 /// Minimal RAII wrapper for COM pointers.
@@ -38,9 +40,13 @@ public:
     {
         if (this != &a_other)
         {
+            T* newPtr = a_other.m_ptr;
+            if (newPtr)
+            {
+                newPtr->AddRef();
+            }
             internalRelease();
-            m_ptr = a_other.m_ptr;
-            internalAddRef();
+            m_ptr = newPtr;
         }
         return *this;
     }

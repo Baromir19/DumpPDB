@@ -8,7 +8,7 @@ TabWidth: 4
 ContinuationIndentWidth: 4
 UseTab: Never
 
-ColumnLimit: 120
+ColumnLimit: 100
 
 BreakBeforeBraces: Allman
 
@@ -26,12 +26,13 @@ AllowShortBlocksOnASingleLine: Never
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: false
+AllowAllParametersOfDeclarationOnNextLine: true
 
 BinPackArguments: false
 BinPackParameters: false
-
 AlwaysBreakTemplateDeclarations: Yes
 
+BreakBeforeBinaryOperators: All
 BreakConstructorInitializers: BeforeComma
 ConstructorInitializerIndentWidth: 4
 
