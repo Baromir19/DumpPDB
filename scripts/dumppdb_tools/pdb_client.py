@@ -83,6 +83,71 @@ class PdbClient:
 
         return read_string_call(call)
 
+    def find_strings(self, file_path, min_length=4, encodings=None,
+                     section_names="", regex_pattern="", string_flags=None):
+        """Search for strings in a binary file.
+
+        Args:
+            file_path: Path to the binary file (exe/dll/etc).
+            min_length: Minimum string length (default 4).
+            encodings: Bitwise OR of encoding flags:
+                PDBAPI_ENC_ASCII=1, PDBAPI_ENC_UTF8=2, PDBAPI_ENC_UTF16LE=4.
+                Defaults to ASCII | UTF16LE.
+            section_names: Comma-separated list of PE section names to search
+                (e.g. ".rdata,.data"). Empty string means "all string-candidate
+                sections" for PE files, or the whole file for non-PE files.
+            regex_pattern: Optional regex to filter results (empty = no filter).
+
+        Returns:
+            Newline-separated report: "0x<offset>: [ENC] <text>".
+        """
+        if encodings is None:
+            encodings = 1 | 4  # ASCII | UTF16LE
+
+        if string_flags is None:
+            string_flags = 0 # None, Encodings + Offset
+
+        def call(buffer, size, required):
+            return self.api.dll.PdbApi_FindStringsInFile(
+                file_path,
+                min_length,
+                encodings,
+                string_flags,
+                section_names.encode("utf-8"),
+                regex_pattern.encode("utf-8"),
+                buffer,
+                size,
+                required
+            )
+
+        return read_string_call(call)
+
+    def find_signatures(self, file_path, pattern, section_names=""):
+        """Search for a byte signature (with wildcards) in a binary file.
+
+        Args:
+            file_path: Path to the binary file.
+            pattern: Signature pattern, e.g. "FF ?? 01 BD ?? CA",
+                "FF??01BD??CA", "0xFF??01BD??CA", or "{ FF ?? 01 BD }".
+            section_names: Comma-separated list of PE section names to search
+                (empty = all string-candidate sections for PE, whole file for
+                non-PE).
+
+        Returns:
+            Newline-separated list of hex offsets.
+        """
+        def call(buffer, size, required):
+            return self.api.dll.PdbApi_FindSignaturesInFile(
+                file_path,
+                pattern.encode("ascii"),
+                section_names.encode("ascii"),
+                buffer,
+                size,
+                required
+            )
+
+        return read_string_call(call)
+
     def last_error(self):
         def call(buffer, size, required):
             return self.api.dll.PdbApi_GetLastError(

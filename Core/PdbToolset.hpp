@@ -10,6 +10,9 @@
 #include <Core/DIA/SymbolFinder.hpp>
 #include <Core/DIA/TypeWalker.hpp>
 
+#include <Core/Search/BinaryScanner.hpp>
+#include <Core/Search/Signature.hpp>
+#include <Core/Search/StringScanner.hpp>
 #include <Core/Util/Container/Singleton.hpp>
 
 /// Facade that owns the DIA session lifetime and provides the core dumping/searching API.
@@ -207,6 +210,7 @@ public:
 
         ComPtr<IDiaSymbol> symbol;
         ULONG celt = 0;
+        std::unordered_set<DWORD> visited;
         while (SUCCEEDED(enum_symbolsSymbols->Next(1, &symbol, &celt)) && celt == 1)
         {
             DWORD symTag = SymTagNull;
@@ -214,7 +218,7 @@ public:
             {
                 if (symTag == SymTagUDT || symTag == SymTagEnum || symTag == SymTagTypedef)
                 {
-                    out += m_dumper.getTypeSourceFilesRecursive(symbol.get());
+                    out += m_dumper.getTypeSourceFilesRecursive(symbol.get(), visited);
                 }
             }
         }
@@ -357,6 +361,124 @@ public:
                 out += L"\n";
                 SysFreeString(fileName);
             }
+        }
+
+        return out;
+    }
+
+    // ============================================================================
+    // Binary file search (strings / signatures)
+    // ============================================================================
+
+    
+
+    enum PdbApiStringOutputFlags : uint32_t
+    {
+        PDBAPI_STRING_SHOW_OFFSET = 1 << 0,
+        PDBAPI_STRING_SHOW_ENCODING = 1 << 1,
+    };
+
+    /// Search for strings in a binary file (exe/dll/etc).
+    /// For PE files, searches are scoped to string-candidate sections
+    /// (.text, .rdata, .data, etc.) rather than the whole file.
+    /// a_encodingFlags is a bitwise OR of StringEncoding values.
+    /// a_sectionNames is a comma-separated list of PE section names to search
+    /// (e.g. ".rdata,.data"). Empty string means "all string-candidate sections".
+    /// a_regexPattern is an optional regex to filter results (empty = no filter).
+    /// Returns a newline-separated text report: "offset: [encoding] text".
+    /// Returns empty string on file load failure.
+    std::wstring findStringsInFile(const wchar_t* a_filePath,
+        uint32_t a_minLength,
+        uint32_t a_encodingFlags,
+        uint32_t a_outStringFlags,
+        const char* a_sectionNames = "",
+        const char* a_regexPattern = "")
+    {
+        std::wstring out;
+        if (!a_filePath)
+        {
+            return out;
+        }
+
+        DumpPDB::BinaryScanner scanner;
+        if (!scanner.load(a_filePath))
+        {
+            return out;
+        }
+
+        std::string sections = a_sectionNames ? a_sectionNames : "";
+        std::string regex = a_regexPattern ? a_regexPattern : "";
+
+        auto matches = scanner.findStrings(a_minLength, a_encodingFlags, sections, regex);
+
+        wchar_t buf[64];
+        for (const auto& m : matches)
+        {
+            // TODO: to string builder!!! And flags too
+            // e.g. You can find only offsets, string values, or both
+            if (a_outStringFlags & PdbApiStringOutputFlags::PDBAPI_STRING_SHOW_OFFSET)
+            {
+                swprintf_s(buf, L"0x%08llX: ", static_cast<unsigned long long>(m.offset));
+                out += buf;
+            }
+
+            if (a_outStringFlags & PdbApiStringOutputFlags::PDBAPI_STRING_SHOW_ENCODING)
+            {
+                switch (m.encoding)
+                {
+                case DumpPDB::StringEncoding::ASCII:
+                    out += L"[ASCII] ";
+                    break;
+                case DumpPDB::StringEncoding::UTF8:
+                    out += L"[UTF-8] ";
+                    break;
+                case DumpPDB::StringEncoding::UTF16LE:
+                    out += L"[UTF-16LE] ";
+                    break;
+                default:
+                    out += L"[?] ";
+                    break;
+                }
+            }
+
+            out += m.text;
+            out += L"\n";
+        }
+
+        return out;
+    }
+
+    /// Search for a byte signature (with wildcards) in a binary file.
+    /// Supports patterns like "FF ?? 01 BD ?? CA", "FF??01BD??CA", "0xFF??01BD??CA",
+    /// and "{ FF ?? 01 BD }" (YARA-style).
+    /// a_sectionNames is a comma-separated list of PE section names to search
+    /// (empty = all string-candidate sections for PE, whole file for non-PE).
+    /// Returns a newline-separated list of offsets in hex.
+    /// Returns empty string on file load failure or invalid pattern.
+    std::wstring findSignaturesInFile(const wchar_t* a_filePath,
+        const char* a_pattern,
+        const char* a_sectionNames = "")
+    {
+        std::wstring out;
+        if (!a_filePath || !a_pattern)
+        {
+            return out;
+        }
+
+        DumpPDB::BinaryScanner scanner;
+        if (!scanner.load(a_filePath))
+        {
+            return out;
+        }
+
+        std::string sections = a_sectionNames ? a_sectionNames : "";
+        auto matches = scanner.findSignatures(a_pattern, sections);
+
+        wchar_t buf[64];
+        for (const auto& m : matches)
+        {
+            swprintf_s(buf, L"0x%08llX\n", static_cast<unsigned long long>(m.offset));
+            out += buf;
         }
 
         return out;

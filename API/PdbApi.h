@@ -103,6 +103,58 @@ PDBAPI_API PdbApiResult PdbApi_GetSymbolSourceFiles(const wchar_t* a_name,
     uint32_t a_bufferSize,
     uint32_t* a_outRequiredSize);
 
+// --- Binary file search (strings / signatures) ---
+
+/// String encoding flags for PdbApi_FindStringsInFile.
+enum PdbApiStringEncoding : int32_t
+{
+    PDBAPI_ENC_ASCII = 1 << 0,
+    PDBAPI_ENC_UTF8 = 1 << 1,
+    PDBAPI_ENC_UTF16LE = 1 << 2,
+};
+
+/// Endianness for signature values.
+enum PdbApiEndian : int32_t
+{
+    PDBAPI_ENDIAN_LITTLE = 0,
+    PDBAPI_ENDIAN_BIG = 1,
+};
+
+/// Search for strings in a binary file (exe/dll/etc).
+/// For PE files, searches are scoped to string-candidate sections
+/// (.text, .rdata, .data, etc.) rather than the whole file.
+/// a_encodingFlags is a bitwise OR of PdbApiStringEncoding values.
+/// a_sectionNames is a comma-separated list of PE section names to search
+/// (e.g. ".rdata,.data"). Empty string means "all string-candidate sections".
+/// a_regexPattern is an optional regex to filter results (empty = no filter).
+/// Result is a newline-separated report: "0x<offset>: [ENC] <text>".
+/// Uses the standard Dump*/GetLastError buffer convention.
+/// Returns PDBAPI_ERROR_NOT_FOUND if no strings found or file load failed.
+PDBAPI_API PdbApiResult PdbApi_FindStringsInFile(const wchar_t* a_filePath,
+    uint32_t a_minLength,
+    int32_t a_encodingFlags,
+    uint32_t a_outStringFlags,
+    const char* a_sectionNames,
+    const char* a_regexPattern,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
+/// Search for a byte signature (with wildcards) in a binary file.
+/// Supports patterns like "FF ?? 01 BD ?? CA", "FF??01BD??CA", "0xFF??01BD??CA",
+/// and "{ FF ?? 01 BD }" (YARA-style).
+/// a_sectionNames is a comma-separated list of PE section names to search
+/// (empty = all string-candidate sections for PE, whole file for non-PE).
+/// Result is a newline-separated list of hex offsets.
+/// Uses the standard Dump*/GetLastError buffer convention.
+/// Returns PDBAPI_ERROR_NOT_FOUND if no matches, file load failed, or pattern invalid.
+PDBAPI_API PdbApiResult PdbApi_FindSignaturesInFile(const wchar_t* a_filePath,
+    const char* a_pattern,
+    const char* a_sectionNames,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
 // --- Diagnostics ---
 
 /// Returns the last error message via the same buffer convention.

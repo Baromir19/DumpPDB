@@ -99,6 +99,31 @@ class PdbApiNative:
         ]
         self.dll.PdbApi_GetSymbolSourceFiles.restype = ctypes.c_int
 
+        # --- Binary file search (strings / signatures) ---
+
+        self.dll.PdbApi_FindStringsInFile.argtypes = [
+            wintypes.LPCWSTR,
+            ctypes.c_uint32,
+            ctypes.c_int,
+            ctypes.c_uint32,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            wintypes.LPWSTR,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32)
+        ]
+        self.dll.PdbApi_FindStringsInFile.restype = ctypes.c_int
+
+        self.dll.PdbApi_FindSignaturesInFile.argtypes = [
+            wintypes.LPCWSTR,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            wintypes.LPWSTR,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32)
+        ]
+        self.dll.PdbApi_FindSignaturesInFile.restype = ctypes.c_int
+
         # --- Diagnostics ---
 
         self.dll.PdbApi_GetLastError.argtypes = [

@@ -13,6 +13,22 @@ import sys
 
 from dumppdb_tools import PdbClient
 
+def parse_encodings(value):
+    result = 0
+
+    for item in value.lower().split(","):
+        item = item.strip()
+
+        if item == "ascii":
+            result |= 1
+
+        elif item == "utf8":
+            result |= 2
+
+        elif item in ("utf16", "utf16le"):
+            result |= 4
+
+    return result
 
 def main():
     parser = argparse.ArgumentParser(
@@ -25,7 +41,7 @@ def main():
     )
     parser.add_argument(
         "--pdb",
-        required=True,
+        #required=True,
         help="Path to the .pdb file to open",
     )
     parser.add_argument(
@@ -63,13 +79,73 @@ def main():
         action="store_true",
         help="Use case-sensitive name lookup",
     )
+    parser.add_argument(
+        "--signatures",
+        metavar="PATTERN",
+        help="Search for a byte signature (e.g. 'FF ?? 01 BD ?? CA')",
+    )
+    parser.add_argument(
+        "--strings",
+        action="store_true",
+        help="Search for strings",
+    )
+    parser.add_argument(
+        "--file",
+        help="Path to a binary file (exe/dll/bin/etc)",
+    )
+    parser.add_argument(
+        "--min-length",
+        type=int,
+        default=4,
+        help="Minimum string length (default: 4)",
+    )
+    parser.add_argument(
+        "--encodings",
+        default="ascii,utf16",
+        help="String encodings: ascii,utf8,utf16",
+    )
+    parser.add_argument(
+        "--sections",
+        default="",
+        help="PE sections to scan (.rdata,.data)",
+    )
+    parser.add_argument(
+        "--regex",
+        default="",
+        help="Regex filter for strings",
+    )
 
     args = parser.parse_args()
 
     pdb = PdbClient(args.dll)
 
     try:
-        pdb.open(args.pdb)
+        binary_mode = (
+            args.file and
+            (args.strings or args.signatures)
+        )
+
+        pdb_mode = (
+            args.pdb and
+            any([
+                args.type_name,
+                args.class_name,
+                args.enum_name,
+                args.typedef_name,
+                args.source_name,
+                args.symbols
+            ])
+        )
+
+        if pdb_mode:
+            if not args.pdb:
+                parser.error("--pdb is required")
+
+            pdb.open(args.pdb)
+
+        if binary_mode:
+            if not args.file:
+                parser.error("--file is required")
 
         if args.type_name:
             print(pdb.dump_type(args.type_name, args.case_sensitive))
@@ -85,6 +161,28 @@ def main():
 
         if args.source_name:
             print(pdb.get_source_files(args.source_name, args.case_sensitive))
+
+        if args.signatures:
+            if not args.file:
+                parser.error("--file is required with --signatures")
+
+            print(
+                pdb.find_signatures(
+                    args.file,
+                    args.signatures
+                )
+            )
+
+        if args.strings:
+            print(
+                pdb.find_strings(
+                    args.file,
+                    min_length=args.min_length,
+                    encodings=parse_encodings(args.encodings),
+                    section_names=args.sections,
+                    regex_pattern=args.regex,
+                )
+            )
 
         if args.symbols:
             print(pdb.enumerate_symbols())

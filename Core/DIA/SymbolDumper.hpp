@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <sstream>
+#include <unordered_set>
 
 #include <dia2.h>
 
@@ -1212,12 +1213,24 @@ public:
 
 public:
 
-    std::wstring getTypeSourceFilesRecursive(IDiaSymbol* a_symbol)
+    std::wstring getTypeSourceFilesRecursive(
+        IDiaSymbol* a_symbol, std::unordered_set<DWORD>& a_visited, int depth = 0)
     {
+        if (depth > kMaxDepth)
+            return {};
+
         std::wstring ret;
 
         if (!a_symbol)
             return ret;
+
+        DWORD id = 0;
+        a_symbol->get_symIndexId(&id);
+
+        if (!a_visited.insert(id).second)
+        {
+            return {};
+        }
 
         ret += getTypeSourceFiles(a_symbol);
 
@@ -1243,7 +1256,7 @@ public:
             case SymTagUDT:
             case SymTagEnum:
             case SymTagTypedef:
-                ret += getTypeSourceFilesRecursive(child.get());
+                ret += getTypeSourceFilesRecursive(child.get(), a_visited, depth + 1);
                 break;
 
             default:
@@ -1597,4 +1610,5 @@ private:
     ScopeContext m_scope;
     std::vector<std::wstring> m_typeSources;
     IDiaSession* m_session = nullptr;
+    static constexpr int kMaxDepth = 256;
 };

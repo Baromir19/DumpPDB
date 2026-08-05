@@ -9,7 +9,7 @@
 
 namespace
 {
-// DIA / PdbToolset::instance() is a single shared session � serialize all
+// DIA / PdbToolset::instance() is a single shared session, serialize all
 // access to it. If you need concurrent sessions for different PDBs later,
 // this whole file needs to move to a handle-based design instead of the
 // Singleton
@@ -344,12 +344,115 @@ PdbApiResult PdbApi_GetSymbolSourceFiles(const wchar_t* a_name,
                 return PDBAPI_ERROR_NOT_INITIALIZED;
             }
 
-            std::wstring result
-                = PdbToolset::instance().getTypeSourceFilesByName(a_name, a_caseSensitive != 0);
+            std::wstring result;
+
+            try
+            {
+                result
+                    = PdbToolset::instance().getTypeSourceFilesByName(a_name, a_caseSensitive != 0);
+            }
+            catch (const DumpError& e)
+            {
+                setLastError(L"DumpError: " + e.wideMessage());
+                return PDBAPI_ERROR_EXCEPTION;
+            }
+
+            catch (const std::exception& e)
+            {
+                setLastError(L"std::exception: " + exceptionToWString(e));
+                return PDBAPI_ERROR_EXCEPTION;
+            }
+
+            catch (...)
+            {
+                setLastError(L"Unknown C++ exception");
+                return PDBAPI_ERROR_EXCEPTION;
+            }
 
             if (result.empty())
             {
                 setLastError(L"Symbol not found or has no source files");
+                if (a_outRequiredSize != nullptr)
+                {
+                    *a_outRequiredSize = 0;
+                }
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+// --- Binary file search (strings / signatures) ---
+
+PdbApiResult PdbApi_FindStringsInFile(const wchar_t* a_filePath,
+    uint32_t a_minLength,
+    int32_t a_encodingFlags,
+    uint32_t a_outStringFlags,
+    const char* a_sectionNames,
+    const char* a_regexPattern,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (a_filePath == nullptr)
+            {
+                setLastError(L"a_filePath is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            if (a_encodingFlags == 0)
+            {
+                setLastError(L"a_encodingFlags is 0 (no encodings selected)");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+
+            std::wstring result = PdbToolset::instance().findStringsInFile(
+                a_filePath, a_minLength, a_encodingFlags, a_outStringFlags, a_sectionNames, a_regexPattern);
+
+            if (result.empty())
+            {
+                setLastError(L"No strings found or file could not be loaded");
+                if (a_outRequiredSize != nullptr)
+                {
+                    *a_outRequiredSize = 0;
+                }
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_FindSignaturesInFile(const wchar_t* a_filePath,
+    const char* a_pattern,
+    const char* a_sectionNames,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (a_filePath == nullptr)
+            {
+                setLastError(L"a_filePath is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            if (a_pattern == nullptr)
+            {
+                setLastError(L"a_pattern is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+
+            std::wstring result
+                = PdbToolset::instance().findSignaturesInFile(a_filePath, a_pattern, a_sectionNames);
+
+            if (result.empty())
+            {
+                setLastError(L"No signature matches found, file could not be loaded, or pattern is invalid");
                 if (a_outRequiredSize != nullptr)
                 {
                     *a_outRequiredSize = 0;
