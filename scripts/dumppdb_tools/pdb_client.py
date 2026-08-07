@@ -83,6 +83,28 @@ class PdbClient:
 
         return read_string_call(call)
 
+    def enumerate_source_files(self):
+        def call(buffer, size, required):
+            return self.api.dll.PdbApi_EnumerateSourceFiles(
+                buffer,
+                size,
+                required
+            )
+
+        return read_string_call(call)
+
+    def get_symbols_by_source_file(self, file_name, case_sensitive=False):
+        def call(buffer, size, required):
+            return self.api.dll.PdbApi_GetSymbolsBySourceFile(
+                file_name,
+                int(case_sensitive),
+                buffer,
+                size,
+                required
+            )
+
+        return read_string_call(call)
+
     def find_strings(self, file_path, min_length=4, encodings=None,
                      section_names="", regex_pattern="", string_flags=None):
         """Search for strings in a binary file.

@@ -103,6 +103,20 @@ PDBAPI_API PdbApiResult PdbApi_GetSymbolSourceFiles(const wchar_t* a_name,
     uint32_t a_bufferSize,
     uint32_t* a_outRequiredSize);
 
+/// Enumerate names of all source files present in the PDB, newline-separated.
+/// Uses the standard Dump*/GetLastError buffer convention.
+PDBAPI_API PdbApiResult PdbApi_EnumerateSourceFiles(
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+
+/// Enumerate names of all UDT/enum/typedef symbols defined in a given
+/// source file, newline-separated.
+/// Uses the standard Dump*/GetLastError buffer convention.
+/*PDBAPI_API PdbApiResult PdbApi_GetSymbolsBySourceFile(const wchar_t* a_fileName,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);*/
+
 // --- Binary file search (strings / signatures) ---
 
 /// String encoding flags for PdbApi_FindStringsInFile.

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <unordered_set>
 #include <iostream>
 
 #include <Core/DIA/DiaSession.hpp>
@@ -361,6 +362,90 @@ public:
                 out += L"\n";
                 SysFreeString(fileName);
             }
+        }
+
+        return out;
+    }
+
+    /// Get all UDT/enum/typedef symbol names defined in a given source file,
+    /// newline-separated. The file is matched by name (case-insensitive).
+    /// Uses IDiaSourceFile::get_compilands to find compilands that reference
+    /// the file, then enumerates their UDT/enum/typedef children.
+    std::wstring getSymbolsBySourceFile(const wchar_t* a_fileName, bool a_caseSensitive) // NOTE: doesn't work
+    {
+        std::wstring out;
+        if (!a_fileName)
+        {
+            return out;
+        }
+
+        auto searchType = a_caseSensitive ? nsCaseSensitive : nsCaseInsensitive;
+
+        // Find the source file by name
+        ComPtr<IDiaEnumSourceFiles> enumSourceFiles;
+        if (FAILED(m_session.session()->findFile(
+                nullptr, a_fileName, searchType, &enumSourceFiles))
+            || !enumSourceFiles)
+        {
+            return out;
+        }
+
+        ComPtr<IDiaSourceFile> sourceFile;
+        ULONG celt = 0;
+        std::unordered_set<std::wstring> seen;
+
+        while (SUCCEEDED(enumSourceFiles->Next(1, &sourceFile, &celt)) && celt == 1)
+        {
+            // Get compilands that reference this source file
+            ComPtr<IDiaEnumSymbols> enumCompilands;
+            if (FAILED(sourceFile->get_compilands(&enumCompilands)) || !enumCompilands)
+            {
+                sourceFile.Release();
+                continue;
+            }
+
+            ComPtr<IDiaSymbol> compiland;
+            while (SUCCEEDED(enumCompilands->Next(1, &compiland, &celt)) && celt == 1)
+            {
+                // Find UDT/enum/typedef symbols in this compiland
+                ComPtr<IDiaEnumSymbols> enumSymbols;
+                if (FAILED(compiland->findChildren(
+                        SymTagNull, nullptr, nsNone, &enumSymbols))
+                    || !enumSymbols)
+                {
+                    compiland.Release();
+                    continue;
+                }
+
+                ComPtr<IDiaSymbol> symbol;
+                while (SUCCEEDED(enumSymbols->Next(1, &symbol, &celt)) && celt == 1)
+                {
+                    DWORD symTag = SymTagNull;
+                    if (SUCCEEDED(symbol->get_symTag(&symTag)))
+                    {
+                        if (symTag == SymTagUDT || symTag == SymTagEnum || symTag == SymTagTypedef)
+                        {
+                            BSTR name = nullptr;
+                            if (SUCCEEDED(symbol->get_name(&name)) && name)
+                            {
+                                std::wstring symbolName(name);
+                                SysFreeString(name);
+
+                                // Skip synthetic/anonymous names
+                                if (!TypeWalker::isSyntheticName(symbolName)
+                                    && seen.insert(symbolName).second)
+                                {
+                                    out += symbolName;
+                                    out += L"\n";
+                                }
+                            }
+                        }
+                    }
+                    symbol.Release();
+                }
+                compiland.Release();
+            }
+            sourceFile.Release();
         }
 
         return out;

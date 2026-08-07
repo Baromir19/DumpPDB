@@ -247,3 +247,45 @@ TEST_F(PdbDumpTest, FindNamespaceNested)
     auto sym = findType(L"Test::OuterNamespace::InnerNamespace::NestedNamespaceStruct");
     ASSERT_NE(sym, nullptr);
 }
+
+// ============================================================================
+// 7. SOURCE FILE ENUMERATION TESTS
+// ============================================================================
+
+TEST_F(PdbDumpTest, EnumerateSourceFiles)
+{
+    std::wstring files = PdbToolset::instance().dumpSourceFiles();
+    ASSERT_FALSE(files.empty());
+
+    // Should find at least the TestCompiland main test file
+    EXPECT_NE(files.find(L"Tests.hpp"), std::wstring::npos);
+    EXPECT_NE(files.find(L"Tests.cpp"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, GetSymbolsBySourceFile)
+{
+    // Tests.hpp should contain Test structs like Actor
+    std::wstring symbols = PdbToolset::instance().getSymbolsBySourceFile(L"Tests.hpp", false);
+    ASSERT_FALSE(symbols.empty());
+
+    // Should find many Test:: types defined in the header
+    EXPECT_NE(symbols.find(L"Actor"), std::wstring::npos);
+    EXPECT_NE(symbols.find(L"PrimitiveTypes"), std::wstring::npos);
+    EXPECT_NE(symbols.find(L"SimpleEnum"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, GetSymbolsBySourceFileCaseInsensitive)
+{
+    // Case-insensitive search for lowercase "tests.hpp" should find the file
+    // even though the actual path is "Tests.hpp".
+    std::wstring symbols = PdbToolset::instance().getSymbolsBySourceFile(L"tests.hpp", false);
+    ASSERT_FALSE(symbols.empty());
+
+    EXPECT_NE(symbols.find(L"SimpleEnum"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, GetSymbolsBySourceFileNotFound)
+{
+    std::wstring symbols = PdbToolset::instance().getSymbolsBySourceFile(L"nonexistent.hpp", false);
+    EXPECT_TRUE(symbols.empty());
+}

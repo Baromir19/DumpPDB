@@ -70,6 +70,16 @@ def main():
         help="List source files for a type by name",
     )
     parser.add_argument(
+        "--enumerate-files",
+        action="store_true",
+        help="Enumerate all source files in the PDB",
+    )
+    #parser.add_argument(
+    #    "--symbols-by-file",
+    #    dest="symbols_file",
+    #    help="List UDT/enum/typedef symbols defined in a source file",
+    #)
+    parser.add_argument(
         "--symbols",
         action="store_true",
         help="Enumerate all symbol names",
@@ -133,6 +143,8 @@ def main():
                 args.enum_name,
                 args.typedef_name,
                 args.source_name,
+                args.enumerate_files,
+                #args.symbols_file,
                 args.symbols
             ])
         )
@@ -162,10 +174,13 @@ def main():
         if args.source_name:
             print(pdb.get_source_files(args.source_name, args.case_sensitive))
 
-        if args.signatures:
-            if not args.file:
-                parser.error("--file is required with --signatures")
+        if args.enumerate_files:
+            print(pdb.enumerate_source_files())
 
+        #if args.symbols_file:
+        #    print(pdb.get_symbols_by_source_file(args.symbols_file, args.case_sensitive))
+
+        if args.signatures:
             print(
                 pdb.find_signatures(
                     args.file,
