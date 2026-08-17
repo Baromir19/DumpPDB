@@ -120,6 +120,34 @@ def split_type_tokens(value: str) -> list[str]:
     ]
 
 
+def strip_template_args(type_name: str) -> str:
+    """Remove template argument contents while preserving surrounding name.
+
+    Examples:
+        WeakRef<Actor> -> WeakRef
+        std::vector<int> -> std::vector
+        Foo<Bar>::Baz -> Foo::Baz
+        std::map<int, std::vector<float>> -> std::map
+    """
+    result: list[str] = []
+    depth = 0
+
+    for char in type_name:
+        if char == "<":
+            depth += 1
+            continue
+
+        if char == ">":
+            if depth > 0:
+                depth -= 1
+                continue
+
+        if depth == 0:
+            result.append(char)
+
+    return "".join(result)
+
+
 def get_filename_match_score(type_name: str, file_name: str) -> int:
     if type_name.lower() == file_name.lower():
         return MAX_SCORE
@@ -239,6 +267,10 @@ def _score_sources(
 ) -> dict[str, int] | None:
     scores: dict[str, int] = {}
 
+    # Score against the template-stripped name: template arguments carry
+    # no signal about where the template itself is declared.
+    scoring_name = strip_template_args(type_name)
+
     cleaned_filesources: dict[str, set[str]] = {}
 
     for source in file_sources:
@@ -257,8 +289,8 @@ def _score_sources(
         else:
             directory = ""
 
-        score = get_filename_match_score(type_name, filename)
-        score += get_path_match_score(type_name, directory)
+        score = get_filename_match_score(scoring_name, filename)
+        score += get_path_match_score(scoring_name, directory)
         score += get_extension_score(sources)
 
         # Frequency penalty / bonus.
@@ -572,6 +604,11 @@ def main() -> int:
         # meta-variant type itself is removed from the resolution set.
         meta_sources: dict[str, set[str]] = {}
         meta_variant_types: set[str] = set()
+        # Preserve the link between a base type and the meta-variant
+        # types whose sources were folded into it (e.g. Vehicle ->
+        # [VehicleDefinition]), so a future DB can record that
+        # "Vehicle has metatype VehicleDefinition".
+        meta_type_links: dict[str, list[str]] = {}
 
         if args.meta_prefix or args.meta_suffix:
             for type_name in type_sources:
@@ -588,6 +625,10 @@ def main() -> int:
                             set(),
                         ).update(type_sources[type_name])
                         meta_variant_types.add(type_name)
+                        meta_type_links.setdefault(
+                            variant,
+                            [],
+                        ).append(type_name)
 
             if meta_sources:
                 logging.info("Meta type sources merged:")
@@ -599,6 +640,15 @@ def main() -> int:
                     "Meta-variant types removed from resolution: %d",
                     len(meta_variant_types),
                 )
+
+            if meta_type_links:
+                logging.info("Meta type links (base -> meta variants):")
+                for base, variants in sorted(meta_type_links.items()):
+                    logging.info(
+                        "  %s -> %s",
+                        base,
+                        ", ".join(sorted(set(variants))),
+                    )
 
         # ==============================================
         # Global source set for the second-pass search.
@@ -668,6 +718,13 @@ def main() -> int:
                 output.write(
                     f"{type_name} -> {result}\n"
                 )
+
+            # Preserve meta-type relationships so the DB can link each
+            # base type to the meta variants that were folded into it.
+            if meta_type_links:
+                output.write("\n# Meta type links (base -> meta variants)\n")
+                for base, variants in sorted(meta_type_links.items()):
+                    output.write(f"{base} -> {sorted(set(variants))}\n")
 
         logging.info("Results written to %s", output_path)
 
