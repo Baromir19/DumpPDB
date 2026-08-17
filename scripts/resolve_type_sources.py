@@ -3,7 +3,6 @@
 
 import argparse
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
 import re
 import sys
@@ -11,11 +10,6 @@ import sys
 from dumppdb_tools import PdbClient
 from dumppdb_tools import normalize_path
 from dumppdb_tools import remove_extension
-
-@dataclass
-class TypeScore:
-    path_name: str
-    score: int
 
 MAX_SCORE = 10_000
 
@@ -27,11 +21,22 @@ PATH_TOKEN_SCORE = 100
 
 EXTENSION_SCORE = 1_000
 
-# TODO:
-# meta prefixes and suffixes!!!
-# exact match exists in the files, but no relationship - 10-50%???
+# Minimum score to trust a candidate from the type's own sources.
+MIN_CONFIDENCE = 5_000
 
-# remove the internal types
+# Penalty applied to scores from the global (all-sources) search.
+GLOBAL_SEARCH_PENALTY = 0.4
+
+# Maximum frequency penalty (as a fraction of MAX_SCORE).
+MAX_FREQUENCY_PENALTY = 0.5
+
+# Bonus for rare source files (as a fraction of MAX_SCORE).
+RARE_FILE_BONUS = 0.02
+
+# Threshold for "low confidence" — if the gap between best and second
+# is smaller than this fraction of the best score, mark as low confidence.
+LOW_CONFIDENCE_GAP = 0.1
+
 
 def split_type_tokens(value: str) -> list[str]:
     value = value.replace("_", " ")
@@ -43,6 +48,7 @@ def split_type_tokens(value: str) -> list[str]:
             value,
         )
     ]
+
 
 def get_filename_match_score(type_name: str, file_name: str) -> int:
     if type_name.lower() == file_name.lower():
@@ -80,14 +86,44 @@ def get_filename_match_score(type_name: str, file_name: str) -> int:
 
     return 0
 
-# TODO: add frequency penalty - if the source file is referenced by many types - lower the score for this source file
-"""
-get_frequency_penalty(
-    source,
-    source_type_counts,
-    total_types,
-)
-"""
+
+def get_frequency_penalty(
+    source: str,
+    source_type_counts: Counter[str],
+    total_types: int,
+) -> int:
+    """Penalize source files that are referenced by many types.
+
+    A file referenced by 90% of types gets a large penalty, while a file
+    referenced by 1% of types gets a small one.
+    """
+    if total_types == 0:
+        return 0
+
+    count = source_type_counts.get(source, 0)
+    frequency = count / total_types
+
+    return int(frequency * MAX_SCORE * MAX_FREQUENCY_PENALTY)
+
+
+def get_frequency_bonus(
+    source: str,
+    source_type_counts: Counter[str],
+    total_types: int,
+) -> int:
+    """Give a small bonus to rare source files."""
+    if total_types == 0:
+        return 0
+
+    count = source_type_counts.get(source, 0)
+    frequency = count / total_types
+
+    # Rare files (referenced by <5% of types) get a small bonus.
+    if frequency < 0.05:
+        return int(MAX_SCORE * RARE_FILE_BONUS)
+
+    return 0
+
 
 def get_path_match_score(
     type_name: str,
@@ -115,6 +151,7 @@ def get_path_match_score(
 
     return score
 
+
 def get_extension_score(sources: set[str]) -> int:
     extensions = {
         Path(source).suffix.lower()
@@ -123,7 +160,13 @@ def get_extension_score(sources: set[str]) -> int:
 
     return min(len(extensions), 3) * EXTENSION_SCORE
 
-def get_type_source(type: str, file_sources: set[str]) -> dict[str, int] | None:
+
+def _score_sources(
+    type_name: str,
+    file_sources: set[str],
+    source_type_counts: Counter[str],
+    total_types: int,
+) -> dict[str, int] | None:
     scores: dict[str, int] = {}
 
     cleaned_filesources: dict[str, set[str]] = {}
@@ -144,14 +187,148 @@ def get_type_source(type: str, file_sources: set[str]) -> dict[str, int] | None:
         else:
             directory = ""
 
-        scores[cleaned] = get_filename_match_score(type, filename)
-        scores[cleaned] += get_path_match_score(type, directory)
-        scores[cleaned] += get_extension_score(sources)
+        score = get_filename_match_score(type_name, filename)
+        score += get_path_match_score(type_name, directory)
+        score += get_extension_score(sources)
+
+        # Frequency penalty / bonus.
+        score -= get_frequency_penalty(
+            cleaned,
+            source_type_counts,
+            total_types,
+        )
+        score += get_frequency_bonus(
+            cleaned,
+            source_type_counts,
+            total_types,
+        )
+
+        scores[cleaned] = score
 
     if not scores:
         return None
 
     return scores
+
+
+def get_type_source(
+    type_name: str,
+    file_sources: set[str],
+    source_type_counts: Counter[str],
+    total_types: int,
+    global_sources: set[str] | None = None,
+) -> dict[str, int] | None:
+    """Score candidate source files for a type.
+
+    First pass: score only the sources the PDB linked to this type.
+    If the best score is below MIN_CONFIDENCE, do a second pass over
+    ALL source files in the PDB, applying a penalty.
+    """
+    scores = _score_sources(
+        type_name,
+        file_sources,
+        source_type_counts,
+        total_types,
+    )
+
+    if scores is None:
+        return None
+
+    best_score = max(scores.values())
+
+    if best_score < MIN_CONFIDENCE and global_sources:
+        global_scores = _score_sources(
+            type_name,
+            global_sources,
+            source_type_counts,
+            total_types,
+        )
+
+        if global_scores:
+            # Apply global-search penalty.
+            for path in global_scores:
+                global_scores[path] = int(
+                    global_scores[path] * (1 - GLOBAL_SEARCH_PENALTY)
+                )
+
+            scores = global_scores
+
+    return scores
+
+
+def resolve_best(
+    scores: dict[str, int],
+) -> tuple[list[str] | str | None, int, str]:
+    """Resolve the best candidate from a score map.
+
+    Returns (best, best_score, status) where status is one of:
+      - "resolved": exactly one clear winner
+      - "low_confidence": winner exists but gap to second is small
+      - "ambiguous": multiple candidates tied for first
+      - "no_match": no candidate scored above zero
+    """
+    if not scores:
+        return None, 0, "no_match"
+
+    sorted_scores = sorted(
+        scores.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+
+    best_path, best_score = sorted_scores[0]
+
+    if best_score == 0:
+        return None, 0, "no_match"
+
+    # Multiple candidates tied for first place.
+    tied = [
+        path
+        for path, score in sorted_scores
+        if score == best_score
+    ]
+
+    if len(tied) > 1:
+        return tied, best_score, "ambiguous"
+
+    # Check the gap to the second-best candidate.
+    if len(sorted_scores) > 1:
+        second_score = sorted_scores[1][1]
+
+        if best_score - second_score < best_score * LOW_CONFIDENCE_GAP:
+            return best_path, best_score, "low_confidence"
+
+    return best_path, best_score, "resolved"
+
+
+def get_meta_variants(
+    type_name: str,
+    meta_prefixes: list[str],
+    meta_suffixes: list[str],
+) -> list[str]:
+    """Return base type names for a type that carries a meta prefix/suffix.
+
+    E.g. with meta_suffixes=["Definition"], "VehicleDefinition" -> ["Vehicle"].
+    With meta_prefixes=["C"], "CVehicle" -> ["Vehicle"].
+    """
+    variants: list[str] = []
+
+    for prefix in meta_prefixes:
+        if (
+            type_name.startswith(prefix)
+            and len(type_name) > len(prefix)
+        ):
+            variants.append(type_name[len(prefix):])
+
+    for suffix in meta_suffixes:
+        if (
+            type_name.endswith(suffix)
+            and len(type_name) > len(suffix)
+        ):
+            variants.append(type_name[:-len(suffix)])
+
+    return variants
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -168,6 +345,30 @@ def parse_args() -> argparse.Namespace:
         "--pdb",
         required=True,
         help="Path to the PDB file",
+    )
+
+    parser.add_argument(
+        "--meta-prefix",
+        action="append",
+        default=[],
+        metavar="PREFIX",
+        help=(
+            "Meta prefix that marks a generated type. "
+            "E.g. 'C' means CVehicle inherits sources from Vehicle. "
+            "Can be specified multiple times."
+        ),
+    )
+
+    parser.add_argument(
+        "--meta-suffix",
+        action="append",
+        default=[],
+        metavar="SUFFIX",
+        help=(
+            "Meta suffix that marks a generated type. "
+            "E.g. 'Definition' means VehicleDefinition inherits sources "
+            "from Vehicle. Can be specified multiple times."
+        ),
     )
 
     return parser.parse_args()
@@ -217,12 +418,13 @@ def main() -> int:
         # Frequently referenced source files.
         #
         # Count how many different types reference each
-        # source file.
+        # source file (by extension-stripped path).
         source_type_counts: Counter[str] = Counter()
 
         for sources in type_sources.values():
             for source in sources:
-                source_type_counts[source] += 1
+                cleaned = remove_extension(source)
+                source_type_counts[cleaned] += 1
 
         total_types = len(type_sources)
 
@@ -255,33 +457,86 @@ def main() -> int:
             print()
 
         # ==============================================
-        results: dict[str, dict[str, int]] = {}
+        # Meta-prefix / meta-suffix handling.
+        #
+        # If a type carries a meta prefix/suffix (e.g. VehicleDefinition),
+        # its sources are merged into the base type (Vehicle).
+        meta_sources: dict[str, set[str]] = {}
 
-        prefix = normalize_path("e:/perforce/lanoire/shared/code/").lower()
+        if args.meta_prefix or args.meta_suffix:
+            for type_name in type_sources:
+                variants = get_meta_variants(
+                    type_name,
+                    args.meta_prefix,
+                    args.meta_suffix,
+                )
+
+                for variant in variants:
+                    if variant in type_sources:
+                        meta_sources.setdefault(
+                            variant,
+                            set(),
+                        ).update(type_sources[type_name])
+
+            if meta_sources:
+                print("Meta type sources merged:")
+                for base, sources in sorted(meta_sources.items()):
+                    print(f"  {base} += {len(sources)} source(s)")
+                print()
+
+        # ==============================================
+        # Global source set for the second-pass search.
+        all_sources: set[str] = set()
+
+        try:
+            raw_all = pdb.enumerate_source_files()
+            all_sources = {
+                normalize_path(source.strip())
+                for source in raw_all.splitlines()
+                if source.strip()
+            }
+        except Exception:
+            # Fall back to the union of per-type sources.
+            all_sources = {
+                source
+                for sources in type_sources.values()
+                for source in sources
+            }
+
+        # ==============================================
+        results: dict[str, dict[str, int]] = {}
+        statuses: dict[str, str] = {}
+
         for type_name, sources in type_sources.items():
+            # Merge meta-variant sources into this type.
+            merged_sources = set(sources)
+            merged_sources.update(meta_sources.get(type_name, set()))
+
+            # If this type is itself a meta-variant, merge the base
+            # type's sources so both resolve to the same file.
+            for variant in get_meta_variants(
+                type_name,
+                args.meta_prefix,
+                args.meta_suffix,
+            ):
+                if variant in type_sources:
+                    merged_sources.update(type_sources[variant])
+
             scores = get_type_source(
                 type_name,
-                sources,
+                merged_sources,
+                source_type_counts,
+                total_types,
+                global_sources=all_sources,
             )
 
             if scores is None:
                 continue
 
-
-            # here - find the best one. If lower than 50% of the best score - try to find in one of all of source files
-
-            # can have the same score for multiple sources !!!! RESOLVE!! (manually??)
-
-            # if one of ambigous sources - resolve...
-
-            best_score = max(scores.values())
-            best = [
-                path
-                for path, score in scores.items()
-                if score == best_score
-            ]
+            best, best_score, status = resolve_best(scores)
 
             results[type_name] = scores
+            statuses[type_name] = status
 
         output_path = Path("pdb_type_sources.txt")
 
@@ -294,43 +549,30 @@ def main() -> int:
                     f"{type_name} -> {result}\n"
                 )
 
-        # Debug output.
-        """
-        for type_name, sources in type_sources.items():
-            print(type_name)
+        # Print a summary of resolution statuses.
+        status_counts = Counter(statuses.values())
 
-            for source in sources:
-                print(f"  {source}")
-
-            print()
-
-        prefix = normalize_path("e:/perforce/lanoire/shared/code/").lower()
-
-        unique_sources = {
-            source
-            for sources in type_sources.values()
-            for source in sources
-        }
-
-        total_links = sum(
-            len(sources)
-            for sources in type_sources.values()
-        )
-
-        prefix_sources = {
-            source
-            for source in unique_sources
-            if source.lower().startswith(prefix)
-        }
+        print("Resolution summary:")
+        for status, count in sorted(status_counts.items()):
+            print(f"  {status:16s} {count:5d}")
 
         print()
-        print("Statistics:")
-        print(f"  Types found          : {len(types)}")
-        print(f"  Types with sources   : {len(type_sources)}")
-        print(f"  Unique source files  : {len(unique_sources)}")
-        print(f"  Prefix source files  : {len(prefix_sources)}")
-        print(f"  Type/source links    : {total_links}")
-        """
+
+        # Print low-confidence / ambiguous types.
+        for type_name, status in sorted(statuses.items()):
+            if status in ("ambiguous", "low_confidence"):
+                scores = results[type_name]
+                sorted_scores = sorted(
+                    scores.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )[:3]
+
+                print(f"{type_name} [{status}]:")
+                for path, score in sorted_scores:
+                    print(f"  {score:6d}  {path}")
+
+                print()
 
     except Exception as e:
         print(f"Error: {pdb.last_error()}", file=sys.stderr)
@@ -345,19 +587,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-    """
-    cases = [
-        ("VehicleManager", ["e:/perforce/lanoire/shared/code/game/vehiclemanager.h",
-                            "e:/perforce/lanoire/shared/code/game/vehiclemanager.cpp"]),
-        ("VehicleManager", ["e:/perforce/lanoire/shared/code/game/vehiclemanager.h",
-                            "e:/perforce/lanoire/shared/code/game/vehiclemanager.h",
-                            "e:/perforce/lanoire/shared/code/game/othertype.h"]),
-        ("CPedFactory", ["e:/perforce/lanoire/shared/code/game/ped/pedfactory.cpp"]),
-        ("CPedFactory", ["e:/perforce/lanoire/shared/code/game/ped/ped.cpp",  # only partial token match
-                            "e:/perforce/lanoire/shared/code/game/unrelated/config.h"]),
-    ]
-
-    for type_name, sources in cases:
-        result = get_type_source(type_name, sources)
-        print(type_name, "->", result)
-    """
