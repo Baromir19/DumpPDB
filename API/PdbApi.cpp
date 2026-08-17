@@ -305,10 +305,47 @@ PdbApiResult PdbApi_DumpTypeByName(const wchar_t* a_name,
         });
 }
 
+PdbApiResult PdbApi_EnumerateNestedTypeNames(const wchar_t* a_name,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (a_name == nullptr)
+            {
+                setLastError(L"a_name is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            if (PdbToolset::instance().session() == nullptr)
+            {
+                setLastError(L"DIA session not initialized");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            std::wstring result
+                = PdbToolset::instance().enumerateNestedTypeNames(a_name, a_caseSensitive != 0);
+
+            if (result.empty())
+            {
+                setLastError(L"Symbol not found or has no nested types");
+                if (a_outRequiredSize != nullptr)
+                {
+                    *a_outRequiredSize = 0;
+                }
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
 // --- Symbol enumeration ---
 
 PdbApiResult PdbApi_EnumerateSymbolNames(
-    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize)
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize, int32_t a_topLevelOnly)
 {
     return guarded(
         [&]() -> PdbApiResult
@@ -318,7 +355,8 @@ PdbApiResult PdbApi_EnumerateSymbolNames(
                 return PDBAPI_ERROR_NOT_INITIALIZED;
             }
 
-            std::wstring result = PdbToolset::instance().enumerateSymbolNames();
+            std::wstring result
+                = PdbToolset::instance().enumerateSymbolNames(a_topLevelOnly != 0);
 
             return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
         });

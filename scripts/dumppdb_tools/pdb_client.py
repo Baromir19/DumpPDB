@@ -40,6 +40,24 @@ class PdbClient:
 
         return read_string_call(call)
 
+    def enumerate_nested_types(self, name, case_sensitive=False):
+        """Find a type by name and enumerate the fully-qualified names of its
+        nested UDT/enum/typedef children, newline-separated.
+
+        E.g. for "Test::Actor", returns "Test::Actor::Weapon",
+        "Test::Actor::SaveData", "Test::Actor::NestedEnum", etc.
+        """
+        def call(buffer, size, required):
+            return self.api.dll.PdbApi_EnumerateNestedTypeNames(
+                name,
+                int(case_sensitive),
+                buffer,
+                size,
+                required
+            )
+
+        return read_string_call(call)
+
     def dump_class(self, name, case_sensitive=False):
         return self._dump(
             self.api.dll.PdbApi_DumpClassByName,
@@ -61,12 +79,23 @@ class PdbClient:
             case_sensitive
         )
 
-    def enumerate_symbols(self):
+    def enumerate_symbols(self, top_level_only=True):
+        """Enumerate names of all UDT/enum/typedef symbols.
+
+        Args:
+            top_level_only: If True (default), only top-level types (global
+                or namespace scope) are returned. If False, all types
+                including nested ones are recursively enumerated.
+
+        Returns:
+            Newline-separated list of symbol names.
+        """
         def call(buffer, size, required):
             return self.api.dll.PdbApi_EnumerateSymbolNames(
                 buffer,
                 size,
-                required
+                required,
+                int(top_level_only),
             )
 
         return read_string_call(call)
@@ -93,6 +122,7 @@ class PdbClient:
 
         return read_string_call(call)
 
+    """
     def get_symbols_by_source_file(self, file_name, case_sensitive=False):
         def call(buffer, size, required):
             return self.api.dll.PdbApi_GetSymbolsBySourceFile(
@@ -104,7 +134,8 @@ class PdbClient:
             )
 
         return read_string_call(call)
-
+    """
+        
     def find_strings(self, file_path, min_length=4, encodings=None,
                      section_names="", regex_pattern="", string_flags=None):
         """Search for strings in a binary file.

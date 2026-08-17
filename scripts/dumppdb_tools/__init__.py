@@ -10,6 +10,8 @@ from dumppdb_tools.recovery import (
     CaseDict,
     build_case_dictionary,
     normalize_paths,
+    normalize_path,
+    remove_extension,
     recover_case,
 )
 from dumppdb_tools.database import SourceDatabase
@@ -27,6 +29,8 @@ __all__ = [
     "CaseDict",
     "build_case_dictionary",
     "normalize_paths",
+    "normalize_path",
+    "remove_extension",
     "recover_case",
     "SourceDatabase",
     "RenameStats",

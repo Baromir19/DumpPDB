@@ -87,13 +87,26 @@ PDBAPI_API PdbApiResult PdbApi_DumpTypeByName(const wchar_t* a_name,
     uint32_t a_bufferSize,
     uint32_t* a_outRequiredSize);
 
+/// Find a type by name and enumerate the fully-qualified names of its
+/// nested UDT/enum/typedef children, newline-separated.
+/// E.g. for "Test::Actor", returns "Test::Actor::Weapon", "Test::Actor::SaveData",
+/// "Test::Actor::NestedEnum", etc.
+PDBAPI_API PdbApiResult PdbApi_EnumerateNestedTypeNames(const wchar_t* a_name,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
 // --- Symbol enumeration ---
 
 /// Enumerate names of all UDT/enum/typedef symbols, newline-separated
 /// (same separator convention as dumpCompilands).
+/// a_topLevelOnly: 1 = only top-level types (global/namespace scope),
+///                 0 = all types including nested ones.
 /// Uses the standard Dump*/GetLastError buffer convention.
 PDBAPI_API PdbApiResult PdbApi_EnumerateSymbolNames(
-    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize, int32_t a_topLevelOnly
+);
 
 /// Get source file names for a type by name, newline-separated.
 /// Uses the standard Dump*/GetLastError buffer convention.

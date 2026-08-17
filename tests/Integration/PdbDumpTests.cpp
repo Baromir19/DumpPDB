@@ -137,6 +137,88 @@ TEST_F(PdbDumpTest, FindGlobalWeapon)
 }
 
 // ============================================================================
+// 2b. TOP-LEVEL / NESTED TYPE SEARCH TESTS
+// ============================================================================
+
+TEST_F(PdbDumpTest, IsNestedTypeHelper)
+{
+    // Test::Weapon is top-level (parent is namespace Test, not a UDT)
+    auto globalWeapon = findType(L"Test::Weapon");
+    ASSERT_NE(globalWeapon, nullptr);
+    EXPECT_FALSE(TypeWalker::isNestedType(globalWeapon.get()));
+
+    // Test::Actor::Weapon is nested (parent is Test::Actor, a UDT)
+    auto nestedWeapon = findType(L"Test::Actor::Weapon");
+    ASSERT_NE(nestedWeapon, nullptr);
+    EXPECT_TRUE(TypeWalker::isNestedType(nestedWeapon.get()));
+
+    // Test::Actor is top-level
+    auto actor = findType(L"Test::Actor");
+    ASSERT_NE(actor, nullptr);
+    EXPECT_FALSE(TypeWalker::isNestedType(actor.get()));
+
+    // Test::Actor::SaveData::Weapon is nested (deep nesting)
+    auto deepNestedWeapon = findType(L"Test::Actor::SaveData::Weapon");
+    ASSERT_NE(deepNestedWeapon, nullptr);
+    EXPECT_TRUE(TypeWalker::isNestedType(deepNestedWeapon.get()));
+}
+
+TEST_F(PdbDumpTest, EnumerateSymbolNamesTopLevelOnly)
+{
+    // Top-level enumeration should include Test::Actor but not Test::Actor::Weapon
+    std::wstring result = PdbToolset::instance().enumerateSymbolNames(true);
+    ASSERT_FALSE(result.empty());
+
+    EXPECT_NE(result.find(L"Test::Actor"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Weapon"), std::wstring::npos);
+
+    // Nested types like Test::Actor::Weapon should NOT appear
+    EXPECT_EQ(result.find(L"Test::Actor::Weapon"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, EnumerateSymbolNamesIncludeNested)
+{
+    // All-types enumeration should include both top-level and nested types
+    std::wstring result = PdbToolset::instance().enumerateSymbolNames(false);
+    ASSERT_FALSE(result.empty());
+
+    EXPECT_NE(result.find(L"Test::Actor"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Weapon"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Actor::Weapon"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Actor::NestedEnum"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Outer::Inner::Deep"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, EnumerateNestedTypeNames)
+{
+    // Test::Actor has nested types: Weapon, SaveData, NestedStruct, NestedClass, NestedEnum
+    std::wstring result = PdbToolset::instance().enumerateNestedTypeNames(L"Test::Actor", false);
+    ASSERT_FALSE(result.empty());
+
+    EXPECT_NE(result.find(L"Test::Actor::Weapon"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Actor::SaveData"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Actor::NestedStruct"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Actor::NestedClass"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Actor::NestedEnum"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, EnumerateNestedTypeNamesDeep)
+{
+    // Test::Actor::SaveData has nested Weapon
+    std::wstring result
+        = PdbToolset::instance().enumerateNestedTypeNames(L"Test::Actor::SaveData", false);
+    ASSERT_FALSE(result.empty());
+    EXPECT_NE(result.find(L"Test::Actor::SaveData::Weapon"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, EnumerateNestedTypeNamesNotFound)
+{
+    // Test::Weapon has no nested types
+    std::wstring result = PdbToolset::instance().enumerateNestedTypeNames(L"Test::Weapon", false);
+    EXPECT_TRUE(result.empty());
+}
+
+// ============================================================================
 // 3. INHERITANCE TESTS
 // ============================================================================
 

@@ -50,6 +50,11 @@ def main():
         help="Dump a type by name (e.g. Actor)",
     )
     parser.add_argument(
+        "--nested-types",
+        dest="nested_types",
+        help="Enumerate nested types of a type by name (e.g. Actor)",
+    )
+    parser.add_argument(
         "--class",
         dest="class_name",
         help="Dump a class by name",
@@ -82,7 +87,12 @@ def main():
     parser.add_argument(
         "--symbols",
         action="store_true",
-        help="Enumerate all symbol names",
+        help="Enumerate all symbol names (top-level only)",
+    )
+    parser.add_argument(
+        "--all-types",
+        action="store_true",
+        help="With --symbols, enumerate ALL types including nested ones",
     )
     parser.add_argument(
         "--case-sensitive",
@@ -139,6 +149,7 @@ def main():
             args.pdb and
             any([
                 args.type_name,
+                args.nested_types,
                 args.class_name,
                 args.enum_name,
                 args.typedef_name,
@@ -161,6 +172,9 @@ def main():
 
         if args.type_name:
             print(pdb.dump_type(args.type_name, args.case_sensitive))
+
+        if args.nested_types:
+            print(pdb.enumerate_nested_types(args.nested_types, args.case_sensitive))
 
         if args.class_name:
             print(pdb.dump_class(args.class_name, args.case_sensitive))
@@ -200,7 +214,7 @@ def main():
             )
 
         if args.symbols:
-            print(pdb.enumerate_symbols())
+            print(pdb.enumerate_symbols(top_level_only=not args.all_types))
 
     except Exception as e:
         last_error = pdb.last_error()

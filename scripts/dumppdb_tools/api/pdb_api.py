@@ -81,12 +81,22 @@ class PdbApiNative:
         ]
         self.dll.PdbApi_DumpTypeByName.restype = ctypes.c_int
 
+        self.dll.PdbApi_EnumerateNestedTypeNames.argtypes = [
+            wintypes.LPCWSTR,
+            ctypes.c_int,
+            wintypes.LPWSTR,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32)
+        ]
+        self.dll.PdbApi_EnumerateNestedTypeNames.restype = ctypes.c_int
+
         # --- Symbol enumeration ---
 
         self.dll.PdbApi_EnumerateSymbolNames.argtypes = [
             wintypes.LPWSTR,
             ctypes.c_uint32,
-            ctypes.POINTER(ctypes.c_uint32)
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.c_int,
         ]
         self.dll.PdbApi_EnumerateSymbolNames.restype = ctypes.c_int
 
@@ -106,6 +116,7 @@ class PdbApiNative:
         ]
         self.dll.PdbApi_EnumerateSourceFiles.restype = ctypes.c_int
 
+        """
         self.dll.PdbApi_GetSymbolsBySourceFile.argtypes = [
             wintypes.LPCWSTR,
             ctypes.c_int,
@@ -114,6 +125,7 @@ class PdbApiNative:
             ctypes.POINTER(ctypes.c_uint32)
         ]
         self.dll.PdbApi_GetSymbolsBySourceFile.restype = ctypes.c_int
+        """
 
         # --- Binary file search (strings / signatures) ---
 

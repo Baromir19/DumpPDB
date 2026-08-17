@@ -95,6 +95,22 @@ public:
         return tag == SymTagExe;
     }
 
+    /// Returns true if a_symbol's lexical parent is a UDT (class/struct/union),
+    /// i.e. the symbol is nested inside another type.
+    /// E.g. for "Test::Actor::Weapon", the parent is "Test::Actor" (SymTagUDT),
+    /// so this returns true. For "Test::Weapon", the parent is the global scope
+    /// (SymTagExe), so this returns false.
+    static bool isNestedType(IDiaSymbol* a_symbol)
+    {
+        ComPtr<IDiaSymbol> parent;
+        if (FAILED(a_symbol->get_lexicalParent(&parent)) || !parent)
+            return false;
+
+        DWORD tag = SymTagNull;
+        parent->get_symTag((DWORD*)&tag);
+        return tag == SymTagUDT;
+    }
+
     /// Parses a fully-qualified name string into namespace path + leaf name.
     /// e.g. "User::Hello" -> ns="User",   leaf="Hello"
     ///      "A::B::Hello" -> ns="A::B",   leaf="Hello"

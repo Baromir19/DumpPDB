@@ -105,6 +105,56 @@ public:
         return out;
     }
 
+    /// Find a type by name and enumerate its nested UDT/enum/typedef children,
+    /// returning their fully-qualified names, newline-separated.
+    /// E.g. for "Test::Actor", returns "Test::Actor::Weapon", "Test::Actor::SaveData", etc.
+    std::wstring enumerateNestedTypeNames(const wchar_t* a_name, bool a_caseSensitive)
+    {
+        std::wstring out;
+        if (!a_name)
+            return out;
+
+        auto matches
+            = SymbolFinder::findAll(m_session.globalScope(), SymTagNull, a_name, a_caseSensitive);
+        if (matches.empty())
+            return out;
+
+        std::unordered_set<std::wstring> seen;
+        for (auto& sym : matches)
+        {
+            // Only look at UDT types — enums/typedefs can't have nested types.
+            DWORD symTag = SymTagNull;
+            sym->get_symTag(&symTag);
+            if (symTag != SymTagUDT)
+                continue;
+
+            ComPtr<IDiaEnumSymbols> children;
+            if (FAILED(sym->findChildren(SymTagNull, nullptr, nsNone, &children))
+                || !children)
+                continue;
+
+            ComPtr<IDiaSymbol> child;
+            ULONG celt = 0;
+            while (SUCCEEDED(children->Next(1, &child, &celt)) && celt == 1)
+            {
+                DWORD childTag = SymTagNull;
+                child->get_symTag(&childTag);
+                if (childTag == SymTagUDT || childTag == SymTagEnum || childTag == SymTagTypedef)
+                {
+                    std::wstring childName = TypeWalker::getName(child.get());
+                    if (!TypeWalker::isSyntheticName(childName) && seen.insert(childName).second)
+                    {
+                        out += childName;
+                        out += L"\n";
+                    }
+                }
+                child.Release();
+            }
+        }
+
+        return out;
+    }
+
     /// Dump a class/enum/typedef by name using findFirst (return first match only).
     /// This mirrors the old displayClass(name)/displayEnum(name)/displayTypedef(name) behavior.
     std::wstring dumpClassByName(const wchar_t* a_name, bool a_caseSensitive)
@@ -152,41 +202,118 @@ public:
         return out;
     }
 
-    /// Enumerate names of all top-level UDT/enum/typedef symbols,
-    /// newline-separated (mirrors dumpCompilands separator convention).
-    std::wstring enumerateSymbolNames()
+    /// Enumerate names of all UDT/enum/typedef symbols, newline-separated.
+    /// When a_topLevelOnly is true (default), only direct children of the global
+    /// scope are returned (top-level types). When false, ALL types including
+    /// nested types are recursively enumerated.
+    std::wstring enumerateSymbolNames(bool a_topLevelOnly = true)
     {
         std::wstring out;
+        std::unordered_set<std::wstring> seen;
 
-        ComPtr<IDiaEnumSymbols> enum_symbolsSymbols;
+        ComPtr<IDiaEnumSymbols> symbols;
         if (FAILED(m_session.globalScope()->findChildren(
-                SymTagNull, nullptr, nsNone, &enum_symbolsSymbols))
-            || !enum_symbolsSymbols)
+                SymTagNull, nullptr, nsNone, &symbols))
+            || !symbols)
         {
             return out;
         }
 
         ComPtr<IDiaSymbol> symbol;
         ULONG celt = 0;
-        while (SUCCEEDED(enum_symbolsSymbols->Next(1, &symbol, &celt)) && celt == 1)
+        while (SUCCEEDED(symbols->Next(1, &symbol, &celt)) && celt == 1)
         {
             DWORD symTag = SymTagNull;
-            if (SUCCEEDED(symbol->get_symTag(&symTag)))
+
+            if (FAILED(symbol->get_symTag(&symTag)))
             {
-                if (symTag == SymTagUDT || symTag == SymTagEnum || symTag == SymTagTypedef)
-                {
-                    BSTR name = nullptr;
-                    if (SUCCEEDED(symbol->get_name(&name)) && name)
-                    {
-                        out += name;
-                        out += L"\n";
-                        SysFreeString(name);
-                    }
-                }
+                symbol = nullptr;
+                continue;
+            }
+
+            const bool isType
+                = symTag == SymTagUDT || symTag == SymTagEnum || symTag == SymTagTypedef;
+
+            if (!isType)
+            {
+                symbol = nullptr;
+                continue;
+            }
+            
+            if (a_topLevelOnly && !isTopLevelType(symbol.get()))
+            {
+                symbol = nullptr;
+                continue;
+            }
+
+            BSTR name = nullptr;
+            if (SUCCEEDED(symbol->get_name(&name)) && name)
+            {
+                out += name;
+                out += L"\n";
+                SysFreeString(name);
             }
         }
-
+       
         return out;
+    }
+
+    bool isTopLevelType(IDiaSymbol* symbol)
+    {
+        if (!symbol)
+            return false;
+
+        DWORD tag = SymTagNull;
+        if (FAILED(symbol->get_symTag(&tag)))
+            return false;
+
+        if (tag != SymTagUDT && tag != SymTagEnum && tag != SymTagTypedef)
+            return false;
+
+        ComPtr<IDiaSymbol> parent;
+
+        if (SUCCEEDED(symbol->get_classParent(&parent)) && parent)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// Recursively enumerate nested UDT/enum/typedef symbol names within a UDT.
+    void enumerateNestedSymbolNamesRecursive(
+        IDiaSymbol* a_udt, std::wstring& a_out, std::unordered_set<std::wstring>& a_seen)
+    {
+        ComPtr<IDiaEnumSymbols> children;
+        if (FAILED(a_udt->findChildren(SymTagNull, nullptr, nsNone, &children))
+            || !children)
+            return;
+
+        ComPtr<IDiaSymbol> child;
+        ULONG celt = 0;
+        while (SUCCEEDED(children->Next(1, &child, &celt)) && celt == 1)
+        {
+            DWORD childTag = SymTagNull;
+            child->get_symTag(&childTag);
+
+            if (childTag == SymTagUDT || childTag == SymTagEnum || childTag == SymTagTypedef)
+            {
+                std::wstring childName = TypeWalker::getName(child.get());
+                if (!TypeWalker::isSyntheticName(childName) && a_seen.insert(childName).second)
+                {
+                    a_out += childName;
+                    a_out += L"\n";
+                }
+            }
+
+            // Recurse deeper into nested UDTs.
+            if (childTag == SymTagUDT)
+            {
+                enumerateNestedSymbolNamesRecursive(child.get(), a_out, a_seen);
+            }
+
+            child.Release();
+        }
     }
 
     /// Get source files for a named type, newline-separated.
