@@ -82,17 +82,85 @@ class TypeWalker
 {
 public:
 
-    /// Returns true if a_symbol's lexical parent is SymTagExe (i.e. it's a true
-    /// top-level symbol — global, or inside a namespace but NOT a nested class).
+    static std::vector<std::wstring> splitQualifiedName(std::wstring_view a_name)
+    {
+        std::vector<std::wstring> result;
+
+        size_t begin = 0;
+        int templateDepth = 0;
+
+        for (size_t i = 0; i < a_name.size(); ++i)
+        {
+            switch (a_name[i])
+            {
+            case L'<':
+                ++templateDepth;
+                break;
+
+            case L'>':
+                if (templateDepth > 0)
+                    --templateDepth;
+                break;
+
+            case L':':
+                if (templateDepth == 0 && i + 1 < a_name.size() && a_name[i + 1] == L':')
+                {
+                    result.emplace_back(a_name.substr(begin, i - begin));
+                    ++i;
+                    begin = i + 1;
+                }
+                break;
+            }
+        }
+
+        result.emplace_back(a_name.substr(begin));
+        return result;
+    }
+
     static bool isTopLevelSymbol(IDiaSymbol* a_symbol)
     {
-        ComPtr<IDiaSymbol> parent;
-        if (FAILED(a_symbol->get_lexicalParent(&parent)) || !parent)
+        if (!a_symbol)
             return false;
 
-        DWORD tag = SymTagNull;
-        parent->get_symTag((DWORD*)&tag);
-        return tag == SymTagExe;
+        BSTR rawName = nullptr;
+
+        if (FAILED(a_symbol->get_name(&rawName)) || !rawName)
+            return false;
+
+        std::wstring name(rawName);
+        SysFreeString(rawName);
+
+        const auto parts = splitQualifiedName(name);
+
+        if (parts.size() < 2)
+            return true;
+
+        std::wstring parentName;
+
+        for (size_t i = 0; i + 1 < parts.size(); ++i)
+        {
+            if (!parentName.empty())
+                parentName += L"::";
+
+            parentName += parts[i];
+        }
+
+        ComPtr<IDiaSymbol> root;
+
+        if (FAILED(a_symbol->get_lexicalParent(&root)) || !root)
+            return false;
+
+        ComPtr<IDiaEnumSymbols> children;
+
+        if (FAILED(root->findChildren(SymTagUDT, parentName.c_str(), nsCaseSensitive, &children)))
+        {
+            return true;
+        }
+
+        ULONG count = 0;
+        ComPtr<IDiaSymbol> parent;
+
+        return FAILED(children->Next(1, &parent, &count)) || count == 0;
     }
 
     /// Returns true if a_symbol's lexical parent is a UDT (class/struct/union),

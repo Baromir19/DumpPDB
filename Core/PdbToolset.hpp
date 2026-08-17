@@ -270,14 +270,9 @@ public:
         if (tag != SymTagUDT && tag != SymTagEnum && tag != SymTagTypedef)
             return false;
 
-        ComPtr<IDiaSymbol> parent;
-
-        if (SUCCEEDED(symbol->get_classParent(&parent)) && parent)
-        {
-            return false;
-        }
-
-        return true;
+        // Use the lexical parent check (SymTagExe = global scope) which is
+        // more reliable than get_classParent for detecting nested types.
+        return TypeWalker::isTopLevelSymbol(symbol);
     }
 
     /// Recursively enumerate nested UDT/enum/typedef symbol names within a UDT.

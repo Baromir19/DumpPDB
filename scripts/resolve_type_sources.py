@@ -3,6 +3,9 @@
 
 import argparse
 from collections import Counter
+from datetime import datetime
+import fnmatch
+import logging
 from pathlib import Path
 import re
 import sys
@@ -36,6 +39,73 @@ RARE_FILE_BONUS = 0.02
 # Threshold for "low confidence" — if the gap between best and second
 # is smaller than this fraction of the best score, mark as low confidence.
 LOW_CONFIDENCE_GAP = 0.1
+
+DEFAULT_EXCLUDE_FILE = "exclude_types.txt"
+DEFAULT_LOG_DIR = "logs"
+
+
+def setup_logging(log_dir: str = DEFAULT_LOG_DIR) -> Path:
+    """Configure file logging. Returns the log file path."""
+    log_path = Path(log_dir)
+    log_path.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = log_path / f"resolve_type_sources_{timestamp}.log"
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, encoding="utf-8"),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+
+    return log_file
+
+
+def load_exclude_patterns(path: str | Path) -> list[str]:
+    """Load exclude patterns from a file (git-ignore style).
+
+    Lines starting with '#' are comments. Blank lines are ignored.
+    Patterns support '*' and '?' wildcards via fnmatch.
+    """
+    exclude_path = Path(path)
+
+    if not exclude_path.exists():
+        logging.info("Exclude file not found: %s (no types excluded)", exclude_path)
+        return []
+
+    patterns: list[str] = []
+
+    with exclude_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+
+            if not line or line.startswith("#"):
+                continue
+
+            patterns.append(line)
+
+    logging.info("Loaded %d exclude pattern(s) from %s", len(patterns), exclude_path)
+    return patterns
+
+
+def is_type_excluded(type_name: str, patterns: list[str]) -> bool:
+    """Check if a type name matches any exclude pattern (git-ignore style).
+
+    A pattern like 'std::*' matches any type starting with 'std::'.
+    A pattern like '*FdbData' matches any type ending with 'FdbData'.
+    A pattern like 'hkPreferences' matches exactly that type.
+    """
+    if not patterns:
+        return False
+
+    for pattern in patterns:
+        if fnmatch.fnmatch(type_name, pattern):
+            return True
+
+    return False
 
 
 def split_type_tokens(value: str) -> list[str]:
@@ -371,19 +441,41 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--exclude-file",
+        default=DEFAULT_EXCLUDE_FILE,
+        help=(
+            "Path to a file with type-exclusion patterns (git-ignore style). "
+            f"Default: {DEFAULT_EXCLUDE_FILE}"
+        ),
+    )
+
+    parser.add_argument(
+        "--log-dir",
+        default=DEFAULT_LOG_DIR,
+        help=(
+            "Directory for log files. "
+            f"Default: {DEFAULT_LOG_DIR}"
+        ),
+    )
+
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
 
+    log_file = setup_logging(args.log_dir)
+    logging.info("Log file: %s", log_file)
+
+    exclude_patterns = load_exclude_patterns(args.exclude_file)
+
     pdb = PdbClient(args.dll)
 
     try:
         pdb.open(args.pdb)
 
-        print("PDB:", args.pdb)
-        print()
+        logging.info("PDB: %s", args.pdb)
 
         symbols = pdb.enumerate_symbols(True)
 
@@ -392,6 +484,21 @@ def main() -> int:
             for symbol in symbols.splitlines()
             if symbol.strip()
         ]
+
+        # Filter out excluded types.
+        if exclude_patterns:
+            before = len(types)
+            types = [
+                t
+                for t in types
+                if not is_type_excluded(t, exclude_patterns)
+            ]
+            excluded_count = before - len(types)
+            logging.info(
+                "Excluded %d type(s) via exclude patterns (%d remaining)",
+                excluded_count,
+                len(types),
+            )
 
         type_sources: dict[str, set[str]] = {}
 
@@ -442,26 +549,29 @@ def main() -> int:
                 reverse=True,
             )
 
-            print("Frequently referenced source files:")
+            logging.info("Frequently referenced source files:")
 
             if frequent_sources:
                 for source, count in frequent_sources[:10]:
                     percentage = count / total_types * 100
 
-                    print(
-                        f"  {count:5d} ({percentage:5.1f}%)  {source}"
+                    logging.info(
+                        "  %5d (%5.1f%%)  %s",
+                        count,
+                        percentage,
+                        source,
                     )
             else:
-                print("  None")
-
-            print()
+                logging.info("  None")
 
         # ==============================================
         # Meta-prefix / meta-suffix handling.
         #
         # If a type carries a meta prefix/suffix (e.g. VehicleDefinition),
-        # its sources are merged into the base type (Vehicle).
+        # its sources are merged into the base type (Vehicle), and the
+        # meta-variant type itself is removed from the resolution set.
         meta_sources: dict[str, set[str]] = {}
+        meta_variant_types: set[str] = set()
 
         if args.meta_prefix or args.meta_suffix:
             for type_name in type_sources:
@@ -477,12 +587,18 @@ def main() -> int:
                             variant,
                             set(),
                         ).update(type_sources[type_name])
+                        meta_variant_types.add(type_name)
 
             if meta_sources:
-                print("Meta type sources merged:")
+                logging.info("Meta type sources merged:")
                 for base, sources in sorted(meta_sources.items()):
-                    print(f"  {base} += {len(sources)} source(s)")
-                print()
+                    logging.info("  %s += %d source(s)", base, len(sources))
+
+            if meta_variant_types:
+                logging.info(
+                    "Meta-variant types removed from resolution: %d",
+                    len(meta_variant_types),
+                )
 
         # ==============================================
         # Global source set for the second-pass search.
@@ -508,6 +624,10 @@ def main() -> int:
         statuses: dict[str, str] = {}
 
         for type_name, sources in type_sources.items():
+            # Skip meta-variant types — they are merged into their base type.
+            if type_name in meta_variant_types:
+                continue
+
             # Merge meta-variant sources into this type.
             merged_sources = set(sources)
             merged_sources.update(meta_sources.get(type_name, set()))
@@ -549,14 +669,14 @@ def main() -> int:
                     f"{type_name} -> {result}\n"
                 )
 
+        logging.info("Results written to %s", output_path)
+
         # Print a summary of resolution statuses.
         status_counts = Counter(statuses.values())
 
-        print("Resolution summary:")
+        logging.info("Resolution summary:")
         for status, count in sorted(status_counts.items()):
-            print(f"  {status:16s} {count:5d}")
-
-        print()
+            logging.info("  %-16s %5d", status, count)
 
         # Print low-confidence / ambiguous types.
         for type_name, status in sorted(statuses.items()):
@@ -568,15 +688,13 @@ def main() -> int:
                     reverse=True,
                 )[:3]
 
-                print(f"{type_name} [{status}]:")
+                logging.info("%s [%s]:", type_name, status)
                 for path, score in sorted_scores:
-                    print(f"  {score:6d}  {path}")
-
-                print()
+                    logging.info("  %6d  %s", score, path)
 
     except Exception as e:
-        print(f"Error: {pdb.last_error()}", file=sys.stderr)
-        print(f"Exception: {e}", file=sys.stderr)
+        logging.error("Error: %s", pdb.last_error())
+        logging.error("Exception: %s", e)
         return 1
 
     finally:
