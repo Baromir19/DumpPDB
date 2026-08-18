@@ -18,11 +18,18 @@ MAX_SCORE = 10_000
 
 EXACT_FILENAME_SCORE = 10_000
 TOKEN_FILENAME_SCORE = 7_000
-PARTIAL_FILENAME_SCORE = 1_000
+PARTIAL_FILENAME_SCORE = 4_000
 EXACT_PATH_SCORE = 500
 PATH_TOKEN_SCORE = 100
 
 EXTENSION_SCORE = 1_000
+
+# Per-character penalty for stray characters that appear in a file name
+# but are NOT covered by the type's matched tokens.
+# Letters cost more (they usually mean an extra word), digits less
+# (they often mean a revision / copy number).
+EXTRA_LETTER_PENALTY = 30
+EXTRA_DIGIT_PENALTY = 8
 
 # Minimum score to trust a candidate from the type's own sources.
 MIN_CONFIDENCE = 5_000
@@ -149,9 +156,6 @@ def strip_template_args(type_name: str) -> str:
 
 
 def get_filename_match_score(type_name: str, file_name: str) -> int:
-    if type_name.lower() == file_name.lower():
-        return MAX_SCORE
-
     type_lower = type_name.lower()
     file_lower = file_name.lower()
 
@@ -259,6 +263,44 @@ def get_extension_score(sources: set[str]) -> int:
     return min(len(extensions), 3) * EXTENSION_SCORE
 
 
+def get_extra_character_penalty(
+    type_name: str,
+    file_name: str,
+) -> int:
+    """Penalize stray characters in a file name not covered by the type.
+
+    E.g. for type "AbstractBuffer":
+      - "abstractbuffer11"      -> penalized for digits "11"
+      - "abstractbuffercube11"  -> penalized for "cube" (letters) + "11"
+
+    The penalty is per-character so longer stray words cost more.
+    Letters cost more than digits.
+    """
+    if not type_name or not file_name:
+        return 0
+
+    type_lower = type_name.lower()
+    file_lower = file_name.lower()
+
+    # Remove the type name occurrences from the file name.
+    # Only removing the full name keeps the stray-char detection honest.
+    remainder = file_lower.replace(type_lower, "")
+
+    if not remainder:
+        return 0
+
+    penalty = 0
+
+    for char in remainder:
+        if char.isalpha():
+            penalty += EXTRA_LETTER_PENALTY
+        elif char.isdigit():
+            penalty += EXTRA_DIGIT_PENALTY
+        # Ignore separators (_, /, -, etc.) — they carry no meaning.
+
+    return penalty
+
+
 def _score_sources(
     type_name: str,
     file_sources: set[str],
@@ -292,6 +334,9 @@ def _score_sources(
         score = get_filename_match_score(scoring_name, filename)
         score += get_path_match_score(scoring_name, directory)
         score += get_extension_score(sources)
+
+        # Penalize stray characters that are not covered by the type name.
+        score -= get_extra_character_penalty(scoring_name, filename)
 
         # Frequency penalty / bonus.
         score -= get_frequency_penalty(
