@@ -240,11 +240,7 @@ def get_filename_match_score(type_name: str, file_name: str) -> int:
         if not scope_tokens:
             continue
 
-        matched = sum(
-            1
-            for token in scope_tokens
-            if token in file_lower
-        )
+        matched = sum(1 for token in scope_tokens if token in file_lower)
 
         contribution = weight * (matched / len(scope_tokens))
 
@@ -345,10 +341,7 @@ def get_path_match_score(
 
 
 def get_extension_score(sources: set[str]) -> int:
-    extensions = {
-        Path(source).suffix.lower()
-        for source in sources
-    }
+    extensions = {Path(source).suffix.lower() for source in sources}
 
     return min(len(extensions), 3) * EXTENSION_SCORE
 
@@ -523,11 +516,7 @@ def resolve_best(
         return None, 0, "no_match"
 
     # Multiple candidates tied for first place.
-    tied = [
-        path
-        for path, score in sorted_scores
-        if score == best_score
-    ]
+    tied = [path for path, score in sorted_scores if score == best_score]
 
     if len(tied) > 1:
         return tied, best_score, "ambiguous"
@@ -555,18 +544,12 @@ def get_meta_variants(
     variants: list[str] = []
 
     for prefix in meta_prefixes:
-        if (
-            type_name.startswith(prefix)
-            and len(type_name) > len(prefix)
-        ):
-            variants.append(type_name[len(prefix):])
+        if type_name.startswith(prefix) and len(type_name) > len(prefix):
+            variants.append(type_name[len(prefix) :])
 
     for suffix in meta_suffixes:
-        if (
-            type_name.endswith(suffix)
-            and len(type_name) > len(suffix)
-        ):
-            variants.append(type_name[:-len(suffix)])
+        if type_name.endswith(suffix) and len(type_name) > len(suffix):
+            variants.append(type_name[: -len(suffix)])
 
     return variants
 
@@ -624,10 +607,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--log-dir",
         default=DEFAULT_LOG_DIR,
-        help=(
-            "Directory for log files. "
-            f"Default: {DEFAULT_LOG_DIR}"
-        ),
+        help=("Directory for log files. " f"Default: {DEFAULT_LOG_DIR}"),
     )
 
     return parser.parse_args()
@@ -650,20 +630,12 @@ def main() -> int:
 
         symbols = pdb.enumerate_symbols(True)
 
-        types = {
-            symbol.strip()
-            for symbol in symbols.splitlines()
-            if symbol.strip()
-        }
+        types = {symbol.strip() for symbol in symbols.splitlines() if symbol.strip()}
 
         # Filter out excluded types.
         if exclude_patterns:
             before = len(types)
-            types = {
-                t
-                for t in types
-                if not is_type_excluded(t, exclude_patterns)
-            }
+            types = {t for t in types if not is_type_excluded(t, exclude_patterns)}
             excluded_count = before - len(types)
             logging.info(
                 "Excluded %d type(s) via exclude patterns (%d remaining)",
@@ -790,6 +762,57 @@ def main() -> int:
                     )
 
         # ==============================================
+        # Template specialization handling.
+        #
+        # Template instantiations (e.g. WeakRef<Actor>, WeakRef<Vehicle>)
+        # are grouped into a single template-stripped base type (WeakRef).
+        # The union of all of their source files is folded into the base
+        # type, which is then resolved exactly once. The link between the
+        # base type and each specialization is preserved so a future DB
+        # can record that "WeakRef has template instance WeakRef<Actor>".
+        template_sources: dict[str, set[str]] = {}
+        template_variant_types: set[str] = set()
+        template_type_links: dict[str, set[str]] = {}
+
+        for type_name, sources in type_sources.items():
+            base = strip_template_args(type_name)
+
+            # Only real template instantiations (whose <...> were actually
+            # stripped out) with a meaningful base name are grouped.
+            if base == type_name or not base:
+                continue
+
+            template_variant_types.add(type_name)
+            template_sources.setdefault(base, set()).update(sources)
+            template_type_links.setdefault(base, set()).add(type_name)
+
+        if template_sources:
+            logging.info("Template specialization sources merged:")
+            for base, sources in sorted(template_sources.items()):
+                inst_count = len(template_type_links.get(base, set()))
+                logging.info(
+                    "  %s += %d source(s) from %d specialization(s)",
+                    base,
+                    len(sources),
+                    inst_count,
+                )
+
+        if template_variant_types:
+            logging.info(
+                "Template instantiation types removed from resolution: %d",
+                len(template_variant_types),
+            )
+
+        if template_type_links:
+            logging.info("Template type links (base -> instantiations):")
+            for base, instantiations in sorted(template_type_links.items()):
+                logging.info(
+                    "  %s -> %s",
+                    base,
+                    ", ".join(sorted(instantiations)),
+                )
+
+        # ==============================================
         # Global source set for the second-pass search.
         all_sources: set[str] = set()
 
@@ -803,9 +826,7 @@ def main() -> int:
         except Exception:
             # Fall back to the union of per-type sources.
             all_sources = {
-                source
-                for sources in type_sources.values()
-                for source in sources
+                source for sources in type_sources.values() for source in sources
             }
 
         # ==============================================
@@ -817,9 +838,18 @@ def main() -> int:
             if type_name in meta_variant_types:
                 continue
 
+            # Skip template instantiations — they are grouped into their
+            # template base type and resolved only once.
+            if type_name in template_variant_types:
+                continue
+
             # Merge meta-variant sources into this type.
             merged_sources = set(sources)
             merged_sources.update(meta_sources.get(type_name, set()))
+
+            # If this type is the base of any template specializations,
+            # merge the union of their source files.
+            merged_sources.update(template_sources.get(type_name, set()))
 
             # If this type is itself a meta-variant, merge the base
             # type's sources so both resolve to the same file.
@@ -847,6 +877,46 @@ def main() -> int:
             results[type_name] = scores
             statuses[type_name] = status
 
+        # Template base types that do not themselves appear as standalone
+        # symbols (e.g. "Array" when only "Array<Foo>" exists). Resolve each
+        # one once from the union of all of its specializations' sources.
+        for base_name in template_sources:
+            if base_name in results:
+                continue
+            if base_name in meta_variant_types:
+                # The template base is itself a meta variant; already merged.
+                continue
+
+            merged_sources = set(template_sources[base_name])
+            merged_sources.update(type_sources.get(base_name, set()))
+            merged_sources.update(meta_sources.get(base_name, set()))
+
+            # If this template base is itself a meta-variant, fold the
+            # base type's sources in as well.
+            for variant in get_meta_variants(
+                base_name,
+                args.meta_prefix,
+                args.meta_suffix,
+            ):
+                if variant in type_sources:
+                    merged_sources.update(type_sources[variant])
+
+            scores = get_type_source(
+                base_name,
+                merged_sources,
+                source_type_counts,
+                total_types,
+                global_sources=all_sources,
+            )
+
+            if scores is None:
+                continue
+
+            best, best_score, status = resolve_best(scores)
+
+            results[base_name] = scores
+            statuses[base_name] = status
+
         output_path = Path("pdb_type_sources.txt")
 
         with output_path.open(
@@ -854,9 +924,7 @@ def main() -> int:
             encoding="utf-8",
         ) as output:
             for type_name, result in results.items():
-                output.write(
-                    f"{type_name} -> {result}\n"
-                )
+                output.write(f"{type_name} -> {result}\n")
 
             # Preserve meta-type relationships so the DB can link each
             # base type to the meta variants that were folded into it.
@@ -864,6 +932,13 @@ def main() -> int:
                 output.write("\n# Meta type links (base -> meta variants)\n")
                 for base, variants in sorted(meta_type_links.items()):
                     output.write(f"{base} -> {sorted(set(variants))}\n")
+
+            # Preserve template-group relationships so the DB can link each
+            # base type to the specializations folded into it.
+            if template_type_links:
+                output.write("\n# Template type links (base -> instantiations)\n")
+                for base, instantiations in sorted(template_type_links.items()):
+                    output.write(f"{base} -> {sorted(instantiations)}\n")
 
         logging.info("Results written to %s", output_path)
 
