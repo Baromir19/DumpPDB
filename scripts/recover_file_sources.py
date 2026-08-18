@@ -14,6 +14,7 @@ from dumppdb_tools.filesystem import create_source_tree, rename_source_tree
 from dumppdb_tools.recovery import (
     build_case_dictionary,
     normalize_extension,
+    normalize_path,
     normalize_paths,
     recover_case,
 )
@@ -153,6 +154,10 @@ def main() -> int:
             try:
                 db.open()
                 db.insert_many(filtered)
+
+                # Persist singleton settings for resolve_type_sources.
+                db.set_setting("output_extension", output_extension)
+                db.set_setting("path_prefix", normalize_path(args.path_prefix))
             finally:
                 db.close()
 

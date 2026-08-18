@@ -1,4 +1,4 @@
-"""SQLite database for source path storage."""
+"""SQLite database for source path storage and type-source resolution."""
 
 import sqlite3
 from pathlib import Path
@@ -11,12 +11,19 @@ from dumppdb_tools.recovery.path_normalizer import normalize_path
 class SourceDatabase:
     """Manages the source-path SQLite database.
 
-    The database stores two tables:
+    The database stores:
 
     * ``normalized_paths`` — unique normalized paths (``id``, ``path``).
     * ``original_paths`` — original paths with a foreign key to
       ``normalized_paths`` and a normalized extension (``id``, ``path``,
       ``normalized_id``, ``extension``).
+    * ``settings`` — singleton key-value store (e.g. ``output_extension``,
+      ``path_prefix``).
+    * ``types`` — types discovered from the PDB (``id``, ``name``).
+    * ``type_relations`` — type-to-type relations (``template_instance``,
+      ``meta_variant``).
+    * ``type_source_files`` — type -> source-file links with score and
+      user-preferred flag.
     """
 
     def __init__(self, db_path: str | Path):
@@ -41,6 +48,117 @@ class SourceDatabase:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
 
+    def commit(self) -> None:
+        """Commit the current transaction."""
+        assert self.conn is not None
+        self.conn.commit()
+
+    def validate_for_resolution(self) -> bool:
+        """Check if the DB is ready for type-source resolution.
+
+        Returns ``True`` only if the DB file exists, the
+        ``normalized_paths`` table is present and non-empty.
+        This check does NOT auto-create tables.
+        """
+        if not Path(self.db_path).exists():
+            return False
+
+        conn = sqlite3.connect(self.db_path)
+
+        try:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='normalized_paths'"
+            ).fetchone()
+
+            if row is None:
+                return False
+
+            count = conn.execute(
+                "SELECT COUNT(*) FROM normalized_paths"
+            ).fetchone()
+
+            return count is not None and count[0] > 0
+        except sqlite3.Error:
+            return False
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Settings (singleton key-value)
+    # ------------------------------------------------------------------
+
+    def set_setting(self, key: str, value: str) -> None:
+        """Set a singleton setting value."""
+        assert self.conn is not None
+        self.conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+        self.conn.commit()
+
+    def get_setting(self, key: str) -> str | None:
+        """Get a singleton setting value, or ``None`` if not set."""
+        assert self.conn is not None
+        row = self.conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            (key,),
+        ).fetchone()
+        return row[0] if row else None
+
+    # ------------------------------------------------------------------
+    # Types
+    # ------------------------------------------------------------------
+
+    def upsert_type(self, name: str) -> int:
+        """Insert a type if it doesn't exist, return its id."""
+        assert self.conn is not None
+        self.conn.execute(
+            "INSERT OR IGNORE INTO types (name) VALUES (?)",
+            (name,),
+        )
+        row = self.conn.execute(
+            "SELECT id FROM types WHERE name = ?",
+            (name,),
+        ).fetchone()
+        return row[0]
+
+    def get_type_id(self, name: str) -> int | None:
+        """Return the id of a type by name, or ``None`` if not found."""
+        assert self.conn is not None
+        row = self.conn.execute(
+            "SELECT id FROM types WHERE name = ?",
+            (name,),
+        ).fetchone()
+        return row[0] if row else None
+
+    def get_all_types(self) -> list[tuple[int, str]]:
+        """Return all types as ``(id, name)`` tuples."""
+        assert self.conn is not None
+        return self.conn.execute("SELECT id, name FROM types").fetchall()
+
+    # ------------------------------------------------------------------
+    # Type relations
+    # ------------------------------------------------------------------
+
+    def add_type_relation(
+        self,
+        type_id: int,
+        related_type_id: int,
+        relation_type: str,
+    ) -> None:
+        """Insert a type-to-type relation (idempotent)."""
+        assert self.conn is not None
+        self.conn.execute(
+            "INSERT OR IGNORE INTO type_relations "
+            "(type_id, related_type_id, relation_type) VALUES (?, ?, ?)",
+            (type_id, related_type_id, relation_type),
+        )
+
+    # ------------------------------------------------------------------
+    # Normalized paths
+    # ------------------------------------------------------------------
+
     def _get_normalized_id(self, normalized: str) -> int:
         """Insert a normalized path and return its id."""
         assert self.conn is not None
@@ -58,6 +176,46 @@ class SourceDatabase:
             return row[0]
 
         return cursor.lastrowid
+
+    def find_normalized_id(self, path: str) -> int | None:
+        """Find a normalized path id by case-insensitive match.
+
+        Returns ``None`` if no match is found.
+        """
+        assert self.conn is not None
+        row = self.conn.execute(
+            "SELECT id FROM normalized_paths WHERE lower(path) = lower(?)",
+            (path,),
+        ).fetchone()
+        return row[0] if row else None
+
+    def insert_normalized_path(self, path: str) -> int:
+        """Insert a normalized path and return its id."""
+        return self._get_normalized_id(path)
+
+    # ------------------------------------------------------------------
+    # Type-source-file links
+    # ------------------------------------------------------------------
+
+    def add_type_source_file(
+        self,
+        type_id: int,
+        source_file_id: int,
+        score: int = 0,
+        user_preferred: bool = False,
+    ) -> None:
+        """Insert or update a type -> source-file link."""
+        assert self.conn is not None
+        self.conn.execute(
+            "INSERT OR REPLACE INTO type_source_files "
+            "(type_id, source_file_id, score, user_preferred) "
+            "VALUES (?, ?, ?, ?)",
+            (type_id, source_file_id, score, int(user_preferred)),
+        )
+
+    # ------------------------------------------------------------------
+    # Original SourcePath insertion (existing API)
+    # ------------------------------------------------------------------
 
     def insert(self, source: SourcePath) -> None:
         """Insert a single source path into the database.

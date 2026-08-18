@@ -13,6 +13,7 @@ import sys
 from dumppdb_tools import PdbClient
 from dumppdb_tools import normalize_path
 from dumppdb_tools import remove_extension
+from dumppdb_tools.database import SourceDatabase
 
 MAX_SCORE = 10_000
 
@@ -554,6 +555,56 @@ def get_meta_variants(
     return variants
 
 
+def trim_to_normalized(path: str, path_prefix: str) -> str | None:
+    """Trim a raw source path to match ``normalized_paths`` format.
+
+    Mirrors the transformation applied by ``recover_file_sources``:
+    the path prefix is stripped (case-insensitive), a leading slash is
+    removed, and a known source extension is stripped.
+
+    Returns ``None`` if the path does not start with the prefix.
+    """
+    prefix = normalize_path(path_prefix).lower()
+    normalized = normalize_path(path)
+
+    if not normalized.lower().startswith(prefix):
+        return None
+
+    normalized = normalized[len(prefix) :]
+    normalized = normalized.lstrip("/")
+    normalized = remove_extension(normalized)
+
+    return normalized if normalized else None
+
+
+def validate_db(db_path: str) -> bool:
+    """Check that the DB is ready for type-source resolution.
+
+    Returns ``False`` if the file doesn't exist, the
+    ``normalized_paths`` table is missing, or the table is empty.
+    """
+    import os
+
+    if not os.path.isfile(db_path):
+        logging.error("Database file not found: %s", db_path)
+        return False
+
+    db = SourceDatabase(db_path)
+
+    try:
+        if not db.validate_for_resolution():
+            logging.error(
+                "Database %s is not ready: normalized_paths table is "
+                "missing or empty. Run recover_file_sources --write-db first.",
+                db_path,
+            )
+            return False
+    finally:
+        db.close()
+
+    return True
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="List source files for every type found in a PDB."
@@ -610,6 +661,12 @@ def parse_args() -> argparse.Namespace:
         help=("Directory for log files. " f"Default: {DEFAULT_LOG_DIR}"),
     )
 
+    parser.add_argument(
+        "--db",
+        default="sources.db",
+        help="SQLite database path (default: sources.db)",
+    )
+
     return parser.parse_args()
 
 
@@ -618,6 +675,12 @@ def main() -> int:
 
     log_file = setup_logging(args.log_dir)
     logging.info("Log file: %s", log_file)
+
+    # Validate the database BEFORE opening the PDB. If the DB is missing,
+    # empty, or lacks the normalized_paths table, exit immediately.
+    if not validate_db(args.db):
+        logging.error("Aborting: database not ready for type-source resolution.")
+        return 1
 
     exclude_patterns = load_exclude_patterns(args.exclude_file)
 
@@ -913,6 +976,125 @@ def main() -> int:
 
             results[type_name] = scores
             statuses[type_name] = status
+
+        # ==============================================
+        # Persist results to the database.
+        #
+        # The DB's ``normalized_paths`` contains extension-stripped paths
+        # produced by ``recover_file_sources``. Here we trim each raw
+        # source path to the same format, look it up by a case-insensitive
+        # match, and insert it if missing. Each type is up-serted into
+        # ``types``, type-to-type relations are recorded, and the scores
+        # for each type's source-file links are inserted into
+        # ``type_source_files``.
+        db = SourceDatabase(args.db)
+        db.open()
+
+        try:
+            # Read singleton settings.
+            path_prefix = db.get_setting("path_prefix")
+            output_ext = db.get_setting("output_extension")
+
+            if path_prefix is None:
+                logging.warning(
+                    "No 'path_prefix' setting found in DB; "
+                    "paths will not be trimmed."
+                )
+                path_prefix = ""
+
+            if output_ext is None:
+                logging.warning(
+                    "No 'output_extension' setting found in DB; "
+                    "using '.hpp'."
+                )
+                output_ext = ".hpp"
+
+            # Cache of trimmed path -> normalized_paths id.
+            path_id_cache: dict[str, int] = {}
+            # Cache of type name -> types.id.
+            type_id_cache: dict[str, int] = {}
+
+            types_needed = set(aggregated_sources.keys())
+            # Also include meta-variant and template-instance types in the
+            # types table (they are referenced by type_relations).
+            types_needed.update(meta_variant_types)
+            for insts in template_type_links.values():
+                types_needed.update(insts)
+
+            for type_name in types_needed:
+                type_id_cache[type_name] = db.upsert_type(type_name)
+
+            # Type-to-type relations.
+            for base, variants in meta_type_links.items():
+                base_id = type_id_cache[base]
+
+                for variant in variants:
+                    variant_id = type_id_cache[variant]
+                    db.add_type_relation(
+                        base_id,
+                        variant_id,
+                        "meta_variant",
+                    )
+
+            for base, instantiations in template_type_links.items():
+                base_id = type_id_cache[base]
+
+                for instantiation in instantiations:
+                    inst_id = type_id_cache[instantiation]
+                    db.add_type_relation(
+                        base_id,
+                        inst_id,
+                        "template_instance",
+                    )
+
+            def resolve_path_id(raw_path: str) -> int | None:
+                """Trim a raw source path and return its normalized_paths id."""
+                trimmed = trim_to_normalized(raw_path, path_prefix)
+
+                if trimmed is None:
+                    return None
+
+                if trimmed in path_id_cache:
+                    return path_id_cache[trimmed]
+
+                found_id = db.find_normalized_id(trimmed)
+
+                if found_id is None:
+                    # Path not found in normalized_paths — insert it.
+                    found_id = db.insert_normalized_path(trimmed)
+
+                path_id_cache[trimmed] = found_id
+                return found_id
+
+            # Insert type_source_files links.
+            for type_name, scores in results.items():
+                type_id = type_id_cache.get(type_name)
+
+                if type_id is None:
+                    continue
+
+                raw_sources = aggregated_sources.get(type_name, set())
+
+                for path, score in scores.items():
+                    # ``scores`` are keyed by extension-stripped paths.
+                    # Find the raw source(s) whose extension-stripped form
+                    # matches, then trim and resolve to a normalized_paths id.
+                    for raw in raw_sources:
+                        if remove_extension(raw) == path:
+                            file_id = resolve_path_id(raw)
+
+                            if file_id is not None:
+                                db.add_type_source_file(
+                                    type_id,
+                                    file_id,
+                                    score=score,
+                                )
+                            break
+
+            db.commit()
+            logging.info("Database updated: %s", args.db)
+        finally:
+            db.close()
 
         output_path = Path("pdb_type_sources.txt")
 
