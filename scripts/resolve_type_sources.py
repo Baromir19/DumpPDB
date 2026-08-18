@@ -665,49 +665,6 @@ def main() -> int:
                 type_sources[type_name] = set(sources)
 
         # ==============================================
-        # Frequently referenced source files.
-        #
-        # Count how many different types reference each
-        # source file (by extension-stripped path).
-        source_type_counts: Counter[str] = Counter()
-
-        for sources in type_sources.values():
-            for source in sources:
-                cleaned = remove_extension(source)
-                source_type_counts[cleaned] += 1
-
-        total_types = len(type_sources)
-
-        if total_types:
-            suspicious_threshold = total_types * 0.05
-
-            frequent_sources = [
-                (source, count)
-                for source, count in source_type_counts.items()
-                if count >= suspicious_threshold
-            ]
-
-            frequent_sources.sort(
-                key=lambda item: item[1],
-                reverse=True,
-            )
-
-            logging.info("Frequently referenced source files:")
-
-            if frequent_sources:
-                for source, count in frequent_sources[:10]:
-                    percentage = count / total_types * 100
-
-                    logging.info(
-                        "  %5d (%5.1f%%)  %s",
-                        count,
-                        percentage,
-                        source,
-                    )
-            else:
-                logging.info("  None")
-
-        # ==============================================
         # Meta-prefix / meta-suffix handling.
         #
         # If a type carries a meta prefix/suffix (e.g. VehicleDefinition),
@@ -813,6 +770,110 @@ def main() -> int:
                 )
 
         # ==============================================
+        # Aggregated source map.
+        #
+        # Build a single map from logical type -> merged sources:
+        #   - standalone types get their own sources plus any meta
+        #     (prefix/suffix) variants' sources;
+        #   - template base types get the union of all of their
+        #     specializations' sources (plus their own if present).
+        aggregated_sources: dict[str, set[str]] = {}
+
+        for type_name, sources in type_sources.items():
+            # Skip meta-variant types and template instantiations — they
+            # are folded into their base type.
+            if type_name in meta_variant_types:
+                continue
+            if type_name in template_variant_types:
+                continue
+
+            merged = set(sources)
+            merged.update(meta_sources.get(type_name, set()))
+            merged.update(template_sources.get(type_name, set()))
+
+            # If this type is itself a meta-variant (e.g. CVehicle), also
+            # fold the base type's sources so both resolve together.
+            for variant in get_meta_variants(
+                type_name,
+                args.meta_prefix,
+                args.meta_suffix,
+            ):
+                if variant in type_sources:
+                    merged.update(type_sources[variant])
+
+            aggregated_sources[type_name] = merged
+
+        # Template base types that do not appear as standalone symbols
+        # (e.g. "Array" when only "Array<Foo>" exists).
+        for base_name in template_sources:
+            if base_name in aggregated_sources:
+                continue
+            if base_name in meta_variant_types:
+                # The template base is itself a meta variant; already merged.
+                continue
+
+            merged = set(template_sources[base_name])
+            merged.update(type_sources.get(base_name, set()))
+            merged.update(meta_sources.get(base_name, set()))
+
+            # If this template base is itself a meta-variant, fold the
+            # base type's sources in as well.
+            for variant in get_meta_variants(
+                base_name,
+                args.meta_prefix,
+                args.meta_suffix,
+            ):
+                if variant in type_sources:
+                    merged.update(type_sources[variant])
+
+            aggregated_sources[base_name] = merged
+
+        # ==============================================
+        # Frequently referenced source files.
+        #
+        # Count how many different logical types reference each source
+        # file (by extension-stripped path). Aggregation happens before
+        # this step so template specializations do not inflate the
+        # frequency of shared headers.
+        source_type_counts: Counter[str] = Counter()
+
+        for sources in aggregated_sources.values():
+            for source in sources:
+                cleaned = remove_extension(source)
+                source_type_counts[cleaned] += 1
+
+        total_types = len(aggregated_sources)
+
+        if total_types:
+            suspicious_threshold = total_types * 0.05
+
+            frequent_sources = [
+                (source, count)
+                for source, count in source_type_counts.items()
+                if count >= suspicious_threshold
+            ]
+
+            frequent_sources.sort(
+                key=lambda item: item[1],
+                reverse=True,
+            )
+
+            logging.info("Frequently referenced source files:")
+
+            if frequent_sources:
+                for source, count in frequent_sources[:10]:
+                    percentage = count / total_types * 100
+
+                    logging.info(
+                        "  %5d (%5.1f%%)  %s",
+                        count,
+                        percentage,
+                        source,
+                    )
+            else:
+                logging.info("  None")
+
+        # ==============================================
         # Global source set for the second-pass search.
         all_sources: set[str] = set()
 
@@ -833,34 +894,10 @@ def main() -> int:
         results: dict[str, dict[str, int]] = {}
         statuses: dict[str, str] = {}
 
-        for type_name, sources in type_sources.items():
-            # Skip meta-variant types — they are merged into their base type.
-            if type_name in meta_variant_types:
-                continue
-
-            # Skip template instantiations — they are grouped into their
-            # template base type and resolved only once.
-            if type_name in template_variant_types:
-                continue
-
-            # Merge meta-variant sources into this type.
-            merged_sources = set(sources)
-            merged_sources.update(meta_sources.get(type_name, set()))
-
-            # If this type is the base of any template specializations,
-            # merge the union of their source files.
-            merged_sources.update(template_sources.get(type_name, set()))
-
-            # If this type is itself a meta-variant, merge the base
-            # type's sources so both resolve to the same file.
-            for variant in get_meta_variants(
-                type_name,
-                args.meta_prefix,
-                args.meta_suffix,
-            ):
-                if variant in type_sources:
-                    merged_sources.update(type_sources[variant])
-
+        # Resolve each logical type exactly once from its aggregated
+        # sources (standalone types with their meta/template merges, and
+        # template base types from the union of specializations).
+        for type_name, merged_sources in aggregated_sources.items():
             scores = get_type_source(
                 type_name,
                 merged_sources,
@@ -876,46 +913,6 @@ def main() -> int:
 
             results[type_name] = scores
             statuses[type_name] = status
-
-        # Template base types that do not themselves appear as standalone
-        # symbols (e.g. "Array" when only "Array<Foo>" exists). Resolve each
-        # one once from the union of all of its specializations' sources.
-        for base_name in template_sources:
-            if base_name in results:
-                continue
-            if base_name in meta_variant_types:
-                # The template base is itself a meta variant; already merged.
-                continue
-
-            merged_sources = set(template_sources[base_name])
-            merged_sources.update(type_sources.get(base_name, set()))
-            merged_sources.update(meta_sources.get(base_name, set()))
-
-            # If this template base is itself a meta-variant, fold the
-            # base type's sources in as well.
-            for variant in get_meta_variants(
-                base_name,
-                args.meta_prefix,
-                args.meta_suffix,
-            ):
-                if variant in type_sources:
-                    merged_sources.update(type_sources[variant])
-
-            scores = get_type_source(
-                base_name,
-                merged_sources,
-                source_type_counts,
-                total_types,
-                global_sources=all_sources,
-            )
-
-            if scores is None:
-                continue
-
-            best, best_score, status = resolve_best(scores)
-
-            results[base_name] = scores
-            statuses[base_name] = status
 
         output_path = Path("pdb_type_sources.txt")
 
