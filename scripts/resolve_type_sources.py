@@ -24,6 +24,20 @@ PATH_TOKEN_SCORE = 100
 
 EXTENSION_SCORE = 1_000
 
+# Per-scope weights, last scope first: the type's own name always gets
+# 100% of its potential score; each earlier namespace scope gets a
+# progressively smaller share (60%, 40%, 30%, 25%).
+# E.g. AI::NavMeshPrivate::AABSPTree -> weights [0.4, 0.6, 1.0].
+SCOPE_WEIGHTS = (1.0, 0.6, 0.4, 0.3, 0.25)
+# Maximum number of type-name scopes to consider; deeper namespaces are
+# ignored (they carry little signal).
+SCOPE_DEPTH_LIMIT = 10
+
+# Minimum token length for a meaningful substring match signal.
+# Short tokens (e.g. "ai" from "AI") match as substrings in too many
+# unrelated words (rainmap, aimmode, main, ...) and add noise.
+MIN_TOKEN_LENGTH = 4
+
 # Per-character penalty for stray characters that appear in a file name
 # but are NOT covered by the type's matched tokens.
 # Letters cost more (they usually mean an extra word), digits less
@@ -155,6 +169,33 @@ def strip_template_args(type_name: str) -> str:
     return "".join(result)
 
 
+def _get_scope_weights(num_scopes: int) -> list[float]:
+    """Weights for type-name scopes, from first to last.
+
+    The last scope (the type's own name) always gets weight 1.0 (100%);
+    each earlier namespace scope gets a smaller share per SCOPE_WEIGHTS.
+    Namespaces deeper than SCOPE_DEPTH_LIMIT are ignored.
+
+    Example (3 scopes): AI::NavMeshPrivate::AABSPTree -> [0.4, 0.6, 1.0]
+    """
+    if num_scopes <= 0:
+        return []
+
+    limit = min(num_scopes, SCOPE_DEPTH_LIMIT)
+
+    # SCOPE_WEIGHTS is ordered last->first; pad with the smallest weight
+    # if the type is very deeply nested, then trim to the depth limit.
+    weights = list(SCOPE_WEIGHTS)
+    if len(weights) < limit:
+        weights.extend([SCOPE_WEIGHTS[-1]] * (limit - len(weights)))
+    elif len(weights) > limit:
+        weights = weights[:limit]
+
+    # Reverse so index 0 == first (outermost) scope.
+    weights.reverse()
+    return weights
+
+
 def get_filename_match_score(type_name: str, file_name: str) -> int:
     type_lower = type_name.lower()
     file_lower = file_name.lower()
@@ -163,30 +204,72 @@ def get_filename_match_score(type_name: str, file_name: str) -> int:
     if type_lower == file_lower:
         return MAX_SCORE
 
-    type_tokens = set(split_type_tokens(type_name))
-    if not type_tokens:
+    scopes = [scope for scope in type_name.split("::") if scope]
+    if not scopes:
         return 0
 
-    file_tokens = set(split_type_tokens(file_name))
+    scope_weights = _get_scope_weights(len(scopes))
 
-    intersection = type_tokens & file_tokens
-
-    matched_tokens = {
+    # The last scope is the type's own name. If every one of its tokens
+    # appears in the file name, that is the strongest possible signal
+    # (e.g. AI::NavMeshPrivate::AABSPTree matches "aabsptree").
+    last_tokens = {
         token
-        for token in type_tokens
-        if token in file_lower
+        for token in split_type_tokens(scopes[-1])
+        if len(token) >= MIN_TOKEN_LENGTH
     }
-
-    if type_tokens and matched_tokens == type_tokens:
+    if last_tokens and all(token in file_lower for token in last_tokens):
         return TOKEN_FILENAME_SCORE
 
-    if matched_tokens:
-        return int(
-            len(matched_tokens) / len(type_tokens)
-            * PARTIAL_FILENAME_SCORE
+    # Otherwise accumulate per-scope token matches. The last scope (the
+    # type's own name) always carries full weight; each earlier
+    # namespace scope contributes a smaller weight, and scopes are NOT
+    # divided by the total weight (each is independent).
+    #
+    # Short tokens (e.g. "ai" from "AI") are filtered out: they match as
+    # substrings in too many unrelated words and add noise.
+    weighted = 0.0
+    last_scope_partial = 0.0
+
+    for index, (scope, weight) in enumerate(zip(scopes, scope_weights)):
+        scope_tokens = {
+            token
+            for token in split_type_tokens(scope)
+            if len(token) >= MIN_TOKEN_LENGTH
+        }
+        if not scope_tokens:
+            continue
+
+        matched = sum(
+            1
+            for token in scope_tokens
+            if token in file_lower
         )
 
-    return 0
+        contribution = weight * (matched / len(scope_tokens))
+
+        if index == len(scopes) - 1:
+            # The last scope (the type's own name) is the strongest
+            # signal. Keep its partial match separate so it is not
+            # diluted by noisy namespace scopes.
+            last_scope_partial = contribution
+        else:
+            weighted += contribution
+
+    if weighted <= 0 and last_scope_partial <= 0:
+        return 0
+
+    # The last scope's partial match takes priority over the sum of the
+    # namespace scopes: a partial match of the type's own name is a
+    # stronger signal than a full match of a short namespace token.
+    best = max(weighted, last_scope_partial)
+
+    # Cap at PARTIAL so a non-fully-matched last scope stays below
+    # TOKEN_FILENAME_SCORE (which is earned by a full last-scope match).
+    return min(
+        int(best * PARTIAL_FILENAME_SCORE),
+        PARTIAL_FILENAME_SCORE,
+    )
 
 
 def get_frequency_penalty(
@@ -231,25 +314,32 @@ def get_path_match_score(
     type_name: str,
     path: str,
 ) -> int:
-    type_lower = type_name.lower()
-    type_tokens = {
-        token
-        for token in split_type_tokens(type_name)
-        if len(token) >= 4
-    }
+    scopes = [scope for scope in type_name.split("::") if scope]
+    if not scopes:
+        return 0
 
+    scope_weights = _get_scope_weights(len(scopes))
     parts = path.lower().split("/")
 
     score = 0
 
-    for part in parts:
-        if part == type_lower:
-            score += EXACT_PATH_SCORE
+    for scope, weight in zip(scopes, scope_weights):
+        scope_tokens = {
+            token
+            for token in split_type_tokens(scope)
+            if len(token) >= MIN_TOKEN_LENGTH
+        }
+        if not scope_tokens:
             continue
 
-        for token in type_tokens:
-            if token in part:
-                score += PATH_TOKEN_SCORE
+        for part in parts:
+            if part == scope.lower():
+                score += int(EXACT_PATH_SCORE * weight)
+                continue
+
+            for token in scope_tokens:
+                if token in part:
+                    score += int(PATH_TOKEN_SCORE * weight)
 
     return score
 
@@ -282,9 +372,13 @@ def get_extra_character_penalty(
     type_lower = type_name.lower()
     file_lower = file_name.lower()
 
-    # Remove the type name occurrences from the file name.
-    # Only removing the full name keeps the stray-char detection honest.
-    remainder = file_lower.replace(type_lower, "")
+    # Anchor on the type's own name (the last scope), so for
+    # "AI::NavMeshPrivate::AABSPTree" the meaningful part of "aabsptree.h"
+    # is "aabsptree" — no penalty is applied for the matching part.
+    scopes = type_lower.split("::")
+    anchor = scopes[-1] if scopes else type_lower
+
+    remainder = file_lower.replace(anchor, "")
 
     if not remainder:
         return 0
@@ -556,20 +650,20 @@ def main() -> int:
 
         symbols = pdb.enumerate_symbols(True)
 
-        types = [
+        types = {
             symbol.strip()
             for symbol in symbols.splitlines()
             if symbol.strip()
-        ]
+        }
 
         # Filter out excluded types.
         if exclude_patterns:
             before = len(types)
-            types = [
+            types = {
                 t
                 for t in types
                 if not is_type_excluded(t, exclude_patterns)
-            ]
+            }
             excluded_count = before - len(types)
             logging.info(
                 "Excluded %d type(s) via exclude patterns (%d remaining)",
