@@ -31,9 +31,10 @@ class SourceDatabase:
         self.conn: sqlite3.Connection | None = None
 
     def open(self) -> None:
-        """Open the database and create tables if they don't exist."""
+        """Open the database, create tables, and run any migrations."""
         self.conn = sqlite3.connect(self.db_path)
         self.conn.executescript(SCHEMA)
+        self._migrate()
 
     def close(self) -> None:
         """Close the database connection."""
@@ -47,6 +48,23 @@ class SourceDatabase:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
+
+    def _migrate(self) -> None:
+        """Apply column migrations for databases created by older versions."""
+        assert self.conn is not None
+
+        columns = {
+            row[1]
+            for row in self.conn.execute(
+                "PRAGMA table_info(type_source_files)"
+            ).fetchall()
+        }
+
+        if "is_external" not in columns:
+            self.conn.execute(
+                "ALTER TABLE type_source_files "
+                "ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0"
+            )
 
     def commit(self) -> None:
         """Commit the current transaction."""
@@ -203,14 +221,25 @@ class SourceDatabase:
         source_file_id: int,
         score: int = 0,
         user_preferred: bool = False,
+        is_external: bool = False,
     ) -> None:
-        """Insert or update a type -> source-file link."""
+        """Insert or update a type -> source-file link.
+
+        *is_external* marks links produced by the global (all-sources)
+        search when the type's own sources never reached ``MIN_CONFIDENCE``.
+        """
         assert self.conn is not None
         self.conn.execute(
             "INSERT OR REPLACE INTO type_source_files "
-            "(type_id, source_file_id, score, user_preferred) "
-            "VALUES (?, ?, ?, ?)",
-            (type_id, source_file_id, score, int(user_preferred)),
+            "(type_id, source_file_id, score, user_preferred, is_external) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                type_id,
+                source_file_id,
+                score,
+                int(user_preferred),
+                int(is_external),
+            ),
         )
 
     # ------------------------------------------------------------------

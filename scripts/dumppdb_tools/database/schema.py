@@ -45,11 +45,14 @@ CREATE TABLE IF NOT EXISTS type_relations (
 );
 
 -- Type -> source-file links. source_file_id references normalized_paths.
+-- is_external: 1 when the link came from the global (all-sources) search
+-- because the type's own best score never reached MIN_CONFIDENCE.
 CREATE TABLE IF NOT EXISTS type_source_files (
     type_id        INTEGER NOT NULL,
     source_file_id INTEGER NOT NULL,
     score         INTEGER NOT NULL DEFAULT 0,
     user_preferred INTEGER NOT NULL DEFAULT 0,
+    is_external   INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (type_id) REFERENCES types (id),
     FOREIGN KEY (source_file_id) REFERENCES normalized_paths (id),
     PRIMARY KEY (type_id, source_file_id)

@@ -19,6 +19,7 @@ from dumppdb_tools import (
     remove_extension,
     resolve_best,
 )
+from dumppdb_tools.resolution.scorer import MIN_CONFIDENCE
 
 DEFAULT_EXCLUDE_FILE = "exclude_types.txt"
 DEFAULT_LOG_DIR = "logs"
@@ -213,13 +214,36 @@ def persist_results(
 
         raw_sources = aggregated.get(type_name, set())
 
+        # Determine whether this type's scores came from the global
+        # (all-sources) search because its own best score never reached
+        # MIN_CONFIDENCE.  In that case the candidate links are "external"
+        # and are flagged as such in the database.
+        external = bool(scores) and max(scores.values()) < MIN_CONFIDENCE
+
+        # Save the type's own (raw) source links as non-external.
         for path, score in scores.items():
             for raw in raw_sources:
                 if remove_extension(raw) == path:
                     file_id = db.resolve_path_id(raw, path_prefix, cache=path_id_cache)
                     if file_id is not None:
-                        db.add_type_source_file(type_id, file_id, score=score)
+                        db.add_type_source_file(
+                            type_id, file_id, score=score, is_external=False
+                        )
                     break
+
+        # For types whose own sources never reached MIN_CONFIDENCE, also
+        # persist the top 5 global candidates (flagged as external) so they
+        # are not lost.  Resolution logic is unchanged.
+        if external:
+            top_candidates = sorted(
+                scores.items(), key=lambda x: x[1], reverse=True
+            )[:5]
+            for path, score in top_candidates:
+                file_id = db.resolve_path_id(path, path_prefix, cache=path_id_cache)
+                if file_id is not None:
+                    db.add_type_source_file(
+                        type_id, file_id, score=score, is_external=True
+                    )
 
 
 def write_output(

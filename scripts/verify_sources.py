@@ -24,6 +24,7 @@ class SourceCandidate:
     path: str
     score: int
     user_preferred: bool
+    is_external: bool = False
 
 
 @dataclass
@@ -127,7 +128,8 @@ class ResolutionDatabase:
                 np.id,
                 np.path,
                 tsf.score,
-                tsf.user_preferred
+                tsf.user_preferred,
+                tsf.is_external
             FROM types AS t
             LEFT JOIN type_source_files AS tsf
                 ON tsf.type_id = t.id
@@ -155,6 +157,7 @@ class ResolutionDatabase:
             path,
             score,
             user_preferred,
+            is_external,
         ) in rows:
             if type_id not in result:
                 result[type_id] = TypeResolution(
@@ -170,6 +173,7 @@ class ResolutionDatabase:
                         path=path,
                         score=score,
                         user_preferred=bool(user_preferred),
+                        is_external=bool(is_external),
                     )
                 )
 
@@ -327,6 +331,7 @@ STATUS_BG = {
 }
 
 PREFERRED_COLOR = "#1976d2"
+EXTERNAL_COLOR = "#9e9e9e"
 
 
 class ResolutionUI(tk.Tk):
@@ -595,6 +600,11 @@ class ResolutionUI(tk.Tk):
             foreground=PREFERRED_COLOR,
         )
 
+        self.tree.tag_configure(
+            "source_external",
+            foreground=EXTERNAL_COLOR,
+        )
+
     # ------------------------------------------------------------------
     # Loading
     # ------------------------------------------------------------------
@@ -712,11 +722,12 @@ class ResolutionUI(tk.Tk):
                 if preferred:
                     source_label += "  ★"
 
-                tag = (
-                    "source_preferred"
-                    if preferred
-                    else "source"
-                )
+                if preferred:
+                    tag = "source_preferred"
+                elif source.is_external:
+                    tag = "source_external"
+                else:
+                    tag = "source"
 
                 source_item = self.tree.insert(
                     type_item,
