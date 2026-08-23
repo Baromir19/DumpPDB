@@ -51,6 +51,9 @@ class TypeResolution:
         if len(tied) > 1:
             return "ambiguous"
 
+        if best_score < MIN_CONFIDENCE:
+            return "below_confidence"
+
         if len(self.sources) > 1:
             scores = sorted(
                 (source.score for source in self.sources),
@@ -62,7 +65,7 @@ class TypeResolution:
             if (
                 best_score - second_score
                 < best_score * LOW_CONFIDENCE_GAP
-            ) or best_score < MIN_CONFIDENCE:
+            ):
                 return "low_confidence"
 
         return "resolved"
@@ -104,6 +107,18 @@ class ResolutionDatabase:
     def load_resolutions(self) -> list[TypeResolution]:
         assert self.conn is not None
 
+        # Types that appear as related_type_id are handled via their
+        # relation source (parent type); exclude them from review.
+        related_ids = {
+            row[0]
+            for row in self.conn.execute(
+                """
+                SELECT related_type_id
+                FROM type_relations
+                """
+            ).fetchall()
+        }
+
         rows = self.conn.execute(
             """
             SELECT
@@ -124,6 +139,12 @@ class ResolutionDatabase:
                 np.path COLLATE NOCASE
             """
         ).fetchall()
+
+        rows = [
+            row
+            for row in rows
+            if row[0] not in related_ids
+        ]
 
         result: dict[int, TypeResolution] = {}
 
@@ -285,6 +306,7 @@ STATUS_TEXT = {
     "resolved": "Resolved",
     "ambiguous": "Ambiguous",
     "low_confidence": "Low confidence",
+    "below_confidence": "Below confidence",
     "no_match": "No match",
 }
 
@@ -292,6 +314,7 @@ STATUS_COLORS = {
     "resolved": "#2e8b57",
     "ambiguous": "#d32f2f",
     "low_confidence": "#f0a000",
+    "below_confidence": "#e65100",
     "no_match": "#808080",
 }
 
@@ -299,6 +322,7 @@ STATUS_BG = {
     "resolved": "#e8f5e9",
     "ambiguous": "#ffebee",
     "low_confidence": "#fff8e1",
+    "below_confidence": "#fff3e0",
     "no_match": "#f5f5f5",
 }
 
@@ -380,6 +404,7 @@ class ResolutionUI(tk.Tk):
                 "resolved",
                 "ambiguous",
                 "low_confidence",
+                "below_confidence",
                 "user_preferred",
                 "no_match",
             ],
@@ -912,10 +937,12 @@ class ManualRelationWindow(tk.Toplevel):
         self.geometry("800x550")
         self.minsize(600, 400)
 
-        self.search_var = tk.StringVar()
+        self.search_var = tk.StringVar(value=resolution.name)
 
         self._create_widgets()
         self.refresh_results()
+
+        self.entry.focus_set()
 
         self.transient(parent)
         self.grab_set()
@@ -932,18 +959,18 @@ class ManualRelationWindow(tk.Toplevel):
             text="Search:",
         ).pack(side=tk.LEFT)
 
-        entry = ttk.Entry(
+        self.entry = ttk.Entry(
             top,
             textvariable=self.search_var,
         )
-        entry.pack(
+        self.entry.pack(
             side=tk.LEFT,
             fill=tk.X,
             expand=True,
             padx=8,
         )
 
-        entry.bind(
+        self.entry.bind(
             "<KeyRelease>",
             lambda _: self.refresh_results(),
         )
