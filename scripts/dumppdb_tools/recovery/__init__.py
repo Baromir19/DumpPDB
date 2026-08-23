@@ -8,6 +8,7 @@ from dumppdb_tools.recovery.path_normalizer import (
     normalize_paths,
     remove_extension,
     split_stem_ext,
+    trim_to_normalized,
 )
 from dumppdb_tools.recovery.recover_case import (
     build_case_dictionary,
@@ -23,6 +24,7 @@ __all__ = [
     "normalize_paths",
     "remove_extension",
     "split_stem_ext",
+    "trim_to_normalized",
     "build_case_dictionary",
     "recover_case",
 ]

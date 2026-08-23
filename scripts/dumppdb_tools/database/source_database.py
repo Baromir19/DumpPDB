@@ -250,3 +250,40 @@ class SourceDatabase:
         except Exception:
             self.conn.rollback()
             raise
+
+    # ------------------------------------------------------------------
+    # Path resolution helpers
+    # ------------------------------------------------------------------
+
+    def resolve_path_id(
+        self,
+        raw_path: str,
+        path_prefix: str,
+        cache: dict[str, int] | None = None,
+    ) -> int | None:
+        """Trim *raw_path* and return its ``normalized_paths`` id.
+
+        Applies :func:`~dumppdb_tools.recovery.trim_to_normalized` to
+        convert the raw PDB path to the DB format, then looks it up by
+        case-insensitive match (inserting it if absent).
+
+        *cache* is an optional ``{trimmed: id}`` dict shared across calls
+        to avoid redundant DB lookups.
+        """
+        from dumppdb_tools.recovery import trim_to_normalized
+
+        trimmed = trim_to_normalized(raw_path, path_prefix)
+        if trimmed is None:
+            return None
+
+        if cache is not None and trimmed in cache:
+            return cache[trimmed]
+
+        found_id = self.find_normalized_id(trimmed)
+        if found_id is None:
+            found_id = self.insert_normalized_path(trimmed)
+
+        if cache is not None:
+            cache[trimmed] = found_id
+
+        return found_id
