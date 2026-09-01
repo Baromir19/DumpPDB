@@ -25,6 +25,7 @@ struct DumpConfig
     bool m_showTypeSource = false;
     bool m_curlyBraceNewline = true;
     bool m_hideCompilerGenerated = true;     // hide __local_vftable_ctor_closure, etc.
+    bool m_templateParams = false;           // emit template<...> for requested template instantiations
     DWORD m_baseAccessType = 0;              // override access type
     IntStyle m_intStyle = IntStyle::Cstdint; // __int32 vs int32_t
 };
@@ -47,6 +48,19 @@ public:
     const DumpConfig& config() const
     {
         return m_config;
+    }
+
+    /// Set the user-requested template instantiation (computed from the query name).
+    /// When active, a "template<...>" header is emitted above the dumped type and
+    /// concrete arguments are substituted back with the generated parameter names.
+    void setTemplateInstantiation(TypeWalker::TemplateInstantiation a_ti)
+    {
+        m_template = std::move(a_ti);
+    }
+
+    const TypeWalker::TemplateInstantiation& templateInstantiation() const
+    {
+        return m_template;
     }
 
     // --- Scope control (namespace/class hierarchy) ---
@@ -110,10 +124,7 @@ public:
 
         if (hasNs)
         {
-            ret += L"namespace ";
-            ret += ns;
-            ret += L"\n{\n";
-
+            ret += TypeWalker::namespaceBlockOpen(ns);
             pushQualifiedScope(ns);
         }
 
@@ -139,17 +150,9 @@ public:
         if (hasNs)
         {
             // Determine how many scope parts were pushed by pushQualifiedScope.
-            size_t partCount = 1;
-            for (size_t i = 0; i + 1 < ns.size(); ++i)
-            {
-                if (ns[i] == L':' && ns[i + 1] == L':')
-                {
-                    ++partCount;
-                    ++i;
-                }
-            }
+            size_t partCount = TypeWalker::namespacePartCount(ns);
             popQualifiedScope(partCount);
-            ret += L"}\n";
+            ret += TypeWalker::namespaceBlockClose(ns);
         }
 
         return ret;
@@ -166,6 +169,12 @@ public:
 
         ret += tab(a_nestingLevel);
         ret += sizeComment(a_symbol);
+        if (m_template.active)
+        {
+            ret += tab(a_nestingLevel);
+            ret += m_template.decl;
+            ret += L"\n";
+        }
 
         ret += tab(a_nestingLevel);
         ret += modPrefix(a_symbol);
@@ -211,6 +220,12 @@ public:
 
         ret += tab(a_nestingLevel);
         ret += sizeComment(a_symbol);
+        if (m_template.active)
+        {
+            ret += tab(a_nestingLevel);
+            ret += m_template.decl;
+            ret += L"\n";
+        }
 
         ret += tab(a_nestingLevel);
         ret += modPrefix(a_symbol);
@@ -1610,5 +1625,6 @@ private:
     ScopeContext m_scope;
     std::vector<std::wstring> m_typeSources;
     IDiaSession* m_session = nullptr;
+    TypeWalker::TemplateInstantiation m_template;
     static constexpr int kMaxDepth = 256;
 };

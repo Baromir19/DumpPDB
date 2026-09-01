@@ -32,6 +32,7 @@ class SaveManager : public Singleton<SaveManager>
         reg.registerSetting(L"DumpConfig.CurlyBraceNewline", m_dumpConfig.m_curlyBraceNewline);
         reg.registerSetting(
             L"DumpConfig.HideCompilerGenerated", m_dumpConfig.m_hideCompilerGenerated);
+        reg.registerSetting(L"DumpConfig.TemplateParams", m_dumpConfig.m_templateParams);
         reg.registerSetting(L"DumpConfig.BaseAccessType", m_dumpConfig.m_baseAccessType);
         reg.registerSetting(L"DumpConfig.IntStyle", m_dumpConfig.m_intStyle);
 

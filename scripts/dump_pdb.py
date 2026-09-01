@@ -100,6 +100,13 @@ def main():
         help="Use case-sensitive name lookup",
     )
     parser.add_argument(
+        "--template-params",
+        action="store_true",
+        help="When dumping a template instantiation by name (e.g. Type<ExType, 11, HighRes>), "
+             "emit a template<...> declaration and substitute the concrete arguments "
+             "with generic parameter names everywhere.",
+    )
+    parser.add_argument(
         "--signatures",
         metavar="PATTERN",
         help="Search for a byte signature (e.g. 'FF ?? 01 BD ?? CA')",
@@ -165,6 +172,9 @@ def main():
                 parser.error("--pdb is required")
 
             pdb.open(args.pdb)
+
+            if args.template_params:
+                pdb.set_config(templateParams=True)
 
         if binary_mode:
             if not args.file:

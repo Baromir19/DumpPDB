@@ -8,6 +8,24 @@ import ctypes
 from ctypes import wintypes
 
 
+class PdbApiConfig(ctypes.Structure):
+    """POD mirror of PdbApiDumpConfig (PdbApi.h). Field order matters."""
+    _fields_ = [
+        ("showSize", ctypes.c_int32),
+        ("showOffset", ctypes.c_int32),
+        ("showAccess", ctypes.c_int32),
+        ("showInfoComment", ctypes.c_int32),
+        ("showNonScoped", ctypes.c_int32),
+        ("showEnumHex", ctypes.c_int32),
+        ("showTypeSource", ctypes.c_int32),
+        ("curlyBraceNewline", ctypes.c_int32),
+        ("hideCompilerGenerated", ctypes.c_int32),
+        ("templateParams", ctypes.c_int32),
+        ("baseAccessType", ctypes.c_uint32),
+        ("intStyle", ctypes.c_int32),
+    ]
+
+
 class PdbApiNative:
     """Thin ctypes wrapper around PdbAPI.dll.
 
@@ -34,12 +52,12 @@ class PdbApiNative:
         # --- Config ---
 
         self.dll.PdbApi_SetConfig.argtypes = [
-            ctypes.c_void_p
+            ctypes.POINTER(PdbApiConfig)
         ]
         self.dll.PdbApi_SetConfig.restype = ctypes.c_int
 
         self.dll.PdbApi_GetConfig.argtypes = [
-            ctypes.c_void_p
+            ctypes.POINTER(PdbApiConfig)
         ]
         self.dll.PdbApi_GetConfig.restype = ctypes.c_int
 

@@ -69,6 +69,7 @@ PdbApiDumpConfig toApi(const DumpConfig& a_cfg)
     out.showTypeSource = static_cast<int32_t>(a_cfg.m_showTypeSource);
     out.curlyBraceNewline = static_cast<int32_t>(a_cfg.m_curlyBraceNewline);
     out.hideCompilerGenerated = static_cast<int32_t>(a_cfg.m_hideCompilerGenerated);
+    out.templateParams = static_cast<int32_t>(a_cfg.m_templateParams);
     out.baseAccessType = static_cast<uint32_t>(a_cfg.m_baseAccessType);
     out.intStyle = static_cast<int32_t>(a_cfg.m_intStyle);
     return out;
@@ -90,6 +91,7 @@ bool fromApi(const PdbApiDumpConfig& a_in, DumpConfig& a_out)
     a_out.m_showTypeSource = a_in.showTypeSource != 0;
     a_out.m_curlyBraceNewline = a_in.curlyBraceNewline != 0;
     a_out.m_hideCompilerGenerated = a_in.hideCompilerGenerated != 0;
+    a_out.m_templateParams = a_in.templateParams != 0;
     a_out.m_baseAccessType = a_in.baseAccessType;
     a_out.m_intStyle = static_cast<IntStyle>(a_in.intStyle);
     return true;

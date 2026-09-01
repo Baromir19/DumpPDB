@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <dia2.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <Core/DIA/TypeBuilder.hpp>
@@ -163,6 +165,293 @@ public:
         return FAILED(children->Next(1, &parent, &count)) || count == 0;
     }
 
+/// The MSVC DIA name tag for an anonymous (unnamed) namespace.
+    inline static const wchar_t* kAnonymousNamespace = L"`anonymous-namespace'";
+
+    /// True when a single namespace part is MSVC's anonymous-namespace marker.
+    static bool isAnonymousNamespacePart(const std::wstring& a_part)
+    {
+        return a_part == kAnonymousNamespace;
+    }
+
+    /// Find the index of the last "::" that is NOT inside a template/function/array
+    /// bracket list (i.e. at depth zero). Returns npos if there is none.
+    /// This matters for template instantiations such as
+    /// "TB::TList<int, TB::CustomAllocator<int>>" where a "::" lives inside the
+    /// "<...>" and must not be treated as the scope separator.
+    static size_t findLastTopLevelSeparator(const std::wstring& a_name)
+    {
+        size_t last = std::wstring::npos;
+        int depth = 0;
+
+        for (size_t i = 0; i < a_name.size(); ++i)
+        {
+            switch (a_name[i])
+            {
+            case L'<':
+            case L'(':
+            case L'[':
+                ++depth;
+                break;
+
+            case L'>':
+            case L')':
+            case L']':
+                if (depth > 0)
+                    --depth;
+                break;
+
+            case L':':
+                if (depth == 0 && i + 1 < a_name.size() && a_name[i + 1] == L':')
+                {
+                    last = i;
+                    ++i;
+                }
+                break;
+
+            default:
+                break;
+            }
+        }
+        return last;
+    }
+
+    /// Number of top-level namespace parts in a fully-qualified namespace path.
+    /// e.g. L"A::B" -> 2, the anonymous marker -> 1, empty -> 0.
+    static size_t namespacePartCount(const std::wstring& a_namespace)
+    {
+        return splitQualifiedName(a_namespace).size();
+    }
+
+    /// Emit the opening lines of a namespace block given a fully-qualified path.
+    /// Anonymous-namespace parts are emitted as nameless "namespace { ... }"
+    /// nested blocks (MSVC stores them as "`anonymous-namespace'" in names).
+    static std::wstring namespaceBlockOpen(const std::wstring& a_namespace)
+    {
+        std::wstring ret;
+        for (const auto& part : splitQualifiedName(a_namespace))
+        {
+            ret += L"namespace";
+            if (!isAnonymousNamespacePart(part))
+            {
+                ret += L" ";
+                ret += part;
+            }
+            ret += L"\n{\n";
+        }
+        return ret;
+    }
+
+    /// Emit the matching closing braces for namespaceBlockOpen().
+    static std::wstring namespaceBlockClose(const std::wstring& a_namespace)
+    {
+        std::wstring ret;
+        for (size_t i = 0; i < namespacePartCount(a_namespace); ++i)
+        {
+            ret += L"}\n";
+        }
+        return ret;
+    }
+
+    /// A user-defined template instantiation requested by name, e.g.
+    /// "Type<float, 11, TB::HighRes>" -> "template<typename T, size_t U, typename V>".
+    /// Concrete arguments are remembered so they can be substituted back with the
+    /// generated parameter names everywhere in the dumped types and values.
+    struct TemplateInstantiation
+    {
+        bool active = false;
+        std::wstring decl;                                               // e.g. L"template<typename T, size_t U, size_t V>"
+        std::vector<std::pair<std::wstring, std::wstring>> replacements; // { concrete arg, generated param name }
+    };
+static bool isWhitespace(wchar_t a_ch)
+    {
+        return a_ch == L' ' || a_ch == L'\t' || a_ch == L'\r' || a_ch == L'\n';
+    }
+
+    static std::wstring trim(const std::wstring& a_text)
+    {
+        size_t begin = 0;
+        while (begin < a_text.size() && isWhitespace(a_text[begin]))
+            ++begin;
+        size_t end = a_text.size();
+        while (end > begin && isWhitespace(a_text[end - 1]))
+            --end;
+        return a_text.substr(begin, end - begin);
+    }
+
+    /// Split on a_delim, ignoring delimiters nested inside template/function/array brackets.
+    static std::vector<std::wstring> splitTopLevel(const std::wstring& a_text, wchar_t a_delim)
+    {
+        std::vector<std::wstring> result;
+        size_t begin = 0;
+        int depth = 0;
+
+        for (size_t i = 0; i < a_text.size(); ++i)
+        {
+            switch (a_text[i])
+            {
+            case L'<':
+            case L'(':
+            case L'[':
+                ++depth;
+                break;
+            case L'>':
+            case L')':
+            case L']':
+                if (depth > 0)
+                    --depth;
+                break;
+            default:
+                break;
+            }
+
+            if (a_text[i] == a_delim && depth == 0)
+            {
+                result.push_back(a_text.substr(begin, i - begin));
+                begin = i + 1;
+            }
+        }
+
+        result.push_back(a_text.substr(begin));
+        return result;
+    }
+
+    static std::wstring templateParamName(size_t a_index)
+    {
+        const wchar_t* letters = L"TUVWXYZ";
+        if (a_index < 7)
+            return std::wstring(1, letters[a_index]);
+        return L"_" + std::to_wstring(a_index + 1); // _8, _9, ...
+    }
+
+    /// True if the text is a plain base-10 integer literal (optionally signed).
+    static bool isIntegerLiteral(const std::wstring& a_text)
+    {
+        size_t i = 0;
+        if (i < a_text.size() && (a_text[i] == L'-' || a_text[i] == L'+'))
+            ++i;
+        if (i >= a_text.size())
+            return false;
+        for (; i < a_text.size(); ++i)
+        {
+            if (a_text[i] < L'0' || a_text[i] > L'9')
+                return false;
+        }
+        return true;
+    }
+/// Build a TemplateInstantiation from a requested template-instantiation name.
+    /// Returns an inactive struct when a_name has no template argument list.
+    static TemplateInstantiation makeTemplateInstantiation(const std::wstring& a_name)
+    {
+        TemplateInstantiation ti;
+
+        auto lt = a_name.find(L'<');
+        if (lt == std::wstring::npos)
+            return ti;
+
+        int depth = 0;
+        size_t gt = std::wstring::npos;
+        for (size_t i = lt; i < a_name.size(); ++i)
+        {
+            if (a_name[i] == L'<')
+            {
+                ++depth;
+                continue;
+            }
+            if (a_name[i] == L'>')
+            {
+                --depth;
+                if (depth == 0)
+                {
+                    gt = i;
+                    break;
+                }
+            }
+        }
+        if (gt == std::wstring::npos)
+            return ti;
+
+        const std::wstring inner = a_name.substr(lt + 1, gt - lt - 1);
+        auto args = splitTopLevel(inner, L',');
+        if (args.empty())
+            return ti;
+
+        ti.decl = L"template<";
+        for (size_t i = 0; i < args.size(); ++i)
+        {
+            const std::wstring arg = trim(args[i]);
+            if (i > 0)
+                ti.decl += L", ";
+            const std::wstring param = templateParamName(i);
+            if (isIntegerLiteral(arg))
+                ti.decl += (arg[0] == L'-') ? L"int " : L"size_t ";
+            else
+                ti.decl += L"typename ";
+            ti.decl += param;
+
+            if (!arg.empty())
+                ti.replacements.emplace_back(arg, param);
+        }
+        ti.decl += L">";
+
+        // Replace longer (more specific) arguments first to avoid partial overlaps.
+        std::sort(ti.replacements.begin(), ti.replacements.end(),
+            [](const auto& a, const auto& b) { return a.first.size() > b.first.size(); });
+
+        ti.active = true;
+        return ti;
+    }
+
+    static bool isIdentifierContinuation(wchar_t ach)
+    {
+        return (ach >= L'a' && ach <= L'z')
+               || (ach >= L'A' && ach <= L'Z')
+               || (ach >= L'0' && ach <= L'9')
+               || ach == L'_';
+    }
+
+    /// Replace concrete template arguments with their generated parameter names,
+    /// matching only whole tokens so "11" does not rewrite "x11" or "111".
+    static std::wstring substituteTemplateArgs(
+        const std::wstring& a_text, const TemplateInstantiation& a_ti)
+    {
+        std::wstring result = a_text;
+        for (const auto& [from, to] : a_ti.replacements)
+        {
+            if (from.empty())
+                continue;
+
+            std::wstring next;
+            size_t pos = 0;
+            while (pos < result.size())
+            {
+                const size_t found = result.find(from, pos);
+                if (found == std::wstring::npos)
+                {
+                    next += result.substr(pos);
+                    break;
+                }
+
+                const size_t end = found + from.size();
+                const bool boundaryBefore = (found == 0) || !isIdentifierContinuation(result[found - 1]);
+                const bool boundaryAfter = (end >= result.size()) || !isIdentifierContinuation(result[end]);
+
+                if (boundaryBefore && boundaryAfter)
+                {
+                    next += result.substr(pos, found - pos);
+                    next += to;
+                    pos = end;
+                }
+                else
+                {
+                    next += result.substr(pos, found - pos + 1);
+                    pos = found + 1;
+                }
+            }
+            result = std::move(next);
+        }
+        return result;
+    }
     /// Returns true if a_symbol's lexical parent is a UDT (class/struct/union),
     /// i.e. the symbol is nested inside another type.
     /// E.g. for "Test::Actor::Weapon", the parent is "Test::Actor" (SymTagUDT),
@@ -183,11 +472,14 @@ public:
     /// e.g. "User::Hello" -> ns="User",   leaf="Hello"
     ///      "A::B::Hello" -> ns="A::B",   leaf="Hello"
     ///      "Hello"       -> ns="",       leaf="Hello"
+    /// The split is template-aware: a "::" inside a "<...>" argument list (as in
+    /// "TB::TList<int, TB::CustomAllocator<int>>") is NOT treated as the scope
+    /// separator, so the leaf name keeps its full template argument list intact.
     static QualifiedName parseQualifiedName(const std::wstring& a_fullyQualifiedName)
     {
         QualifiedName result;
 
-        auto lastSep = a_fullyQualifiedName.rfind(L"::");
+        auto lastSep = findLastTopLevelSeparator(a_fullyQualifiedName);
         if (lastSep == std::wstring::npos)
         {
             result.leaf = a_fullyQualifiedName;
@@ -587,7 +879,7 @@ public:
 
     static std::wstring leafName(const std::wstring& a_qualifiedName)
     {
-        auto pos = a_qualifiedName.rfind(L"::");
+        auto pos = findLastTopLevelSeparator(a_qualifiedName);
         return (pos == std::wstring::npos) ? a_qualifiedName : a_qualifiedName.substr(pos + 2);
     }
 

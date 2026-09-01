@@ -101,7 +101,30 @@ public:
                 m_session.globalScope(), a_name, a_caseSensitive);
         }
 
+        // Optional user-defined template parameterization: when the requested name
+        // is a template instantiation (e.g. "Type<float, 11, TB::HighRes>") and the
+        // setting is enabled, emit a "template<...>" declaration and substitute the
+        // concrete arguments with the generated parameter names everywhere.
+        bool haveTemplate = false;
+        TypeWalker::TemplateInstantiation ti;
+        if (m_dumper.config().m_templateParams)
+        {
+            ti = TypeWalker::makeTemplateInstantiation(a_name);
+            haveTemplate = ti.active;
+            if (haveTemplate)
+            {
+                m_dumper.setTemplateInstantiation(ti);
+            }
+        }
+
         dumpSymbolsGrouped(matches, out);
+
+        if (haveTemplate)
+        {
+            out = TypeWalker::substituteTemplateArgs(out, ti);
+            m_dumper.setTemplateInstantiation(TypeWalker::TemplateInstantiation{});
+        }
+
         return out;
     }
 
@@ -723,10 +746,8 @@ private:
             }
             else
             {
-                // Open one namespace block per group.
-                aoutput += L"namespace ";
-                aoutput += ns;
-                aoutput += L"\n{\n";
+                // Open one namespace block per group (handles anonymous namespaces).
+                aoutput += TypeWalker::namespaceBlockOpen(ns);
 
                 m_dumper.pushQualifiedScope(ns);
 
@@ -751,18 +772,10 @@ private:
                     }
                 }
 
-                size_t partCount = 1;
-                for (size_t i = 0; i + 1 < ns.size(); ++i)
-                {
-                    if (ns[i] == L':' && ns[i + 1] == L':')
-                    {
-                        ++partCount;
-                        ++i;
-                    }
-                }
+                size_t partCount = TypeWalker::namespacePartCount(ns);
                 m_dumper.popQualifiedScope(partCount);
 
-                aoutput += L"}\n";
+                aoutput += TypeWalker::namespaceBlockClose(ns);
             }
         }
     }

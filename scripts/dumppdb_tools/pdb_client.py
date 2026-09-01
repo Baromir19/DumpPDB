@@ -5,7 +5,9 @@ low-level ctypes bindings (:mod:`dumppdb_tools.api.pdb_api`) and hides
 the two-phase buffer protocol.
 """
 
-from dumppdb_tools.api.pdb_api import PdbApiNative, read_string_call
+import ctypes
+
+from dumppdb_tools.api.pdb_api import PdbApiConfig, PdbApiNative, read_string_call
 
 
 class PdbClient:
@@ -24,6 +26,27 @@ class PdbClient:
 
     def close(self):
         self.api.dll.PdbApi_Shutdown()
+
+    def set_config(self, **options):
+        """Update dump-config options. Only the passed keys are changed; the
+        rest keep whatever the native side currently has.
+
+        Keys match the fields of PdbApiDumpConfig (see api.pdb_api.PdbApiConfig),
+        e.g. ``templateParams=True`` enables user-defined template parameterization.
+        """
+        cfg = PdbApiConfig()
+        result = self.api.dll.PdbApi_GetConfig(ctypes.byref(cfg))
+        if result != 0:
+            raise RuntimeError(self.last_error())
+
+        for key, value in options.items():
+            if not hasattr(cfg, key):
+                raise ValueError(f"Unknown config option: {key}")
+            setattr(cfg, key, int(value))
+
+        result = self.api.dll.PdbApi_SetConfig(ctypes.byref(cfg))
+        if result != 0:
+            raise RuntimeError(self.last_error())
 
     def is_initialized(self):
         return self.api.dll.PdbApi_IsInitialized() != 0
