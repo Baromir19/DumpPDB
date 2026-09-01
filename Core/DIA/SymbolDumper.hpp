@@ -56,6 +56,7 @@ public:
     void setTemplateInstantiation(TypeWalker::TemplateInstantiation a_ti)
     {
         m_template = std::move(a_ti);
+        m_templateHeaderDone = false;
     }
 
     const TypeWalker::TemplateInstantiation& templateInstantiation() const
@@ -169,11 +170,16 @@ public:
 
         ret += tab(a_nestingLevel);
         ret += sizeComment(a_symbol);
-        if (m_template.active)
+
+        // Emit the generated template<...> header only once — on the outermost
+        // top-level declaration of the requested instantiation. Nested members
+        // (enum/class/function declarations) must NOT repeat it.
+        if (m_template.active && !m_templateHeaderDone)
         {
             ret += tab(a_nestingLevel);
             ret += m_template.decl;
             ret += L"\n";
+            m_templateHeaderDone = true;
         }
 
         ret += tab(a_nestingLevel);
@@ -220,12 +226,6 @@ public:
 
         ret += tab(a_nestingLevel);
         ret += sizeComment(a_symbol);
-        if (m_template.active)
-        {
-            ret += tab(a_nestingLevel);
-            ret += m_template.decl;
-            ret += L"\n";
-        }
 
         ret += tab(a_nestingLevel);
         ret += modPrefix(a_symbol);
@@ -1626,5 +1626,6 @@ private:
     std::vector<std::wstring> m_typeSources;
     IDiaSession* m_session = nullptr;
     TypeWalker::TemplateInstantiation m_template;
+    bool m_templateHeaderDone = false;
     static constexpr int kMaxDepth = 256;
 };
