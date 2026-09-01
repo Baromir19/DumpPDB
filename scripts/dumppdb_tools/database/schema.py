@@ -29,9 +29,11 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 -- Types discovered from the PDB.
+-- disabled: 1 when the user has manually disabled this type in the GUI.
 CREATE TABLE IF NOT EXISTS types (
-    id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    name     TEXT NOT NULL UNIQUE,
+    disabled INTEGER NOT NULL DEFAULT 0
 );
 
 -- Type-to-type relations (template_instance, meta_variant).

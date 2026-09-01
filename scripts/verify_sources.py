@@ -32,6 +32,7 @@ class TypeResolution:
     type_id: int
     name: str
     sources: list[SourceCandidate]
+    disabled: bool = False
 
     @property
     def status(self) -> str:
@@ -125,6 +126,7 @@ class ResolutionDatabase:
             SELECT
                 t.id,
                 t.name,
+                t.disabled,
                 np.id,
                 np.path,
                 tsf.score,
@@ -153,6 +155,7 @@ class ResolutionDatabase:
         for (
             type_id,
             type_name,
+            disabled,
             source_file_id,
             path,
             score,
@@ -164,6 +167,7 @@ class ResolutionDatabase:
                     type_id=type_id,
                     name=type_name,
                     sources=[],
+                    disabled=bool(disabled),
                 )
 
             if source_file_id is not None:
@@ -268,6 +272,15 @@ class ResolutionDatabase:
 
         self.conn.commit()
 
+    def set_type_disabled(self, type_id: int, disabled: bool) -> None:
+        """Set the disabled flag for a type."""
+        assert self.conn is not None
+        self.conn.execute(
+            "UPDATE types SET disabled = ? WHERE id = ?",
+            (int(disabled), type_id),
+        )
+        self.conn.commit()
+
     def save_preferred_changes(
         self,
         changes: dict[tuple[int, int], bool],
@@ -332,6 +345,8 @@ STATUS_BG = {
 
 PREFERRED_COLOR = "#1976d2"
 EXTERNAL_COLOR = "#9e9e9e"
+DISABLED_COLOR = "#bdbdbd"
+DISABLED_BG = "#eeeeee"
 
 
 class ResolutionUI(tk.Tk):
@@ -376,6 +391,7 @@ class ResolutionUI(tk.Tk):
 
         self.filter_var = tk.StringVar(value="all")
         self.search_var = tk.StringVar()
+        self.hide_disabled_var = tk.BooleanVar(value=True)
 
         self._create_widgets()
         self._configure_tags()
@@ -423,6 +439,16 @@ class ResolutionUI(tk.Tk):
             lambda _: self.refresh_tree(),
         )
 
+        ttk.Checkbutton(
+            toolbar,
+            text="Hide disabled types",
+            variable=self.hide_disabled_var,
+            command=self.refresh_tree,
+        ).pack(
+            side=tk.LEFT,
+            padx=(0, 20),
+        )
+
         ttk.Label(
             toolbar,
             text="Search:",
@@ -466,7 +492,7 @@ class ResolutionUI(tk.Tk):
             tree_frame,
             columns=("score", "status"),
             show="tree headings",
-            selectmode="browse",
+            selectmode="extended",
         )
 
         self.tree.heading(
@@ -531,6 +557,16 @@ class ResolutionUI(tk.Tk):
         self.tree.bind(
             "<Return>",
             self._on_return,
+        )
+
+        self.tree.bind(
+            "<Button-3>",
+            self._on_right_click,
+        )
+
+        self.tree.bind(
+            "<Control-c>",
+            self._copy_selection,
         )
 
         # --------------------------------------------------------------
@@ -605,6 +641,12 @@ class ResolutionUI(tk.Tk):
             foreground=EXTERNAL_COLOR,
         )
 
+        self.tree.tag_configure(
+            "type_disabled",
+            foreground=DISABLED_COLOR,
+            background=DISABLED_BG,
+        )
+
     # ------------------------------------------------------------------
     # Loading
     # ------------------------------------------------------------------
@@ -670,6 +712,9 @@ class ResolutionUI(tk.Tk):
 
         for resolution in self.resolutions:
 
+            if self.hide_disabled_var.get() and resolution.disabled:
+                continue
+
             if not self._matches_filter(resolution):
                 continue
 
@@ -678,14 +723,18 @@ class ResolutionUI(tk.Tk):
 
             status = resolution.status
 
-            if resolution.user_preferred:
+            if resolution.disabled:
+                type_tag = "type_disabled"
+            elif resolution.user_preferred:
                 type_tag = "preferred"
             else:
                 type_tag = f"type_{status}"
 
             label = resolution.name
 
-            if resolution.user_preferred:
+            if resolution.disabled:
+                label += "  ⛔"
+            elif resolution.user_preferred:
                 label += "  ★"
 
             type_item = self.tree.insert(
@@ -804,6 +853,89 @@ class ResolutionUI(tk.Tk):
         self.pending_changes[key] = not current
 
         self.refresh_tree()
+
+    # ------------------------------------------------------------------
+    # Context menu / copy
+    # ------------------------------------------------------------------
+
+    def _on_right_click(
+        self,
+        event: tk.Event,
+    ) -> None:
+        item = self.tree.identify_row(event.y)
+
+        if not item:
+            return
+
+        # If the clicked item is not already selected, select it.
+        if item not in self.tree.selection():
+            self.tree.selection_set(item)
+
+        menu = tk.Menu(self, tearoff=0)
+
+        # Determine if the selection contains any type items.
+        selected = self.tree.selection()
+        has_type = any(i in self.type_items for i in selected)
+        has_source = any(i in self.source_items for i in selected)
+
+        if has_type:
+            # Check if all selected types are disabled.
+            all_disabled = all(
+                self.type_items[i].disabled for i in selected if i in self.type_items
+            )
+            if all_disabled:
+                menu.add_command(
+                    label="Enable type(s)",
+                    command=self._enable_selected_types,
+                )
+            else:
+                menu.add_command(
+                    label="Disable type(s)",
+                    command=self._disable_selected_types,
+                )
+
+        if has_source or has_type:
+            menu.add_separator()
+
+        menu.add_command(
+            label="Copy",
+            command=self._copy_selection,
+        )
+
+        menu.tk_popup(event.x_root, event.y_root)
+        menu.grab_release()
+
+    def _disable_selected_types(self) -> None:
+        for item in self.tree.selection():
+            resolution = self.type_items.get(item)
+            if resolution is not None:
+                self.db.set_type_disabled(resolution.type_id, True)
+        self.reload()
+
+    def _enable_selected_types(self) -> None:
+        for item in self.tree.selection():
+            resolution = self.type_items.get(item)
+            if resolution is not None:
+                self.db.set_type_disabled(resolution.type_id, False)
+        self.reload()
+
+    def _copy_selection(
+        self,
+        _event: tk.Event | None = None,
+    ) -> None:
+        lines: list[str] = []
+
+        for item in self.tree.selection():
+            if item in self.type_items:
+                resolution = self.type_items[item]
+                lines.append(resolution.name)
+            elif item in self.source_items:
+                resolution, source = self.source_items[item]
+                lines.append(source.path)
+
+        if lines:
+            self.clipboard_clear()
+            self.clipboard_append("\n".join(lines))
 
     # ------------------------------------------------------------------
     # Manual relation

@@ -66,6 +66,19 @@ class SourceDatabase:
                 "ADD COLUMN is_external INTEGER NOT NULL DEFAULT 0"
             )
 
+        type_columns = {
+            row[1]
+            for row in self.conn.execute(
+                "PRAGMA table_info(types)"
+            ).fetchall()
+        }
+
+        if "disabled" not in type_columns:
+            self.conn.execute(
+                "ALTER TABLE types "
+                "ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0"
+            )
+
     def commit(self) -> None:
         """Commit the current transaction."""
         assert self.conn is not None
@@ -155,6 +168,23 @@ class SourceDatabase:
         assert self.conn is not None
         return self.conn.execute("SELECT id, name FROM types").fetchall()
 
+    def set_type_disabled(self, type_id: int, disabled: bool) -> None:
+        """Set the disabled flag for a type."""
+        assert self.conn is not None
+        self.conn.execute(
+            "UPDATE types SET disabled = ? WHERE id = ?",
+            (int(disabled), type_id),
+        )
+
+    def get_type_disabled(self, type_id: int) -> bool:
+        """Return whether a type is disabled."""
+        assert self.conn is not None
+        row = self.conn.execute(
+            "SELECT disabled FROM types WHERE id = ?",
+            (type_id,),
+        ).fetchone()
+        return bool(row[0]) if row else False
+
     # ------------------------------------------------------------------
     # Type relations
     # ------------------------------------------------------------------
@@ -227,20 +257,48 @@ class SourceDatabase:
 
         *is_external* marks links produced by the global (all-sources)
         search when the type's own sources never reached ``MIN_CONFIDENCE``.
+
+        An external link never overwrites an existing non-external link:
+        the type's own (raw) source is more valuable than a global-search
+        candidate, so it must be preserved.
         """
         assert self.conn is not None
-        self.conn.execute(
-            "INSERT OR REPLACE INTO type_source_files "
-            "(type_id, source_file_id, score, user_preferred, is_external) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (
-                type_id,
-                source_file_id,
-                score,
-                int(user_preferred),
-                int(is_external),
-            ),
-        )
+
+        if is_external:
+            # Insert only if no row exists, or if the existing row is also
+            # external.  A non-external (raw) link is never downgraded.
+            self.conn.execute(
+                """
+                INSERT INTO type_source_files (
+                    type_id, source_file_id, score, user_preferred, is_external
+                )
+                VALUES (?, ?, ?, ?, 1)
+                ON CONFLICT(type_id, source_file_id) DO UPDATE SET
+                    score = excluded.score,
+                    user_preferred = excluded.user_preferred
+                WHERE type_source_files.is_external = 1
+                """,
+                (
+                    type_id,
+                    source_file_id,
+                    score,
+                    int(user_preferred),
+                ),
+            )
+        else:
+            # Non-external links may replace any existing row (including an
+            # external one) — the type's own source is authoritative.
+            self.conn.execute(
+                "INSERT OR REPLACE INTO type_source_files "
+                "(type_id, source_file_id, score, user_preferred, is_external) "
+                "VALUES (?, ?, ?, ?, 0)",
+                (
+                    type_id,
+                    source_file_id,
+                    score,
+                    int(user_preferred),
+                ),
+            )
 
     # ------------------------------------------------------------------
     # Original SourcePath insertion (existing API)

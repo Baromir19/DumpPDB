@@ -73,7 +73,7 @@ def collect_type_sources(pdb: PdbClient) -> dict[str, set[str]]:
         try:
             raw = pdb.get_source_files(type_name, True)
         except Exception:
-            continue
+            pass # not found
 
         sources = [
             normalize_path(s.strip())
@@ -81,8 +81,7 @@ def collect_type_sources(pdb: PdbClient) -> dict[str, set[str]]:
             if s.strip()
         ]
 
-        if sources:
-            type_sources[type_name] = set(sources)
+        type_sources[type_name] = set(sources or [])
 
     return type_sources
 
