@@ -1,0 +1,24 @@
+# Pass-2 macro patterns (git-ignore style)
+#
+# Each non-comment, non-blank line is a function-like macro that opens a type
+# definition. Use <type> as the placeholder for the type name (the first macro
+# argument). Extra arguments are ignored, so e.g.
+#
+#   BUILD_DEFINED_INHERITED_TYPE_BEGIN(<type>)
+#
+# also matches  BUILD_DEFINED_INHERITED_TYPE_BEGIN(Foo, class Foo : Base)
+#
+# A line without a <type> placeholder is treated as a bare macro-name prefix:
+#
+#   BUILD_DEFINED_TYPE_BEGIN
+#
+# matches any call of that macro and captures its first argument as the type name.
+
+BUILD_EXPOSED_STRUCTURE_STRUCT_BEGIN(<type>)
+BUILD_EXPOSED_STRUCTURE_CLASS_BEGIN(<type>)
+BUILD_EXPOSED_POLYMORPHIC_STRUCTURE_BEGIN(<type>)
+BUILD_EXPOSED_OBJECT_BEGIN(<type>)
+BUILD_DEFINED_TYPE_BEGIN(<type>)
+BUILD_DEFINED_INHERITED_TYPE_BEGIN(<type>)
+CREATE_EXPOSED_STRUCTURE_CLASS(<type>)
+CREATE_EXPOSED_STRUCTURE_STRUCT(<type>)

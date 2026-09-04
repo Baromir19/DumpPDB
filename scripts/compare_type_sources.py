@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
+import re
 import sqlite3
+import sys
 from dataclasses import dataclass
 from enum import IntFlag
 from pathlib import Path
@@ -35,6 +37,12 @@ DEFINITION_KINDS = {"enum", "union", "struct", "class", "interface"}
 
 # Flag a code_item must carry to be treated as the definition.
 DEFINITION_ATTRIBUTE = CodeItemAttributes.DEFINITION
+
+# File extensions scanned by pass 2.
+SOURCE_EXTENSIONS = {".h", ".hpp", ".hxx", ".hh", ".inl", ".c", ".cc", ".cxx", ".cpp"}
+
+# An identifier-or-qualified-identifier used as the macro type-name argument.
+TYPE_NAME_RE = r"[A-Za-z_][A-Za-z0-9_:]*"
 
 
 def load_type_sources(db_path: str | Path) -> list[TypeSource]:
@@ -277,6 +285,156 @@ def report(definitions, not_found, discrepancies) -> None:
             print(f"  ... and {len(not_found) - len(remaining)} more.")
 
 
+def compile_pattern(line: str) -> re.Pattern:
+    """Compile a ``<type>`` call template into a regex that captures the type name.
+
+    The line is the function-like macro that opens a type definition, with
+    ``<type>`` standing for the type name (the first macro argument). Everything
+    between the captured name and the closing parenthesis is ignored, so extra
+    arguments such as ``, struct`` or ``, class Foo : Base`` are handled
+    transparently:
+
+        BUILD_DEFINED_INHERITED_TYPE_BEGIN(<type>)
+            matches  BUILD_DEFINED_INHERITED_TYPE_BEGIN(Foo, class Foo : Base)
+
+    If the line contains no ``<type>`` placeholder it is treated as a bare macro
+    name prefix, i.e. ``BUILD_X_BEGIN`` matches ``BUILD_X_BEGIN(Foo, ...)`` and
+    captures ``Foo``.
+    """
+    if "<type>" in line:
+        head, tail = line.split("<type>", 1)
+        pattern = (
+            re.escape(head)
+            + "("
+            + TYPE_NAME_RE
+            + ")"
+            + r"[^)]*"
+            + re.escape(tail)
+        )
+    else:
+        pattern = re.escape(line) + r"\s*\(" + "(" + TYPE_NAME_RE + ")"
+
+    return re.compile(pattern)
+
+
+def load_patterns(patterns_path: str | Path) -> list[tuple[re.Pattern, str]]:
+    """Load pass-2 macro patterns from a git-ignore-style text file.
+
+    Blank lines and lines starting with ``#`` are skipped. Each remaining line is
+    either a bare macro name (``BUILD_X_BEGIN``) or a call template carrying a
+    ``<type>`` placeholder for the type name. Returns ``(compiled, original)``
+    pairs so the report can show the human-readable pattern.
+    """
+    patterns: list[tuple[re.Pattern, str]] = []
+    text = Path(patterns_path).read_text(encoding="utf-8-sig")
+
+    for raw in text.splitlines():
+        line = raw.strip()
+
+        if not line or line.startswith("#"):
+            continue
+
+        patterns.append((compile_pattern(line), line))
+
+    return patterns
+
+
+def run_pass2(
+    source_path: str | Path,
+    patterns_path: str | Path,
+    items: list[TypeSource],
+    already_found: set[str],
+) -> list[tuple[str, str | None, TypeSource | None, bool | None]]:
+    """Pass 2: find macro-defined types in source and cross-check them with items.
+
+    Scans every supported source file under *source_path*, matching each compiled
+    pattern against the file text. Returns ``(type_name, file, item, match)`` for
+    every detected type that pass 1 did *not* locate in the browse DB (i.e. it
+    was already handled there and is skipped). *item* is the ``TypeSource`` from
+    *items* for this name, or ``None`` if DumpPDB has no such type. *match* is a
+    path comparison of ``item.path`` against *file*, mirroring pass 1 (``None``
+    when there is nothing to compare).
+    """
+    patterns = load_patterns(patterns_path)
+    items_by_name = {it.type_name: it for it in items}
+
+    found: dict[str, str] = {}
+
+    for file_path in sorted(Path(source_path).rglob("*")):
+        if not file_path.is_file():
+            continue
+        if file_path.suffix.lower() not in SOURCE_EXTENSIONS:
+            continue
+
+        try:
+            text = file_path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+
+        for regex, _ in patterns:
+            for match in regex.finditer(text):
+                found.setdefault(match.group(1), str(file_path))
+
+    results: list[tuple[str, str | None, TypeSource | None, bool | None]] = []
+
+    for type_name, file in sorted(found.items()):
+        if type_name in already_found:
+            continue
+
+        item = items_by_name.get(type_name)
+
+        if item is None or item.path is None:
+            match = None
+        else:
+            match = _paths_match(item.path, file)
+
+        results.append((type_name, file, item, match))
+
+    return results
+
+
+def report_pass2(
+    results: list[tuple[str, str | None, TypeSource | None, bool | None]],
+) -> None:
+    """Print the pass-2 results (the same comparison as pass 1, against items)."""
+    print("\nMacro-defined types not found in the browse DB:")
+
+    if not results:
+        print("  (none)")
+        return
+
+    not_in_items = [r for r in results if r[2] is None]
+    no_expected = [r for r in results if r[2] is not None and r[3] is None]
+    discrepancies = [r for r in results if r[2] is not None and r[3] is False]
+    matches = [r for r in results if r[2] is not None and r[3] is True]
+
+    if not_in_items:
+        print("\n  Not in DumpPDB types (no expected source recorded):")
+        for type_name, file, _, _ in not_in_items:
+            print(f"    {type_name}")
+            print(f"      file    : {file}")
+
+    if no_expected:
+        print("\n  In DumpPDB but no expected source path to compare:")
+        for type_name, file, _, _ in no_expected:
+            print(f"    {type_name}")
+            print(f"      file    : {file}")
+
+    if discrepancies:
+        print("\n  Path discrepancies (recorded item path differs from macro file):")
+        for type_name, file, item, _ in discrepancies:
+            print(f"    {type_name}")
+            print(f"      item  : {item.path}")
+            print(f"      file  : {file}")
+
+    if matches:
+        print("\n  Path matches (macro file already recorded correctly):")
+        for type_name, file, item, _ in matches:
+            print(f"    {type_name}")
+            print(f"      item  : {item.path}")
+            print(f"      file  : {file}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Compare DumpPDB type sources against the VS Browse.VC.db database."
@@ -290,17 +448,44 @@ def parse_args() -> argparse.Namespace:
         default="Browse.VC.db",
         help="Visual Studio browse database (default: Browse.VC.db).",
     )
+    parser.add_argument(
+        "--source-path",
+        help="Root directory to scan for macro-defined types (pass 2).",
+    )
+    parser.add_argument(
+        "--macro-patterns",
+        help="Git-ignore-style file describing macros that define types (pass 2). "
+        "Each non-comment line is a call template with a <type> placeholder for "
+        "the type name, e.g. BUILD_EXPOSED_STRUCTURE_STRUCT_BEGIN(<type>). "
+        "Requires --source-path.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
 
+    if args.macro_patterns and not args.source_path:
+        print(
+            "--source-path is required when --macro-patterns is provided.",
+            file=sys.stderr,
+        )
+        return 2
+
     items = load_type_sources(args.sources_db)
 
     definitions, not_found, discrepancies = run_pass1(args.browse_db, items)
 
     report(definitions, not_found, discrepancies)
+
+    if args.macro_patterns:
+        results = run_pass2(
+            args.source_path,
+            args.macro_patterns,
+            items,
+            set(definitions),
+        )
+        report_pass2(results)
 
     return 0
 
