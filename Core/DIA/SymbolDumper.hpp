@@ -231,10 +231,14 @@ public:
         ret += modPrefix(a_symbol);
         ret += L"enum";
 
-        // Filter synthetic names like <unnamed-tag> or $HASH names
+        // Derive a friendly name: filters synthetic names like <unnamed-tag>,
+        // <undefined-type> or $HASH names, and turns inplace anonymous enum names
+        // like <unnamed-type-m_Member> into a usable "MemberEnum" identifier.
+
         std::wstring enum_symbolsName
-            = TypeWalker::getName(a_symbol, m_scope, m_config.m_showNonScoped);
-        if (!TypeWalker::isSyntheticName(enum_symbolsName))
+            = TypeWalker::prettyTypeName(
+                TypeWalker::getName(a_symbol, m_scope, m_config.m_showNonScoped), L"Enum");
+        if (!enum_symbolsName.empty())
         {
             ret += L" ";
             ret += enum_symbolsName;

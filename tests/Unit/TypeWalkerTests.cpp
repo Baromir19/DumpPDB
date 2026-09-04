@@ -61,6 +61,61 @@ TEST(TypeWalkerIsSyntheticName, UnterminatedDollarOnly)
     // A lone '$' is still considered synthetic by the current rule.
     EXPECT_TRUE(TypeWalker::isSyntheticName(L"$"));
 }
+// ----------------------------------------------------------------------------
+// prettyTypeName — clean MSVC synthetic/anonymous type names
+// ----------------------------------------------------------------------------
+
+TEST(TypeWalkerPrettyTypeName, RegularNameUnchanged)
+{
+    EXPECT_EQ(TypeWalker::prettyTypeName(L"Actor"), L"Actor");
+    EXPECT_EQ(TypeWalker::prettyTypeName(L"Test::Actor"), L"Test::Actor");
+}
+
+TEST(TypeWalkerPrettyTypeName, UndefinedTypeRemoved)
+{
+    EXPECT_TRUE(TypeWalker::prettyTypeName(L"<undefined-type>").empty());
+}
+
+TEST(TypeWalkerPrettyTypeName, UnnamedTagRemoved)
+{
+    EXPECT_TRUE(TypeWalker::prettyTypeName(L"<unnamed-tag>").empty());
+}
+
+TEST(TypeWalkerPrettyTypeName, HashNameRemoved)
+{
+    EXPECT_TRUE(TypeWalker::prettyTypeName(L"$HASH").empty());
+    EXPECT_TRUE(TypeWalker::prettyTypeName(L"$T1").empty());
+}
+
+TEST(TypeWalkerPrettyTypeName, EmptyNameStaysEmpty)
+{
+    EXPECT_EQ(TypeWalker::prettyTypeName(L""), L"");
+}
+
+TEST(TypeWalkerPrettyTypeName, InplaceAnonymousMember)
+{
+    // <unnamed-type-m_Member> -> "Member" (m_ prefix stripped, no suffix).
+    EXPECT_EQ(TypeWalker::prettyTypeName(L"<unnamed-type-m_Member>"), L"Member");
+}
+
+TEST(TypeWalkerPrettyTypeName, InplaceAnonymousMemberEnum)
+{
+    // <unnamed-type-m_DeadBodyPart> -> "DeadBodyPartEnum" (m_ stripped, Enum appended).
+    EXPECT_EQ(TypeWalker::prettyTypeName(L"<unnamed-type-m_DeadBodyPart>", L"Enum"),
+              L"DeadBodyPartEnum");
+}
+
+TEST(TypeWalkerPrettyTypeName, InplaceAnonymousStatic)
+{
+    // s_ prefix (static member) is stripped too.
+    EXPECT_EQ(TypeWalker::prettyTypeName(L"<unnamed-type-s_GlobalState>", L"Enum"),
+              L"GlobalStateEnum");
+}
+
+TEST(TypeWalkerPrettyTypeName, InplaceAnonymousNoMemberPrefix)
+{
+    EXPECT_EQ(TypeWalker::prettyTypeName(L"<unnamed-type-Misc>", L"Enum"), L"MiscEnum");
+}
 
 // ----------------------------------------------------------------------------
 // leafName — strip the namespace/scope prefix from a qualified name

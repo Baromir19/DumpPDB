@@ -762,11 +762,20 @@ static bool isWhitespace(wchar_t a_ch)
 
         case SymTagUDT:
         case SymTagEnum:
-        {
-            if (!name.empty())
+{
+
+            // Derive the type name: anonymous/inplace types get a friendly, re-usable
+            // identifier (enums get an "Enum" suffix, e.g. <unnamed-type-m_Member>
+            // -> "MemberEnum"; <undefined-type> / <unnamed-tag> / $HASH -> empty).
+            std::wstring typeBase = (symTag == SymTagEnum)
+                ? TypeWalker::prettyTypeName(name, L"Enum")
+                : TypeWalker::prettyTypeName(name);
+
+            if (!typeBase.empty())
             {
-                builder.base(name);
+                builder.base(typeBase);
             }
+
             if (isConst)
             {
                 builder.constQual();
@@ -842,6 +851,62 @@ static bool isWhitespace(wchar_t a_ch)
     {
         return a_name.empty() || a_name == L"<unnamed-tag>"
                || (!a_name.empty() && a_name.front() == L'$');
+    }
+
+    /// Convert an MSVC-generated synthetic/anonymous type name into a friendly C++ identifier
+    /// suitable for re-emitting in reconstructed definitions.
+
+    /// Handles:
+    ///   - L"<undefined-type>"          -> empty: anonymous type,no usable name (caller drops it).
+    ///   - L"<unnamed-tag>"             -> empty: anonymous type,no usable name.
+
+    ///   - L"<unnamed-type-m_Member>"   -> inplace anonymous type that MSVC named after its bound
+    ///     member variable. Strips the "<unnamed-type-" / ">" wrapper and the Hungarian-ish
+    ///     member/static/global prefix (m_/s_/g_). When *a_kindSuffix* is supplied
+    ///     (e.g. L"Enum" for enums), it is appended -> e.g. L"MemberEnum".
+    ///   - "$"-prefixed name       -> empty: compiler-generated hash name (anonymous).
+    ///   - Anything else            -> returned unchanged (normal named types are untouched).
+    static std::wstring prettyTypeName(const std::wstring& a_name,
+        const wchar_t* a_kindSuffix = nullptr)
+    {
+        if (a_name.empty())
+            return a_name;
+
+        if (a_name == L"<unnamed-tag>" || a_name == L"<undefined-type>")
+            return L"";
+
+        if (a_name.front() == L'$')
+            return L"";
+
+        // inplace anonymous types: "<unnamed-type-m_Member>"
+
+        const wchar_t kAnonPrefix[] = L"<unnamed-type-";
+        constexpr size_t kAnonPrefixLen = (sizeof(kAnonPrefix) / sizeof(kAnonPrefix[0])) - 1;
+        if (a_name.compare(0, kAnonPrefixLen, kAnonPrefix) == 0)
+        {
+            std::wstring inner = a_name.substr(kAnonPrefixLen);
+            if (!inner.empty() && inner.back() == L'>')
+                inner.pop_back();
+
+            // Strip Hungarian-ish member/static/global prefix (m_, s_, g_).
+            static const wchar_t* memberPrefixes[] = { L"m_", L"s_", L"g_" };
+
+            for (const auto* pfx : memberPrefixes)
+            {
+                if (inner.compare(0, 2, pfx) == 0)
+                {
+                    inner.erase(0, 2);
+                    break;
+                }
+            }
+
+            if (a_kindSuffix != nullptr)
+                inner += a_kindSuffix;
+
+            return inner;
+        }
+
+        return a_name;
     }
 
     /// Get the name of a symbol, optionally stripping the current scope prefix.
