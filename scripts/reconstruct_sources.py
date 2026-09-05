@@ -33,6 +33,7 @@ Example::
 import argparse
 import json
 import sys
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -329,17 +330,172 @@ def reconstruct_from_file(template_path, data=None):
 
 
 # ---------------------------------------------------------------------------
+# Target-file integration
+# ---------------------------------------------------------------------------
+
+_OPEN_TYPES_MARKER = "/* <reconstruction:types> */"
+_CLOSE_TYPES_MARKER = "/* </reconstruction:types> */"
+
+
+def _log(message):
+    # Progress notes go to stderr so stdout stays clean for a possible pipe.
+    print(f"[reconstruct_sources] {message}", file=sys.stderr)
+
+
+def _leading_whitespace(line):
+    # Everything up to (not including) the first non-space/tab character.
+    stripped = line.lstrip(" \t")
+    return line[: len(line) - len(stripped)]
+
+
+def _strip_blank_lines(lines):
+    # Drop leading and trailing blank lines, keeping the interior untouched.
+    lines = list(lines)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return lines
+
+
+def _merge_into_content(content, result_text, newline="\n"):
+    """Merge ``result_text`` into ``content`` between the reconstruction markers.
+
+    Existing text already written between the markers is preserved untouched; the
+    freshly rendered result is appended after it (a section is separated from a
+    neighbouring one by ``1-2`` line breaks). If the markers are missing, they
+    are appended to the end of the content.
+
+    Args:
+        content:     Current text of the target file (``""`` for a new file).
+        result_text: The freshly reconstructed snippet(s) to add.
+        newline:    Newline sequence used by the target file (``"\\n"`` or ``"\\r\\n"``).
+
+    Returns:
+        ``(updated_content, info)``. ``info["marker"]`` is ``"within"`` when the
+        result landed between already-present markers, ``"appended"`` when the
+        markers were added to the end (or the file was brand-new), and
+        ``info["created"]`` records whether the content started out empty.
+    """
+    open_marker = _OPEN_TYPES_MARKER
+    close_marker = _CLOSE_TYPES_MARKER
+    created = not content.strip()
+
+    lines = content.split(newline) if content else []
+
+    open_idx = close_idx = None
+    for i, line in enumerate(lines):
+        if open_idx is None and open_marker in line:
+            open_idx = i
+        if close_idx is None and close_marker in line:
+            close_idx = i
+        if open_idx is not None and close_idx is not None:
+            break
+
+    result_lines = _strip_blank_lines(
+        [line.rstrip("\r") for line in result_text.split("\n")]
+    )
+
+    valid_pair = (
+        open_idx is not None and close_idx is not None and open_idx <= close_idx
+    )
+
+    if not valid_pair:
+        # No usable marker pair -> append the region at the end of the file.
+        info = {"marker": "appended", "created": created}
+        indent = ""
+        result_region = [indent + line for line in result_lines]
+        if not result_region:
+            result_region = [""]
+        region = [indent + open_marker] + result_region + [indent + close_marker]
+        tail = [""] if (lines and lines[-1].strip()) else []
+        new_lines = lines + tail + region
+    else:
+        info = {"marker": "within", "created": created}
+
+        if open_idx == close_idx:
+            # Open and close markers on the same line -> split them apart.
+            inline = lines[open_idx]
+            start = inline.find(open_marker) + len(open_marker)
+            end = inline.find(close_marker, start)
+            mid = inline[start:end].strip() if end != -1 else ""
+            indent = _leading_whitespace(inline)
+            existing = _strip_blank_lines([mid]) if mid else []
+            open_line = indent + open_marker
+            close_line = indent + close_marker
+        else:
+            indent = _leading_whitespace(lines[open_idx])
+            existing = _strip_blank_lines(lines[open_idx + 1 : close_idx])
+            open_line = lines[open_idx]
+            close_line = lines[close_idx]
+
+        interior = list(existing)
+        if existing and result_lines:
+            interior.append("")  # one blank line between the old and the new block
+        interior.extend([indent + line for line in result_lines])
+        if not interior:
+            interior = [""]  # keep markers readable even without any content
+
+        new_lines = (
+            lines[:open_idx]
+            + [open_line]
+            + interior
+            + [close_line]
+            + lines[close_idx + 1 :]
+        )
+
+    updated = newline.join(new_lines).rstrip(newline) + newline
+    return updated, info
+
+
+def apply_reconstruction(target_path, result_text):
+    """Write ``result_text`` into ``target_path`` inside the markers region.
+
+    The target file is created (including any missing parent directories) when
+    it does not exist yet. Progress notes are logged to stderr.
+    """
+    path = Path(target_path)
+
+    if path.exists():
+        content = path.read_text(encoding="utf-8")
+        newline = "\r\n" if "\r\n" in content else "\n"
+    else:
+        content = ""
+        newline = "\n"
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    updated, info = _merge_into_content(content, result_text, newline)
+    path.write_text(updated, encoding="utf-8")
+
+    if info["created"]:
+        _log(f"created {target_path} with a reconstruction section")
+    elif info["marker"] == "within":
+        _log(f"inserted reconstruction into {target_path}")
+    else:
+        _log(f"appended a reconstruction section to {target_path}")
+
+    return updated
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Render a reconstruction template (DSL) with JSON data.",
+        description="Render a reconstruction template (DSL) with JSON data and "
+                    "write the result into a target file.",
     )
     parser.add_argument(
         "--template",
         required=True,
         help="Path to the template file (e.g. reconstruction_type.example.txt)",
+    )
+    parser.add_argument(
+        "--target",
+        required=True,
+        help="Path to the file to merge the reconstruction into "
+             "(e.g. template.example.txt). Created when missing.",
     )
     args = parser.parse_args(argv)
 
@@ -349,7 +505,7 @@ def main(argv=None):
 
     result = reconstruct_from_file(args.template, data)
 
-    print(result)
+    apply_reconstruction(args.target, result)
 
     return 0
 
