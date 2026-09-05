@@ -2,5 +2,7 @@
 
 namespace Game
 {
+    /* <reconstruction:types> */
 
+    /* </reconstruction:types> */
 }
