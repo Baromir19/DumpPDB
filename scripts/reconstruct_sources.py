@@ -35,6 +35,14 @@ import json
 import sys
 from pathlib import Path
 
+from dumppdb_tools.sources import (
+    TypeSource,
+    load_type_sources,
+    locate_browse_definitions,
+    macro_found_types,
+    missing_from_project,
+)
+
 
 # ---------------------------------------------------------------------------
 # Node types
@@ -481,10 +489,43 @@ def apply_reconstruction(target_path, result_text):
 # CLI
 # ---------------------------------------------------------------------------
 
+def _type_data(item: TypeSource) -> dict:
+    """Build the DSL template data for a single type record.
+
+    Only the values we actually know from the DumpPDB database
+    (name, recorded source path and optional related type) are filled in;
+    the reconstructed definition itself (``OBJECT``) is expected to be
+    supplied by the pipeline at render time.
+    """
+    return {
+        "TYPE": {
+            "NAME": item.type_name,
+            "PATH": item.path,
+            "RELATED": item.related_name,
+            "PREFIXES": [],
+            "SUFFIXES": [],
+            "OBJECT": "",
+        }
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Render a reconstruction template (DSL) with JSON data and "
-                    "write the result into a target file.",
+        description=(
+            "Reconstruct source snippets (DSL) for the types recorded in the "
+            "DumpPDB database that are not yet present in the project tree."
+        ),
+    )
+    parser.add_argument(
+        "--sources-db",
+        required=True,
+        help="DumpPDB SQLite database with the `types` table (required).",
+    )
+    parser.add_argument(
+        "--source-path",
+        required=True,
+        help="Root of the (reconstructed) project tree used to skip types "
+             "whose source file already exists.",
     )
     parser.add_argument(
         "--template",
@@ -492,20 +533,60 @@ def main(argv=None):
         help="Path to the template file (e.g. reconstruction_type.example.txt)",
     )
     parser.add_argument(
-        "--target",
-        required=True,
-        help="Path to the file to merge the reconstruction into "
-             "(e.g. template.example.txt). Created when missing.",
+        "--browse-db",
+        help="Visual Studio browse database (Browse.VC.db). When given, types "
+        "already defined there are skipped.",
+    )
+    parser.add_argument(
+        "--macro-patterns",
+        help="Git-ignore-style file describing macros that define types. "
+        "Each non-comment line is a call template with a <type> placeholder for "
+        "the type name, e.g. BUILD_EXPOSED_STRUCTURE_STRUCT_BEGIN(<type>). "
+        "Types detected via these macros are skipped.",
     )
     args = parser.parse_args(argv)
 
-    data = {
-        "TYPE": {"NAME": "Actor", "PREFIXES": ["PREF_1", "PREF_2"], "SUFFIXES": ["SUF_DEF"], "OBJECT": "struct Actor {}"},
-    }
+    items = load_type_sources(args.sources_db)
 
-    result = reconstruct_from_file(args.template, data)
+    discovered: set[str] = set()
 
-    apply_reconstruction(args.target, result)
+    if args.browse_db:
+        browse_found = set(locate_browse_definitions(args.browse_db, items))
+        if browse_found:
+            _log(
+                f"skipped {len(browse_found)} type(s) already defined in "
+                f"{args.browse_db}"
+            )
+        discovered |= browse_found
+
+    if args.macro_patterns:
+        macro_found = macro_found_types(
+            args.source_path,
+            args.macro_patterns,
+            items,
+            discovered,
+        )
+        if macro_found:
+            _log(
+                f"skipped {len(macro_found)} type(s) already defined via macros "
+                f"in {args.source_path}"
+            )
+        discovered |= macro_found
+
+    if discovered:
+        items = [it for it in items if it.type_name not in discovered]
+
+    # TODO: items -> path + type...
+
+    """
+    template_text = Path(args.template).read_text(encoding="utf-8")
+
+    for item in missing:
+        result = reconstruct(template_text, _type_data(item))
+        apply_reconstruction(args.target, result)
+
+    _log(f"reconstructed {len(missing)} type(s) into {args.target}")
+    """
 
     return 0
 

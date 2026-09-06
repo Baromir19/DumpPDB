@@ -31,6 +31,15 @@ from dumppdb_tools.resolution import (
     strip_template_args,
     score_sources,
 )
+from dumppdb_tools.sources import (
+    SOURCE_EXTENSIONS,
+    TypeSource,
+    collect_project_paths,
+    load_type_sources,
+    missing_from_project,
+    paths_match,
+    walk_project_sources,
+)
 
 __all__ = [
     # core
@@ -61,5 +70,13 @@ __all__ = [
     "resolve_best",
     "strip_template_args",
     "score_sources",
+    # sources
+    "SOURCE_EXTENSIONS",
+    "TypeSource",
+    "collect_project_paths",
+    "load_type_sources",
+    "missing_from_project",
+    "paths_match",
+    "walk_project_sources",
 ]
 __version__ = "0.1.0"
