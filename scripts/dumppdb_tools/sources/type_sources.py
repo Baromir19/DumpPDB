@@ -91,6 +91,7 @@ def load_type_sources(db_path: str | Path) -> list[TypeSource]:
                 SELECT related_type_id
                 FROM type_relations
                 WHERE type_id = ?
+                  AND relation_type = 'template_instance'
                 ORDER BY related_type_id
                 LIMIT 1
                 """,

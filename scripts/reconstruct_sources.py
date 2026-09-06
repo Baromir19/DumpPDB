@@ -68,6 +68,7 @@ class TypeReconstruction:
     prefixes: list[str]
     suffixes: list[str]
     object: str | None
+    template: str | None = None
 
 
 def split_meta(base_name: str, meta_name: str) -> tuple[str, str]:
@@ -85,7 +86,7 @@ def split_meta(base_name: str, meta_name: str) -> tuple[str, str]:
     return prefix, suffix
 
 
-def build_reconstruction(item: TypeSource) -> TypeReconstruction:
+def build_reconstruction(item: TypeSource, meta_upper: bool = True) -> TypeReconstruction:
     """Derive prefixes/suffixes for *item* and bundle them with its name.
 
     The base name comes from *item.type_name*; every name in *item.metas*
@@ -98,9 +99,9 @@ def build_reconstruction(item: TypeSource) -> TypeReconstruction:
     for meta_name in item.metas or []:
         prefix, suffix = split_meta(item.type_name, meta_name)
         if prefix:
-            prefixes.append(prefix)
+            prefixes.append(prefix.upper() if meta_upper else prefix)
         if suffix:
-            suffixes.append(suffix)
+            suffixes.append(suffix.upper() if meta_upper else suffix)
 
     # Keep order but drop duplicates (several variants may share a marker).
     return TypeReconstruction(
@@ -108,6 +109,7 @@ def build_reconstruction(item: TypeSource) -> TypeReconstruction:
         prefixes=list(dict.fromkeys(prefixes)),
         suffixes=list(dict.fromkeys(suffixes)),
         object=None,
+        template=item.related_name,
     )
 
 
@@ -666,7 +668,7 @@ def main(argv=None):
 
             for rec in reconstructions:
                 try:
-                    rec.object = pdb.dump_type(rec.name, True)
+                    rec.object = pdb.dump_type(rec.template or rec.name, True)
                 except Exception:
                     _log(
                         f"could not dump type {rec.name}; "
