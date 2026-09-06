@@ -21,11 +21,15 @@ class TypeSource:
             a relation (meta variant / template instantiation), else ``None``.
         path:         Extension-stripped, normalized relative path of the
             recorded source file, or ``None`` when nothing was resolved.
+        metas:        Names of the type's ``meta_variant`` relations (the
+            prefix/suffix wrapper types declared through this type), else
+            ``None`` when the type has no such relations.
     """
 
     type_name: str
     related_name: str | None
     path: str | None
+    metas: list[str] | None = None
 
 
 def load_type_sources(db_path: str | Path) -> list[TypeSource]:
@@ -66,6 +70,21 @@ def load_type_sources(db_path: str | Path) -> list[TypeSource]:
 
             if is_related:
                 continue
+
+            # Names of the prefix/suffix wrapper types declared through this
+            # base type, i.e. every relation of kind `meta_variant`.
+            meta_rows = conn.execute(
+                """
+                SELECT t.name
+                FROM type_relations tr
+                JOIN types t ON t.id = tr.related_type_id
+                WHERE tr.type_id = ? AND tr.relation_type = 'meta_variant'
+                ORDER BY tr.related_type_id
+                """,
+                (type_id,),
+            ).fetchall()
+
+            metas = [row["name"] for row in meta_rows]
 
             relation = conn.execute(
                 """
@@ -118,6 +137,7 @@ def load_type_sources(db_path: str | Path) -> list[TypeSource]:
                     type_name=type_name,
                     related_name=related_name,
                     path=path,
+                    metas=metas or None,
                 )
             )
 

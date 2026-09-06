@@ -31,10 +31,12 @@ Example::
 """
 
 import argparse
+from dataclasses import dataclass
 import json
 import sys
 from pathlib import Path
 
+from dumppdb_tools import PdbClient
 from dumppdb_tools.sources import (
     TypeSource,
     load_type_sources,
@@ -42,6 +44,71 @@ from dumppdb_tools.sources import (
     macro_found_types,
     missing_from_project,
 )
+
+
+# ---------------------------------------------------------------------------
+# Reconstruction model
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class TypeReconstruction:
+    """Data the DSL needs to reconstruct a base type and its meta variants.
+
+    Attributes:
+        name:     The base type name (the real type stored in the PDB).
+        prefixes: Meta prefixes derived from the type's ``meta_variant``
+            relations (e.g. ``["C"]`` for ``CVehicleDefinition``).
+        suffixes: Meta suffixes derived from the type's ``meta_variant``
+            relations (e.g. ``["Definition"]`` for ``CVehicleDefinition``).
+        object:   The dumped definition text of the type, or ``None`` when
+            no PDB was provided.
+    """
+
+    name: str
+    prefixes: list[str]
+    suffixes: list[str]
+    object: str | None
+
+
+def split_meta(base_name: str, meta_name: str) -> tuple[str, str]:
+    """Split a meta-variant name around the *base_name*.
+
+    The "cut" between the base type and its meta variant is what produces the
+    prefix/suffix markers. For ``base_name="Vehicle"`` and
+    ``meta_name="CVehicleDefinition"`` this returns ``("C", "Definition")``.
+    """
+    index = meta_name.find(base_name)
+    if index == -1:
+        return "", ""
+    prefix = meta_name[:index]
+    suffix = meta_name[index + len(base_name):]
+    return prefix, suffix
+
+
+def build_reconstruction(item: TypeSource) -> TypeReconstruction:
+    """Derive prefixes/suffixes for *item* and bundle them with its name.
+
+    The base name comes from *item.type_name*; every name in *item.metas*
+    (the ``meta_variant`` relations recorded for this type) is cut around the
+    base name to recover the prefix/suffix markers of that wrapper type.
+    """
+    prefixes: list[str] = []
+    suffixes: list[str] = []
+
+    for meta_name in item.metas or []:
+        prefix, suffix = split_meta(item.type_name, meta_name)
+        if prefix:
+            prefixes.append(prefix)
+        if suffix:
+            suffixes.append(suffix)
+
+    # Keep order but drop duplicates (several variants may share a marker).
+    return TypeReconstruction(
+        name=item.type_name,
+        prefixes=list(dict.fromkeys(prefixes)),
+        suffixes=list(dict.fromkeys(suffixes)),
+        object=None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -489,22 +556,20 @@ def apply_reconstruction(target_path, result_text):
 # CLI
 # ---------------------------------------------------------------------------
 
-def _type_data(item: TypeSource) -> dict:
-    """Build the DSL template data for a single type record.
+def _type_data(rec: TypeReconstruction) -> dict:
+    """Build the DSL template data for a reconstructed type.
 
-    Only the values we actually know from the DumpPDB database
-    (name, recorded source path and optional related type) are filled in;
-    the reconstructed definition itself (``OBJECT``) is expected to be
-    supplied by the pipeline at render time.
+    Values come from the loaded database record: the base type name, the
+    prefix/suffix markers derived from its ``meta_variant`` relations and the
+    dumped definition (``OBJECT``). ``OBJECT`` is left empty when a PDB was
+    not requested or the type could not be dumped.
     """
     return {
         "TYPE": {
-            "NAME": item.type_name,
-            "PATH": item.path,
-            "RELATED": item.related_name,
-            "PREFIXES": [],
-            "SUFFIXES": [],
-            "OBJECT": "",
+            "NAME": rec.name,
+            "PREFIXES": rec.prefixes,
+            "SUFFIXES": rec.suffixes,
+            "OBJECT": rec.object or "",
         }
     }
 
@@ -544,6 +609,16 @@ def main(argv=None):
         "the type name, e.g. BUILD_EXPOSED_STRUCTURE_STRUCT_BEGIN(<type>). "
         "Types detected via these macros are skipped.",
     )
+    parser.add_argument(
+        "--pdb",
+        help="PDB file to dump each type's definition (OBJECT) from. When "
+        "omitted, OBJECT is left empty.",
+    )
+    parser.add_argument(
+        "--dll",
+        default="./PdbAPI.dll",
+        help="Path to PdbAPI.dll (default: ./PdbAPI.dll)",
+    )
     args = parser.parse_args(argv)
 
     items = load_type_sources(args.sources_db)
@@ -576,16 +651,49 @@ def main(argv=None):
     if discovered:
         items = [it for it in items if it.type_name not in discovered]
 
-    # TODO: items -> path + type...
+    # Cut each remaining record (its name plus the meta-variant relations)
+    # into a reconstruction object carrying the prefix/suffix markers and,
+    # when a PDB is provided, the dumped definition of the type itself.
+    reconstructions = [build_reconstruction(item) for item in items]
+
+    if args.pdb:
+        pdb = PdbClient(args.dll)
+
+        try:
+            pdb.open(args.pdb)
+
+            pdb.set_config(templateParams=True)
+
+            for rec in reconstructions:
+                try:
+                    rec.object = pdb.dump_type(rec.name, True)
+                except Exception:
+                    _log(
+                        f"could not dump type {rec.name}; "
+                        f"leaving OBJECT empty"
+                    )
+                    rec.object = None
+        except Exception as exc:
+            _log(f"failed to open {args.pdb}: {exc}")
+        finally:
+            pdb.close()
+
+    with_object = sum(rec.object is not None for rec in reconstructions)
+    _log(
+        f"{len(reconstructions)} type(s) ready "
+        f"({with_object} with OBJECT)"
+    )
+
+    _log(f"{reconstructions}")
 
     """
     template_text = Path(args.template).read_text(encoding="utf-8")
 
-    for item in missing:
-        result = reconstruct(template_text, _type_data(item))
+    for rec in reconstructions:
+        result = reconstruct(template_text, _type_data(rec))
         apply_reconstruction(args.target, result)
 
-    _log(f"reconstructed {len(missing)} type(s) into {args.target}")
+    _log(f"reconstructed {len(reconstructions)} type(s) into {args.target}")
     """
 
     return 0
