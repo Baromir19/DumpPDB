@@ -69,6 +69,7 @@ class TypeReconstruction:
     suffixes: list[str]
     object: str | None
     template: str | None = None
+    path: str | None = None
 
 
 def split_meta(base_name: str, meta_name: str) -> tuple[str, str]:
@@ -110,6 +111,7 @@ def build_reconstruction(item: TypeSource, meta_upper: bool = True) -> TypeRecon
         suffixes=list(dict.fromkeys(suffixes)),
         object=None,
         template=item.related_name,
+        path=item.path,
     )
 
 
@@ -525,6 +527,50 @@ def _merge_into_content(content, result_text, newline="\n"):
     return updated, info
 
 
+DEFAULT_EXTENSIONS = (".h", ".hpp", ".hxx", ".hh", ".inl")
+"""Extensions tried, in priority order, when a reconstructed path needs one.
+
+The recorded ``TypeSource.path`` is extension-stripped, so the tool picks a
+header extension for the file it writes. ``.h`` is the first (default)
+priority and ``.hpp`` the fallback; a user-supplied ``--extension`` is tried
+first, with these defaults kept as further fallbacks.
+"""
+
+
+def resolve_target_path(source_root, rel_path, extensions=DEFAULT_EXTENSIONS):
+    """Full path under *source_root* for an extension-stripped *rel_path*.
+
+    Args:
+        source_root: Root of the (reconstructed) project tree (``--source-path``).
+        rel_path:    Extension-stripped, normalized *relative* path as recorded
+            in the database (``TypeSource.path``), or ``None``.
+        extensions:  Extensions to try, highest priority first.
+
+    Returns:
+        The full ``Path`` to write to, or ``None`` when *rel_path* is empty.
+        The first candidate that already exists under *source_root* wins, so
+        several types recorded against the same file append to one file
+        instead of creating siblings; otherwise the highest-priority extension
+        is used for a brand-new file.
+    """
+    if not rel_path:
+        return None
+
+    ext_stripped = Path(rel_path).as_posix()
+
+    for ext in extensions:
+        if ext == "":
+            continue
+        candidate = source_root / (ext_stripped + ext)
+        try:
+            if candidate.exists():
+                return candidate
+        except OSError:
+            continue
+
+    return source_root / (ext_stripped + next(e for e in extensions if e))
+
+
 def apply_reconstruction(target_path, result_text):
     """Write ``result_text`` into ``target_path`` inside the markers region.
 
@@ -598,6 +644,13 @@ def main(argv=None):
         "--template",
         required=True,
         help="Path to the template file (e.g. reconstruction_type.example.txt)",
+    )
+    parser.add_argument(
+        "--extension",
+        default=None,
+        help="Priority extension to append to reconstructed file paths. "
+        "Defaults to .h (falling back to .hpp/.hxx/.hh/.inl). Use e.g. "
+        "--extension .hpp to prioritise a different header extension.",
     )
     parser.add_argument(
         "--browse-db",
@@ -686,17 +739,30 @@ def main(argv=None):
         f"({with_object} with OBJECT)"
     )
 
-    _log(f"{reconstructions}")
-
-    """
     template_text = Path(args.template).read_text(encoding="utf-8")
 
-    for rec in reconstructions:
-        result = reconstruct(template_text, _type_data(rec))
-        apply_reconstruction(args.target, result)
+    source_root = Path(args.source_path)
 
-    _log(f"reconstructed {len(reconstructions)} type(s) into {args.target}")
-    """
+    if args.extension:
+        extensions = (args.extension,) + DEFAULT_EXTENSIONS
+    else:
+        extensions = DEFAULT_EXTENSIONS
+
+    written = 0
+
+    for rec in reconstructions:
+        target = resolve_target_path(source_root, rec.path, extensions)
+
+        if target is None:
+            _log(f"no recorded path for {rec.name}; skipping")
+            continue
+
+        rec.path = str(target)
+        result = reconstruct(template_text, _type_data(rec))
+        apply_reconstruction(target, result)
+        written += 1
+
+    _log(f"reconstructed {written} type(s) into {source_root}")
 
     return 0
 
