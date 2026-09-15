@@ -251,7 +251,8 @@ public:
     {
         bool active = false;
         std::wstring decl;
-        std::vector<std::pair<std::wstring, std::wstring>> replacements; ///< { concrete arg, param name }
+        std::vector<std::pair<std::wstring, std::wstring>>
+            replacements; ///< { concrete arg, param name }
     };
 
     static bool isWhitespace(wchar_t a_ch)

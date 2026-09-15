@@ -33,9 +33,9 @@ struct PdbApiDumpConfig
     int32_t showTypeSource;
     int32_t curlyBraceNewline;
     int32_t hideCompilerGenerated;
-    int32_t templateParams;  ///< Emit template<...> for requested template instantiations.
+    int32_t templateParams; ///< Emit template<...> for requested template instantiations.
     uint32_t baseAccessType;
-    int32_t intStyle;        ///< 0 = MsvcNative (__int32), 1 = Cstdint (int32_t).
+    int32_t intStyle; ///< 0 = MsvcNative (__int32), 1 = Cstdint (int32_t).
 };
 
 // --- Lifecycle ---
