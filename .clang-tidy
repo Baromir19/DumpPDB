@@ -1,0 +1,28 @@
+Checks: >
+  bugprone-*,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  performance-*,
+  modernize-*,
+  readability-*,
+  -modernize-use-trailing-return-type
+
+WarningsAsErrors: ''
+
+HeaderFilterRegex: '^(Core|API|CLI)/.*\.(h|hpp|cpp)$'
+
+FormatStyle: file
+
+CheckOptions:
+
+  - key: modernize-use-auto.MinTypeNameLength
+    value: '0'
+
+  - key: readability-redundant-casting.IgnoreMacros
+    value: 'true'
+
+  - key: modernize-use-trailing-return-type.IgnoreMacros
+    value: 'true'
+
+  - key: modernize-use-nullptr.NullMacros
+    value: ''

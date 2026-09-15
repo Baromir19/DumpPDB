@@ -1,0 +1,44 @@
+#pragma once
+
+#include <Core/PdbToolset.hpp>
+#include <Core/System/ConsoleManager.hpp>
+
+#include <CLI/Application/Command/ICommand.hpp>
+
+class CommandSource : public ICommand
+{
+public:
+
+    CommandSource()
+        : ICommand(0, Type::COMMAND_EXECUTE)
+    {
+        m_names.push_back(L"-sources");
+    }
+
+    // virtual const wchar_t* getCommandName() const override { return L"-type"; }
+
+    [[nodiscard]]
+    const wchar_t* getArgHelp() const override
+    {
+        return L"";
+    }
+
+    [[nodiscard]]
+    const wchar_t* getUsageHelp() const override
+    {
+        return L"print file sources";
+    }
+
+    virtual bool execute(const std::wstring* a_commandArgs) override
+    {
+        auto text = PdbToolset::instance().dumpSourceFiles();
+
+        if (text.empty())
+        {
+            return false;
+        }
+
+        ConsoleManager::print(text.c_str());
+        return true;
+    }
+};
