@@ -7,15 +7,11 @@
 #include <Core/Util/Com/ComPtr.hpp>
 
 /// Searches for DIA symbols by name within a given scope.
-
 class SymbolFinder
 {
 public:
 
-    /// Find the first symbol matching the given tag and name within a_scope.
-    /// Returns nullptr if not found.
-    /// This mirrors the old behavior of displayClass(name)/displayEnum(name)/displayTypedef(name)
-    /// which returned after the first match.
+    /// Find the first symbol matching the given tag and name. Returns nullptr if not found.
     static ComPtr<IDiaSymbol> findFirst(
         IDiaSymbol* a_scope, enum SymTagEnum a_tag, const wchar_t* a_name, bool a_caseSensitive)
     {
@@ -39,8 +35,7 @@ public:
         return ComPtr<IDiaSymbol>();
     }
 
-    /// Find all symbols matching the given tag and name within a_scope.
-    /// This mirrors the old behavior of displayType(name) which processed all matches.
+    /// Find all symbols matching the given tag and name.
     static std::vector<ComPtr<IDiaSymbol>> findAll(
         IDiaSymbol* a_scope, enum SymTagEnum a_tag, const wchar_t* a_name, bool a_caseSensitive)
     {
@@ -66,10 +61,7 @@ public:
         return results;
     }
 
-    /// Find symbols by namespace prefix fallback.
-    /// Searches all top-level symbols and matches those whose name starts with a_prefix
-    /// (or a_prefix + "::") and has no additional "::" after the prefix.
-    /// This mirrors the old displayTypePrefixed behavior.
+    /// Find symbols whose name starts with a_prefix (or a_prefix + "::") with no further "::".
     static std::vector<ComPtr<IDiaSymbol>> findByNamespacePrefix(
         IDiaSymbol* a_scope, const wchar_t* a_prefix, bool a_caseSensitive)
     {
@@ -82,7 +74,6 @@ public:
             || !enum_symbolsSymbols)
             return results;
 
-        // Build the prefix to search for
         std::wstring prefix = a_prefix;
         if (prefix.size() < 2 || prefix[prefix.size() - 2] != L':'
             || prefix[prefix.size() - 1] != L':')
@@ -100,7 +91,6 @@ public:
                 std::wstring name(bstrName);
                 SysFreeString(bstrName);
 
-                // Check if name starts with prefix and has no additional "::" after the prefix
                 bool matches = false;
                 if (a_caseSensitive)
                 {
@@ -109,7 +99,6 @@ public:
                 }
                 else
                 {
-                    // Case-insensitive comparison
                     std::wstring lowerName = name;
                     std::wstring lowerPrefix = prefix;
                     for (auto& ch : lowerName)

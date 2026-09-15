@@ -9,11 +9,6 @@
 
 namespace
 {
-// DIA / PdbToolset::instance() is a single shared session, serialize all
-// access to it. If you need concurrent sessions for different PDBs later,
-// this whole file needs to move to a handle-based design instead of the
-// Singleton
-//
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 std::mutex g_mutex;
 std::wstring g_lastError;
@@ -30,13 +25,12 @@ std::wstring exceptionToWString(const std::exception& a_ex)
     return {what.begin(), what.end()};
 }
 
-/// Shared buffer-copy logic implementing the two-phase size/copy convention.
 PdbApiResult copyToBuffer(const std::wstring& a_source,
     wchar_t* a_outBuffer,
     uint32_t a_bufferSize,
     uint32_t* a_outRequiredSize)
 {
-    const auto needed = static_cast<uint32_t>(a_source.size() + 1); // + '\0'
+    const auto needed = static_cast<uint32_t>(a_source.size() + 1);
 
     if (a_outRequiredSize != nullptr)
     {
@@ -45,7 +39,7 @@ PdbApiResult copyToBuffer(const std::wstring& a_source,
 
     if (a_outBuffer == nullptr || a_bufferSize == 0)
     {
-        return PDBAPI_OK; // size-query mode
+        return PDBAPI_OK;
     }
 
     if (a_bufferSize < needed)
@@ -97,8 +91,7 @@ bool fromApi(const PdbApiDumpConfig& a_in, DumpConfig& a_out)
     return true;
 }
 
-/// Common wrapper: runs a_fn under the lock, catches everything,
-/// routes exceptions into g_lastError + a proper result code.
+/// Runs a_fn under the global mutex, catches all exceptions into g_lastError.
 template <class Fn>
 PdbApiResult guarded(Fn&& a_fn)
 {
@@ -124,7 +117,7 @@ PdbApiResult guarded(Fn&& a_fn)
     }
 }
 
-/// Shared implementation for all "find by name -> dump -> copy" entry points.
+/// Shared implementation for "find by name -> dump -> copy" entry points.
 PdbApiResult dumpByNameImpl(std::wstring (PdbToolset::*a_method)(const wchar_t*, bool),
     const wchar_t* a_name,
     int32_t a_caseSensitive,
@@ -183,7 +176,6 @@ PdbApiResult PdbApi_Initialize(const wchar_t* a_pdbPath)
 void PdbApi_Shutdown()
 {
     std::scoped_lock lock(g_mutex);
-    // PdbToolset is a Singleton wrapping DiaSession
     g_lastError.clear();
 }
 

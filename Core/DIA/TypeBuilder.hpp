@@ -5,11 +5,9 @@
 #include <vector>
 #include <cstdint>
 
-/// Chain-of-modifiers approach for C++ type rendering.
-/// Builds a type declaration by collecting modifiers from inner (base) to outer,
+/// Chain-of-modifiers type renderer.
+/// Builds a C++ type declaration by collecting modifiers inner-to-outer,
 /// then renders using the spiral/right-left rule.
-/// This systematically fixes the &* vs *& bug that flat-string concatenation causes.
-
 enum class ModifierKind : uint8_t
 {
     Pointer,
@@ -20,7 +18,6 @@ enum class ModifierKind : uint8_t
     BitField
 };
 
-/// Qualifiers (const/volatile) that can be attached to a type level.
 struct TypeQualifier
 {
     bool isConst = false;
@@ -31,10 +28,10 @@ struct Modifier
 {
     ModifierKind kind;
     TypeQualifier qualifier;
-    size_t arrayCount = 0;     // for Array
-    std::wstring functionArgs; // for Function
-    DWORD bitPosition = 0;     // for BitField
-    ULONGLONG bitLength = 0;   // for BitField
+    size_t arrayCount = 0;     ///< Array element count.
+    std::wstring functionArgs; ///< Comma-separated arg string for Function.
+    DWORD bitPosition = 0;     ///< Bit-field position.
+    ULONGLONG bitLength = 0;   ///< Bit-field length.
 };
 
 class TypeBuilder
@@ -103,8 +100,7 @@ public:
         return *this;
     }
 
-    /// Set const qualifier on the last modifier (e.g. pointer) in the chain.
-    /// For pointers: int* const  (const pointer)
+    /// Set const qualifier on the last pointer modifier (int* const).
     TypeBuilder& constPointer()
     {
         if (!m_chain.empty())
@@ -112,7 +108,6 @@ public:
         return *this;
     }
 
-    /// Set volatile qualifier on the last modifier (e.g. pointer) in the chain.
     TypeBuilder& volatilePointer()
     {
         if (!m_chain.empty())
@@ -120,14 +115,11 @@ public:
         return *this;
     }
 
-    /// Build the type string using spiral/right-left rule.
-    /// The chain is traversed from inner to outer (begin to end),
-    /// applying modifiers in the correct C++ declaration order.
+    /// Build the type string using the spiral/right-left rule.
     std::wstring build() const
     {
         std::wstring result;
 
-        // 1. Base qualifiers (const, volatile) belong before the base type.
         if (m_baseQualifier.isVolatile)
         {
             result += L"volatile ";
@@ -137,16 +129,11 @@ public:
             result += L"const ";
         }
 
-        // 2. Base type
         if (!mbaseType.empty())
         {
             result += mbaseType;
         }
 
-        // 3. Build prefix (before name) and postfix (after name) from the modifier chain.
-        //    Walk from inner (begin) to outer (end) to correctly handle C++ declarators.
-        //    When a postfix modifier (Function/Array) wraps a prefix modifier (Pointer/Ref),
-        //    we need parentheses around the prefix: e.g. int (*)(float) not int*(float).
         std::wstring prefix;
         std::wstring postfix;
         bool seenPostfix = false;
@@ -222,14 +209,10 @@ public:
                 break;
 
             case ModifierKind::BitField:
-                break; // handled after name
+                break;
             }
         }
 
-        // 4. Emit prefix with parentheses if needed for correct C++ declarator syntax.
-        //    The name is placed inside the parentheses (or right after prefix if no parens)
-        //    to correctly handle the spiral rule for pointers to arrays/functions.
-        //    e.g. int (*arr)[10] not int (*)[10] arr
         if (needsParen)
         {
             result += L" (";
@@ -251,10 +234,8 @@ public:
             }
         }
 
-        // 5. Postfix (function args, array dimensions)
         result += postfix;
 
-        // 6. Bitfield
         for (auto it = m_chain.begin(); it != m_chain.end(); ++it)
         {
             if (it->kind == ModifierKind::BitField && it->bitLength > 0)
@@ -268,7 +249,6 @@ public:
         return result;
     }
 
-    /// Reset builder state for reuse.
     void reset()
     {
         m_chain.clear();
@@ -279,7 +259,7 @@ public:
 
 private:
 
-    std::vector<Modifier> m_chain; // inner (closest to base) to outer
+    std::vector<Modifier> m_chain;
     std::wstring mbaseType;
     std::wstring m_name;
     TypeQualifier m_baseQualifier;

@@ -16,16 +16,8 @@
 #include <Core/Search/StringScanner.hpp>
 #include <Core/Util/Container/Singleton.hpp>
 
-/// Facade that owns the DIA session lifetime and provides the core dumping/searching API.
-/// Wraps DiaSession + SymbolDumper + SymbolFinder into a long-lived singleton,
-/// solving the lifetime problem from Application::initialize where DiaSession
-/// was a local variable destroyed at the end of the if-block.
-///
-/// Usage (Variant A - Singleton):
-///   if (!PdbToolset::instance().initialize(pdbPath)) { /* error */ }
-///   auto text = PdbToolset::instance().dumpTypeByName(L"MyClass", false);
-///   ConsoleManager::print(text.c_str());
-
+/// Facade that owns the DIA session and provides the core dumping/searching API.
+/// Wraps DiaSession + SymbolDumper + SymbolFinder into a long-lived singleton.
 class PdbToolset : public Singleton<PdbToolset>
 {
     SET_SINGLETON_FRIEND(PdbToolset)
@@ -40,7 +32,7 @@ protected:
 public:
 
     /// Initialize the DIA session and wire up the dumper.
-    /// Returns true on success, false on any error (exceptions from DiaSession are caught).
+    /// Returns false on any error (exceptions from DiaSession are caught).
     bool initialize(const std::wstring& a_pdbPath)
     {
         try
@@ -56,7 +48,6 @@ public:
         }
     }
 
-    /// Access underlying DIA objects for advanced use.
     [[nodiscard]]
     IDiaSession* session() const
     {
@@ -81,8 +72,7 @@ public:
     }
 
     /// Dump all types matching the given name.
-    /// Searches by exact name first (all tags), then falls back to namespace prefix search
-    /// if no exact matches found.
+    /// Searches by exact name first (all tags), then falls back to namespace-prefix search.
     /// Multiple symbols in the same namespace are grouped into one "namespace X { ... }" block.
     std::wstring dumpTypeByName(const wchar_t* a_name, bool a_caseSensitive)
     {
@@ -90,21 +80,15 @@ public:
         if (!a_name)
             return out;
 
-        // Step 1: Search by exact name across all symbol types
         auto matches
             = SymbolFinder::findAll(m_session.globalScope(), SymTagNull, a_name, a_caseSensitive);
 
-        // Step 2: Fallback to namespace prefix search (like old displayTypePrefixed)
         if (matches.empty())
         {
             matches = SymbolFinder::findByNamespacePrefix(
                 m_session.globalScope(), a_name, a_caseSensitive);
         }
 
-        // Optional user-defined template parameterization: when the requested name
-        // is a template instantiation (e.g. "Type<float, 11, TB::HighRes>") and the
-        // setting is enabled, emit a "template<...>" declaration and substitute the
-        // concrete arguments with the generated parameter names everywhere.
         bool haveTemplate = false;
         TypeWalker::TemplateInstantiation ti;
         if (m_dumper.config().m_templateParams)
@@ -128,9 +112,8 @@ public:
         return out;
     }
 
-    /// Find a type by name and enumerate its nested UDT/enum/typedef children,
-    /// returning their fully-qualified names, newline-separated.
-    /// E.g. for "Test::Actor", returns "Test::Actor::Weapon", "Test::Actor::SaveData", etc.
+    /// Find a type by name and enumerate fully-qualified names of its nested
+    /// UDT/enum/typedef children, newline-separated.
     std::wstring enumerateNestedTypeNames(const wchar_t* a_name, bool a_caseSensitive)
     {
         std::wstring out;
@@ -145,7 +128,6 @@ public:
         std::unordered_set<std::wstring> seen;
         for (auto& sym : matches)
         {
-            // Only look at UDT types — enums/typedefs can't have nested types.
             DWORD symTag = SymTagNull;
             sym->get_symTag(&symTag);
             if (symTag != SymTagUDT)
@@ -177,8 +159,7 @@ public:
         return out;
     }
 
-    /// Dump a class/enum/typedef by name using findFirst (return first match only).
-    /// This mirrors the old displayClass(name)/displayEnum(name)/displayTypedef(name) behavior.
+    /// Dump the first matching class/enum/typedef symbol.
     std::wstring dumpClassByName(const wchar_t* a_name, bool a_caseSensitive)
     {
         std::wstring out;
@@ -225,9 +206,7 @@ public:
     }
 
     /// Enumerate names of all UDT/enum/typedef symbols, newline-separated.
-    /// When a_topLevelOnly is true (default), only direct children of the global
-    /// scope are returned (top-level types). When false, ALL types including
-    /// nested types are recursively enumerated.
+    /// When a_topLevelOnly is true, only direct children of the global scope are returned.
     std::wstring enumerateSymbolNames(bool a_topLevelOnly = true)
     {
         std::wstring out;
@@ -291,8 +270,6 @@ public:
         if (tag != SymTagUDT && tag != SymTagEnum && tag != SymTagTypedef)
             return false;
 
-        // Use the lexical parent check (SymTagExe = global scope) which is
-        // more reliable than get_classParent for detecting nested types.
         return TypeWalker::isTopLevelSymbol(symbol);
     }
 
@@ -321,7 +298,6 @@ public:
                 }
             }
 
-            // Recurse deeper into nested UDTs.
             if (childTag == SymTagUDT)
             {
                 enumerateNestedSymbolNamesRecursive(child.get(), a_out, a_seen);
@@ -332,7 +308,6 @@ public:
     }
 
     /// Get source files for a named type, newline-separated.
-    /// Uses the same address->line->sourceFile lookup as registerTypeSource.
     std::wstring getTypeSourceFilesByName(const wchar_t* a_name, bool a_caseSensitive)
     {
         std::wstring out;
@@ -417,7 +392,6 @@ public:
             out += name;
             out += L"\n";
 
-            // Compiland details
             ComPtr<IDiaEnumSymbols> _details;
             if (SUCCEEDED(
                     compiland->findChildren(SymTagCompilandDetails, nullptr, nsNone, &_details))
@@ -449,7 +423,6 @@ public:
                 }
             }
 
-            // Compiland environment
             ComPtr<IDiaEnumSymbols> env;
             if (SUCCEEDED(compiland->findChildren(SymTagCompilandEnv, nullptr, nsNone, &env))
                 && env)
@@ -510,9 +483,7 @@ public:
     }
 
     /// Get all UDT/enum/typedef symbol names defined in a given source file,
-    /// newline-separated. The file is matched by name (case-insensitive).
-    /// Uses IDiaSourceFile::get_compilands to find compilands that reference
-    /// the file, then enumerates their UDT/enum/typedef children.
+    /// newline-separated. Matched by file name.
     std::wstring getSymbolsBySourceFile(
         const wchar_t* a_fileName, bool a_caseSensitive) // NOTE: doesn't work
     {
@@ -524,7 +495,6 @@ public:
 
         auto searchType = a_caseSensitive ? nsCaseSensitive : nsCaseInsensitive;
 
-        // Find the source file by name
         ComPtr<IDiaEnumSourceFiles> enumSourceFiles;
         if (FAILED(m_session.session()->findFile(nullptr, a_fileName, searchType, &enumSourceFiles))
             || !enumSourceFiles)
@@ -538,7 +508,6 @@ public:
 
         while (SUCCEEDED(enumSourceFiles->Next(1, &sourceFile, &celt)) && celt == 1)
         {
-            // Get compilands that reference this source file
             ComPtr<IDiaEnumSymbols> enumCompilands;
             if (FAILED(sourceFile->get_compilands(&enumCompilands)) || !enumCompilands)
             {
@@ -549,7 +518,6 @@ public:
             ComPtr<IDiaSymbol> compiland;
             while (SUCCEEDED(enumCompilands->Next(1, &compiland, &celt)) && celt == 1)
             {
-                // Find UDT/enum/typedef symbols in this compiland
                 ComPtr<IDiaEnumSymbols> enumSymbols;
                 if (FAILED(compiland->findChildren(SymTagNull, nullptr, nsNone, &enumSymbols))
                     || !enumSymbols)
@@ -572,7 +540,6 @@ public:
                                 std::wstring symbolName(name);
                                 SysFreeString(name);
 
-                                // Skip synthetic/anonymous names
                                 if (!TypeWalker::isSyntheticName(symbolName)
                                     && seen.insert(symbolName).second)
                                 {
@@ -602,15 +569,11 @@ public:
         PDBAPI_STRING_SHOW_ENCODING = 1 << 1,
     };
 
-    /// Search for strings in a binary file (exe/dll/etc).
-    /// For PE files, searches are scoped to string-candidate sections
-    /// (.text, .rdata, .data, etc.) rather than the whole file.
-    /// a_encodingFlags is a bitwise OR of StringEncoding values.
-    /// a_sectionNames is a comma-separated list of PE section names to search
-    /// (e.g. ".rdata,.data"). Empty string means "all string-candidate sections".
-    /// a_regexPattern is an optional regex to filter results (empty = no filter).
-    /// Returns a newline-separated text report: "offset: [encoding] text".
-    /// Returns empty string on file load failure.
+    /// Search for strings in a binary file.
+    /// For PE files, searches are scoped to string-candidate sections.
+    /// @param a_encodingFlags  Bitwise OR of StringEncoding values.
+    /// @param a_sectionNames   Comma-separated PE section names; empty = all string-candidate sections.
+    /// @param a_regexPattern   Optional regex filter; empty = no filter.
     std::wstring findStringsInFile(const wchar_t* a_filePath,
         uint32_t a_minLength,
         uint32_t a_encodingFlags,
@@ -639,7 +602,6 @@ public:
         for (const auto& m : matches)
         {
             // TODO: to string builder!!! And flags too
-            // e.g. You can find only offsets, string values, or both
             if (a_outStringFlags & PdbApiStringOutputFlags::PDBAPI_STRING_SHOW_OFFSET)
             {
                 swprintf_s(buf, L"0x%08llX: ", static_cast<unsigned long long>(m.offset));
@@ -673,12 +635,9 @@ public:
     }
 
     /// Search for a byte signature (with wildcards) in a binary file.
-    /// Supports patterns like "FF ?? 01 BD ?? CA", "FF??01BD??CA", "0xFF??01BD??CA",
-    /// and "{ FF ?? 01 BD }" (YARA-style).
-    /// a_sectionNames is a comma-separated list of PE section names to search
-    /// (empty = all string-candidate sections for PE, whole file for non-PE).
-    /// Returns a newline-separated list of offsets in hex.
-    /// Returns empty string on file load failure or invalid pattern.
+    /// Supported formats: "FF ?? 01 BD", "FF??01BD", "0xFF??01BD", "{ FF ?? 01 BD }".
+    /// @param a_sectionNames  Comma-separated PE section names; empty = all sections.
+    /// Returns newline-separated hex offsets, or empty on failure/invalid pattern.
     std::wstring findSignaturesInFile(
         const wchar_t* a_filePath, const char* a_pattern, const char* a_sectionNames = "")
     {
@@ -709,12 +668,9 @@ public:
 
 private:
 
-    /// Dump a set of symbols, grouping those in the same namespace into one
-    /// "namespace X { ... }" block. Symbols without a namespace are dumped as-is.
+    /// Dump a set of symbols, grouping those in the same namespace into one block.
     void dumpSymbolsGrouped(const std::vector<ComPtr<IDiaSymbol>>& a_symbols, std::wstring& aoutput)
     {
-        // Group symbols by namespace key.
-        // Key "<empty>" for global (no namespace) symbols.
         std::map<std::wstring, std::vector<ComPtr<IDiaSymbol>>> groups;
 
         for (const auto& sym : a_symbols)
@@ -731,7 +687,6 @@ private:
         {
             if (ns.empty())
             {
-                // Global scope — dump each symbol directly.
                 for (const auto& sym : syms)
                 {
                     aoutput += m_dumper.dumpTopLevelAny(sym.get());
@@ -739,7 +694,6 @@ private:
             }
             else
             {
-                // Open one namespace block per group (handles anonymous namespaces).
                 aoutput += TypeWalker::namespaceBlockOpen(ns);
 
                 m_dumper.pushQualifiedScope(ns);
