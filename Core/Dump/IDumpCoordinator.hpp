@@ -5,15 +5,9 @@
 
 #include <dia2.h>
 
-/// Internal dispatch contract between dump-domain renderers.
-///
-/// Renderers are mutually recursive (classes contain members, members contain
-/// classes/functions, top-level dispatch reaches every renderer), so instead
-/// of including each other they all talk through this interface. SymbolDumper
-/// implements it privately and forwards each call to the owning renderer.
-/// Accessibility is checked against this public interface, therefore calls
-/// through an IDumpCoordinator& stay valid while SymbolDumper's own public
-/// API remains exactly as before.
+/// Internal dispatch interface between dump-domain renderers.
+/// Renderers are mutually recursive, so instead of including each other they
+/// communicate through this interface. SymbolDumper implements it privately.
 struct IDumpCoordinator
 {
     virtual ~IDumpCoordinator() = default;

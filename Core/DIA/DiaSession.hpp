@@ -10,9 +10,7 @@
 #include <Core/Util/Error/DumpError.hpp>
 
 /// Manages the COM/DIA session lifecycle.
-/// Owns IDiaDataSource, IDiaSession, IDiaSymbol (global scope).
-/// Uses ComPtr for RAII - no manual Release() calls needed.
-
+/// Owns IDiaDataSource, IDiaSession, IDiaSymbol (global scope) via RAII ComPtrs.
 class DiaSession
 {
 public:
@@ -28,8 +26,7 @@ public:
             swprintf_s(buf, L"CoInitializeEx failed: 0x%X", comHr);
             throw DumpError(buf);
         }
-        // S_FALSE means COM was already initialized on this thread.
-        // We still need to call CoUninitialize for this call.
+        // S_FALSE means COM was already initialized on this thread; CoUninitialize still needed.
         m_comInitialized = true;
 
         ComPtr<IDiaDataSource> source;
@@ -108,11 +105,9 @@ public:
         }
     }
 
-    // Non-copyable
     DiaSession(const DiaSession&) = delete;
     DiaSession& operator=(const DiaSession&) = delete;
 
-    // Move: transfer COM ownership and reset source to prevent double CoUninitialize
     DiaSession(DiaSession&& a_other) noexcept
         : m_source(std::move(a_other.m_source))
         , m_session(std::move(a_other.m_session))
@@ -126,7 +121,6 @@ public:
     {
         if (this != &a_other)
         {
-            // Release current resources
             m_globalScope.Release();
             m_session.Release();
             m_source.Release();
@@ -135,7 +129,6 @@ public:
                 CoUninitialize();
             }
 
-            // Transfer ownership
             m_source = std::move(a_other.m_source);
             m_session = std::move(a_other.m_session);
             m_globalScope = std::move(a_other.m_globalScope);

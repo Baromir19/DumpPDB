@@ -9,11 +9,7 @@
 #include <Core/DIA/TypeWalker.hpp>
 
 /// Shared mutable state of the dumping domain.
-///
-/// Single owner: SymbolDumper. Every domain renderer (scope, formatting,
-/// constants, type sources, class/enum/typedef/function/member dispatch)
-/// receives this context by reference and operates on it, so configuration
-/// or session changes propagate to all renderers automatically.
+/// Owned by SymbolDumper and passed by reference to all domain renderers.
 class DumpContext
 {
 public:

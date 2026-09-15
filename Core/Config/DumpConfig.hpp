@@ -3,7 +3,6 @@
 #include <Core/DIA/TypeWalker.hpp>
 
 /// Configuration for dumping output.
-/// Moved verbatim from <Core/DIA/SymbolDumper.hpp>; include via that facade.
 struct DumpConfig
 {
     bool m_showSize = true;
@@ -14,8 +13,8 @@ struct DumpConfig
     bool m_showEnumHex = false;
     bool m_showTypeSource = false;
     bool m_curlyBraceNewline = true;
-    bool m_hideCompilerGenerated = true; // hide __local_vftable_ctor_closure, etc.
-    bool m_templateParams = false;       // emit template<...> for requested template instantiations
-    DWORD m_baseAccessType = 0;          // override access type
-    IntStyle m_intStyle = IntStyle::Cstdint; // __int32 vs int32_t
+    bool m_hideCompilerGenerated = true; ///< Hide __local_vftable_ctor_closure, etc.
+    bool m_templateParams = false;       ///< Emit template<...> for requested template instantiations.
+    DWORD m_baseAccessType = 0;          ///< Override access type (0 = use symbol's own access).
+    IntStyle m_intStyle = IntStyle::Cstdint;
 };

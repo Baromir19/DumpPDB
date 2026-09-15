@@ -14,8 +14,8 @@
 /// Integer style for base type names.
 enum class IntStyle : std::uint8_t
 {
-    MsvcNative, // __int32, __int64, etc.
-    Cstdint     // int32_t, int64_t, etc.
+    MsvcNative, ///< __int32, __int64, etc.
+    Cstdint     ///< int32_t, int64_t, etc.
 };
 
 inline bool isValidIntStyle(long a_value) noexcept
@@ -24,8 +24,7 @@ inline bool isValidIntStyle(long a_value) noexcept
            && a_value <= static_cast<long>(IntStyle::Cstdint);
 }
 
-/// Scope context that tracks the current nested class/struct hierarchy.
-/// Used to strip the current scope prefix from DIA symbol names.
+/// Tracks the current nested class/struct hierarchy for scope-prefix stripping.
 struct ScopeContext
 {
     std::vector<std::wstring> m_parts;
@@ -74,12 +73,11 @@ struct ScopeContext
 /// A fully-qualified name split into namespace path + leaf name.
 struct QualifiedName
 {
-    std::wstring ns;   // e.g. L"A::B" for L"A::B::Hello"; empty for L"Hello"
-    std::wstring leaf; // e.g. L"Hello" for L"A::B::Hello"
+    std::wstring ns;   ///< e.g. L"A::B" for L"A::B::Hello"; empty for top-level.
+    std::wstring leaf; ///< e.g. L"Hello".
 };
 
 /// Walks IDiaSymbol trees and builds TypeBuilder chains.
-
 class TypeWalker
 {
 public:
@@ -165,20 +163,16 @@ public:
         return FAILED(children->Next(1, &parent, &count)) || count == 0;
     }
 
-    /// The MSVC DIA name tag for an anonymous (unnamed) namespace.
+    /// MSVC DIA name tag for an anonymous namespace.
     inline static const wchar_t* kAnonymousNamespace = L"`anonymous-namespace'";
 
-    /// True when a single namespace part is MSVC's anonymous-namespace marker.
     static bool isAnonymousNamespacePart(const std::wstring& a_part)
     {
         return a_part == kAnonymousNamespace;
     }
 
-    /// Find the index of the last "::" that is NOT inside a template/function/array
-    /// bracket list (i.e. at depth zero). Returns npos if there is none.
-    /// This matters for template instantiations such as
-    /// "TB::TList<int, TB::CustomAllocator<int>>" where a "::" lives inside the
-    /// "<...>" and must not be treated as the scope separator.
+    /// Find the index of the last "::" not nested inside template/function/array brackets.
+    /// Returns npos if there is none.
     static size_t findLastTopLevelSeparator(const std::wstring& a_name)
     {
         size_t last = std::wstring::npos;
@@ -217,15 +211,13 @@ public:
     }
 
     /// Number of top-level namespace parts in a fully-qualified namespace path.
-    /// e.g. L"A::B" -> 2, the anonymous marker -> 1, empty -> 0.
     static size_t namespacePartCount(const std::wstring& a_namespace)
     {
         return splitQualifiedName(a_namespace).size();
     }
 
-    /// Emit the opening lines of a namespace block given a fully-qualified path.
-    /// Anonymous-namespace parts are emitted as nameless "namespace { ... }"
-    /// nested blocks (MSVC stores them as "`anonymous-namespace'" in names).
+    /// Emit the opening lines of a namespace block.
+    /// Anonymous-namespace parts are emitted as "namespace { ... }".
     static std::wstring namespaceBlockOpen(const std::wstring& a_namespace)
     {
         std::wstring ret;
@@ -253,17 +245,15 @@ public:
         return ret;
     }
 
-    /// A user-defined template instantiation requested by name, e.g.
+    /// User-defined template instantiation for a requested name, e.g.
     /// "Type<float, 11, TB::HighRes>" -> "template<typename T, size_t U, typename V>".
-    /// Concrete arguments are remembered so they can be substituted back with the
-    /// generated parameter names everywhere in the dumped types and values.
     struct TemplateInstantiation
     {
         bool active = false;
-        std::wstring decl; // e.g. L"template<typename T, size_t U, size_t V>"
-        std::vector<std::pair<std::wstring, std::wstring>>
-            replacements; // { concrete arg, generated param name }
+        std::wstring decl;
+        std::vector<std::pair<std::wstring, std::wstring>> replacements; ///< { concrete arg, param name }
     };
+
     static bool isWhitespace(wchar_t a_ch)
     {
         return a_ch == L' ' || a_ch == L'\t' || a_ch == L'\r' || a_ch == L'\n';
@@ -322,7 +312,7 @@ public:
         const wchar_t* letters = L"TUVWXYZ";
         if (a_index < 7)
             return std::wstring(1, letters[a_index]);
-        return L"_" + std::to_wstring(a_index + 1); // _8, _9, ...
+        return L"_" + std::to_wstring(a_index + 1);
     }
 
     /// True if the text is a plain base-10 integer literal (optionally signed).
@@ -340,6 +330,7 @@ public:
         }
         return true;
     }
+
     /// Build a TemplateInstantiation from a requested template-instantiation name.
     /// Returns an inactive struct when a_name has no template argument list.
     static TemplateInstantiation makeTemplateInstantiation(const std::wstring& a_name)
@@ -410,11 +401,9 @@ public:
                || (ach >= L'0' && ach <= L'9') || ach == L'_';
     }
 
-    /// Replace concrete template arguments with their generated parameter names,
-    /// matching only whole tokens so "11" does not rewrite "x11" or "111".
-    /// Lines that document the original instantiation ("// reconstructed by ...")
-    /// are emitted verbatim so the concrete argument list stays visible in the
-    /// comment even though it is substituted with a parameter name everywhere else.
+    /// Replace concrete template arguments with their generated parameter names.
+    /// Matches only whole tokens. Lines beginning with "// reconstructed by " are
+    /// emitted verbatim so the original argument list stays visible in comments.
     static std::wstring substituteTemplateArgs(
         const std::wstring& a_text, const TemplateInstantiation& a_ti)
     {
@@ -479,11 +468,8 @@ public:
 
         return result;
     }
-    /// Returns true if a_symbol's lexical parent is a UDT (class/struct/union),
-    /// i.e. the symbol is nested inside another type.
-    /// E.g. for "Test::Actor::Weapon", the parent is "Test::Actor" (SymTagUDT),
-    /// so this returns true. For "Test::Weapon", the parent is the global scope
-    /// (SymTagExe), so this returns false.
+
+    /// Returns true if the symbol's lexical parent is a UDT (i.e. the symbol is nested).
     static bool isNestedType(IDiaSymbol* a_symbol)
     {
         ComPtr<IDiaSymbol> parent;
@@ -496,12 +482,7 @@ public:
     }
 
     /// Parses a fully-qualified name string into namespace path + leaf name.
-    /// e.g. "User::Hello" -> ns="User",   leaf="Hello"
-    ///      "A::B::Hello" -> ns="A::B",   leaf="Hello"
-    ///      "Hello"       -> ns="",       leaf="Hello"
-    /// The split is template-aware: a "::" inside a "<...>" argument list (as in
-    /// "TB::TList<int, TB::CustomAllocator<int>>") is NOT treated as the scope
-    /// separator, so the leaf name keeps its full template argument list intact.
+    /// Template-aware: a "::" inside "<...>" is not treated as a scope separator.
     static QualifiedName parseQualifiedName(const std::wstring& a_fullyQualifiedName)
     {
         QualifiedName result;
@@ -519,11 +500,7 @@ public:
     }
 
     /// Parses a fully-qualified name from a DIA symbol into namespace path + leaf name.
-    /// Only call this when isTopLevelSymbol(a_symbol) is true — for nested classes
-    /// the "::" in the name refers to enclosing classes, not namespaces, and this
-    /// function must NOT be used there (ScopeContext handles that case instead).
-    /// Assumes that any qualifier of a top-level symbol is a namespace,
-    /// since nested classes have lexicalParent != SymTagExe.
+    /// Only call this when isTopLevelSymbol(a_symbol) is true.
     static QualifiedName parseQualifiedName(IDiaSymbol* a_symbol)
     {
         QualifiedName result;
@@ -662,9 +639,7 @@ public:
     }
 
     /// Build a TypeBuilder chain by recursively walking the DIA type tree.
-    /// Returns a TypeBuilder populated with the full type chain.
-    /// @param a_stripScope Controls whether current scope prefix is stripped from names
-    ///                     (corresponds to DumpConfig::m_showNonScoped).
+    /// @param a_stripScope  When true, strips the current scope prefix from names.
     static TypeBuilder resolveType(IDiaSymbol* a_symbol,
         const ScopeContext& a_scope = ScopeContext(),
         bool a_stripScope = true,
@@ -678,27 +653,20 @@ public:
         DWORD symTag = SymTagNull;
         a_symbol->get_symTag((DWORD*)&symTag);
 
-        // Get qualifiers
         BOOL isConst = FALSE;
         BOOL isVolatile = FALSE;
         a_symbol->get_constType(&isConst);
         a_symbol->get_volatileType(&isVolatile);
 
-        // Get name (strip scope based on a_stripScope parameter)
         std::wstring name = getName(a_symbol, a_scope, a_stripScope);
 
-        // Recurse into sub-type first (inner types are built first)
         ComPtr<IDiaSymbol> subType;
         if (SUCCEEDED(a_symbol->get_type(&subType)))
         {
             TypeBuilder subBuilder = resolveType(subType.get(), a_scope, a_stripScope, a_intStyle);
-            // Merge sub-builder into this one (inner type becomes the builder state)
             builder = std::move(subBuilder);
         }
 
-        // Apply this symbol's modifier and qualifiers.
-        // Since we recurse first, we build from inner to outer:
-        //   recursion builds the inner type, then we add the outer modifier.
         switch (symTag)
         {
         case SymTagBaseType:
@@ -708,8 +676,6 @@ public:
                 builder.base(baseName);
             }
 
-            // const/volatile on BaseType applies to the base type itself
-            // e.g. const int, volatile int
             if (isConst)
                 builder.constQual();
             if (isVolatile)
@@ -776,7 +742,6 @@ public:
                 builder.name(name);
             }
 
-            // Bit field
             DWORD bitPos = 0;
             ULONGLONG bitLen = 0;
             if (SUCCEEDED(a_symbol->get_bitPosition(&bitPos))
@@ -790,9 +755,6 @@ public:
         case SymTagUDT:
         case SymTagEnum:
         {
-            // Derive the type name: anonymous/inplace types get a friendly, re-usable
-            // identifier (enums get an "Enum" suffix, e.g. <unnamed-type-m_Member>
-            // -> "MemberEnum"; <undefined-type> / <unnamed-tag> / $HASH -> empty).
             std::wstring typeBase = (symTag == SymTagEnum)
                                         ? TypeWalker::prettyTypeName(name, L"Enum")
                                         : TypeWalker::prettyTypeName(name);
@@ -872,26 +834,20 @@ public:
         return result;
     }
 
-    /// Check if a name is a compiler-generated synthetic name (anonymous or hash-based).
+    /// Returns true if a_name is a compiler-generated synthetic name.
     static bool isSyntheticName(const std::wstring& a_name)
     {
         return a_name.empty() || a_name == L"<unnamed-tag>"
                || (!a_name.empty() && a_name.front() == L'$');
     }
 
-    /// Convert an MSVC-generated synthetic/anonymous type name into a friendly C++ identifier
-    /// suitable for re-emitting in reconstructed definitions.
-
-    /// Handles:
-    ///   - L"<undefined-type>"          -> empty: anonymous type,no usable name (caller drops it).
-    ///   - L"<unnamed-tag>"             -> empty: anonymous type,no usable name.
-
-    ///   - L"<unnamed-type-m_Member>"   -> inplace anonymous type that MSVC named after its bound
-    ///     member variable. Strips the "<unnamed-type-" / ">" wrapper and the Hungarian-ish
-    ///     member/static/global prefix (m_/s_/g_). When *a_kindSuffix* is supplied
-    ///     (e.g. L"Enum" for enums), it is appended -> e.g. L"MemberEnum".
-    ///   - "$"-prefixed name       -> empty: compiler-generated hash name (anonymous).
-    ///   - Anything else            -> returned unchanged (normal named types are untouched).
+    /// Convert an MSVC-generated anonymous/synthetic type name to a friendly C++ identifier.
+    ///
+    /// - L"<undefined-type>" / L"<unnamed-tag>" -> empty (caller drops the name).
+    /// - L"<unnamed-type-m_Member>"             -> strips wrapper and Hungarian prefix (m_/s_/g_);
+    ///   appends a_kindSuffix when supplied (e.g. L"Enum").
+    /// - L"$..."-prefixed                        -> empty (compiler hash).
+    /// - Anything else                           -> returned unchanged.
     static std::wstring prettyTypeName(
         const std::wstring& a_name, const wchar_t* a_kindSuffix = nullptr)
     {
@@ -904,8 +860,6 @@ public:
         if (a_name.front() == L'$')
             return L"";
 
-        // inplace anonymous types: "<unnamed-type-m_Member>"
-
         const wchar_t kAnonPrefix[] = L"<unnamed-type-";
         constexpr size_t kAnonPrefixLen = (sizeof(kAnonPrefix) / sizeof(kAnonPrefix[0])) - 1;
         if (a_name.compare(0, kAnonPrefixLen, kAnonPrefix) == 0)
@@ -914,7 +868,6 @@ public:
             if (!inner.empty() && inner.back() == L'>')
                 inner.pop_back();
 
-            // Strip Hungarian-ish member/static/global prefix (m_, s_, g_).
             static const wchar_t* memberPrefixes[] = {L"m_", L"s_", L"g_"};
 
             for (const auto* pfx : memberPrefixes)
@@ -936,12 +889,6 @@ public:
     }
 
     /// Get the name of a symbol, optionally stripping the current scope prefix.
-    /// @param a_symbol        The DIA symbol to get the name from.
-    /// @param a_scope         The current scope context (stack of enclosing class names).
-    /// @param a_stripScope    If true (default), strips the current scope prefix from the name.
-    ///                         Controls the "m_showNonScoped" behavior: when true, only the
-    ///                         short/non-scoped name is returned. When false, the full scoped
-    ///                         name (e.g. "ParentClass::Child") is preserved.
     static std::wstring getName(IDiaSymbol* a_symbol,
         const ScopeContext& a_scope = ScopeContext(),
         bool a_stripScope = true)
@@ -974,8 +921,7 @@ public:
         return (pos == std::wstring::npos) ? a_qualifiedName : a_qualifiedName.substr(pos + 2);
     }
 
-    /// Check if a symbol is an anonymous union/struct (empty name + UDT kind)
-    /// or has a compiler-generated synthetic name.
+    /// Returns true if the symbol is an anonymous union/struct or has a synthetic name.
     static bool isAnonymousUDT(IDiaSymbol* a_symbol)
     {
         BSTR bstrName = nullptr;
@@ -987,7 +933,6 @@ public:
             SysFreeString(bstrName);
         }
 
-        // Check for synthetic/anonymous names
         if (!gotName || isSyntheticName(name))
         {
             DWORD symTag = SymTagNull;
@@ -1004,7 +949,6 @@ public:
         return false;
     }
 
-    /// Get the access specifier as a string.
     static const wchar_t* getAccessName(IDiaSymbol* a_symbol, DWORD abaseAccessType = 0)
     {
         DWORD access = 0;
@@ -1030,7 +974,6 @@ public:
         return nullptr;
     }
 
-    /// C++ calling convention enum.
     enum class CallingConvention : std::uint8_t
     {
         Unknown,
@@ -1042,7 +985,6 @@ public:
         Clrcall
     };
 
-    /// Get the calling convention from a DIA symbol.
     static CallingConvention getCallingConvention(IDiaSymbol* a_symbol)
     {
         DWORD _cc = 0;
@@ -1069,7 +1011,6 @@ public:
         return CallingConvention::Unknown;
     }
 
-    /// Render a calling convention enum to its C++ keyword string.
     static const wchar_t* renderCallingConvention(CallingConvention a_cc)
     {
         switch (a_cc)
