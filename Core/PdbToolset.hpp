@@ -152,8 +152,7 @@ public:
                 continue;
 
             ComPtr<IDiaEnumSymbols> children;
-            if (FAILED(sym->findChildren(SymTagNull, nullptr, nsNone, &children))
-                || !children)
+            if (FAILED(sym->findChildren(SymTagNull, nullptr, nsNone, &children)) || !children)
                 continue;
 
             ComPtr<IDiaSymbol> child;
@@ -235,8 +234,7 @@ public:
         std::unordered_set<std::wstring> seen;
 
         ComPtr<IDiaEnumSymbols> symbols;
-        if (FAILED(m_session.globalScope()->findChildren(
-                SymTagNull, nullptr, nsNone, &symbols))
+        if (FAILED(m_session.globalScope()->findChildren(SymTagNull, nullptr, nsNone, &symbols))
             || !symbols)
         {
             return out;
@@ -262,7 +260,7 @@ public:
                 symbol = nullptr;
                 continue;
             }
-            
+
             if (a_topLevelOnly && !isTopLevelType(symbol.get()))
             {
                 symbol = nullptr;
@@ -277,7 +275,7 @@ public:
                 SysFreeString(name);
             }
         }
-       
+
         return out;
     }
 
@@ -303,8 +301,7 @@ public:
         IDiaSymbol* a_udt, std::wstring& a_out, std::unordered_set<std::wstring>& a_seen)
     {
         ComPtr<IDiaEnumSymbols> children;
-        if (FAILED(a_udt->findChildren(SymTagNull, nullptr, nsNone, &children))
-            || !children)
+        if (FAILED(a_udt->findChildren(SymTagNull, nullptr, nsNone, &children)) || !children)
             return;
 
         ComPtr<IDiaSymbol> child;
@@ -516,7 +513,8 @@ public:
     /// newline-separated. The file is matched by name (case-insensitive).
     /// Uses IDiaSourceFile::get_compilands to find compilands that reference
     /// the file, then enumerates their UDT/enum/typedef children.
-    std::wstring getSymbolsBySourceFile(const wchar_t* a_fileName, bool a_caseSensitive) // NOTE: doesn't work
+    std::wstring getSymbolsBySourceFile(
+        const wchar_t* a_fileName, bool a_caseSensitive) // NOTE: doesn't work
     {
         std::wstring out;
         if (!a_fileName)
@@ -528,8 +526,7 @@ public:
 
         // Find the source file by name
         ComPtr<IDiaEnumSourceFiles> enumSourceFiles;
-        if (FAILED(m_session.session()->findFile(
-                nullptr, a_fileName, searchType, &enumSourceFiles))
+        if (FAILED(m_session.session()->findFile(nullptr, a_fileName, searchType, &enumSourceFiles))
             || !enumSourceFiles)
         {
             return out;
@@ -554,8 +551,7 @@ public:
             {
                 // Find UDT/enum/typedef symbols in this compiland
                 ComPtr<IDiaEnumSymbols> enumSymbols;
-                if (FAILED(compiland->findChildren(
-                        SymTagNull, nullptr, nsNone, &enumSymbols))
+                if (FAILED(compiland->findChildren(SymTagNull, nullptr, nsNone, &enumSymbols))
                     || !enumSymbols)
                 {
                     compiland.Release();
@@ -599,8 +595,6 @@ public:
     // ============================================================================
     // Binary file search (strings / signatures)
     // ============================================================================
-
-    
 
     enum PdbApiStringOutputFlags : uint32_t
     {
@@ -685,9 +679,8 @@ public:
     /// (empty = all string-candidate sections for PE, whole file for non-PE).
     /// Returns a newline-separated list of offsets in hex.
     /// Returns empty string on file load failure or invalid pattern.
-    std::wstring findSignaturesInFile(const wchar_t* a_filePath,
-        const char* a_pattern,
-        const char* a_sectionNames = "")
+    std::wstring findSignaturesInFile(
+        const wchar_t* a_filePath, const char* a_pattern, const char* a_sectionNames = "")
     {
         std::wstring out;
         if (!a_filePath || !a_pattern)

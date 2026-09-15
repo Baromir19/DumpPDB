@@ -346,8 +346,10 @@ PdbApiResult PdbApi_EnumerateNestedTypeNames(const wchar_t* a_name,
 
 // --- Symbol enumeration ---
 
-PdbApiResult PdbApi_EnumerateSymbolNames(
-    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize, int32_t a_topLevelOnly)
+PdbApiResult PdbApi_EnumerateSymbolNames(wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize,
+    int32_t a_topLevelOnly)
 {
     return guarded(
         [&]() -> PdbApiResult
@@ -357,8 +359,7 @@ PdbApiResult PdbApi_EnumerateSymbolNames(
                 return PDBAPI_ERROR_NOT_INITIALIZED;
             }
 
-            std::wstring result
-                = PdbToolset::instance().enumerateSymbolNames(a_topLevelOnly != 0);
+            std::wstring result = PdbToolset::instance().enumerateSymbolNames(a_topLevelOnly != 0);
 
             return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
         });
@@ -514,8 +515,12 @@ PdbApiResult PdbApi_FindStringsInFile(const wchar_t* a_filePath,
                 return PDBAPI_ERROR_INVALID_ARG;
             }
 
-            std::wstring result = PdbToolset::instance().findStringsInFile(
-                a_filePath, a_minLength, a_encodingFlags, a_outStringFlags, a_sectionNames, a_regexPattern);
+            std::wstring result = PdbToolset::instance().findStringsInFile(a_filePath,
+                a_minLength,
+                a_encodingFlags,
+                a_outStringFlags,
+                a_sectionNames,
+                a_regexPattern);
 
             if (result.empty())
             {
@@ -552,12 +557,13 @@ PdbApiResult PdbApi_FindSignaturesInFile(const wchar_t* a_filePath,
                 return PDBAPI_ERROR_INVALID_ARG;
             }
 
-            std::wstring result
-                = PdbToolset::instance().findSignaturesInFile(a_filePath, a_pattern, a_sectionNames);
+            std::wstring result = PdbToolset::instance().findSignaturesInFile(
+                a_filePath, a_pattern, a_sectionNames);
 
             if (result.empty())
             {
-                setLastError(L"No signature matches found, file could not be loaded, or pattern is invalid");
+                setLastError(
+                    L"No signature matches found, file could not be loaded, or pattern is invalid");
                 if (a_outRequiredSize != nullptr)
                 {
                     *a_outRequiredSize = 0;

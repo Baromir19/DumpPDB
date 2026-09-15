@@ -36,7 +36,7 @@ struct PdbApiDumpConfig
     int32_t showTypeSource;
     int32_t curlyBraceNewline;
     int32_t hideCompilerGenerated;
-    int32_t templateParams;      // emit template<...> for requested template instantiations
+    int32_t templateParams; // emit template<...> for requested template instantiations
     uint32_t baseAccessType;
     int32_t intStyle; // 0 = MsvcNative, 1 = Cstdint, see IntStyle enum in Core
 };
@@ -105,9 +105,10 @@ PDBAPI_API PdbApiResult PdbApi_EnumerateNestedTypeNames(const wchar_t* a_name,
 /// a_topLevelOnly: 1 = only top-level types (global/namespace scope),
 ///                 0 = all types including nested ones.
 /// Uses the standard Dump*/GetLastError buffer convention.
-PDBAPI_API PdbApiResult PdbApi_EnumerateSymbolNames(
-    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize, int32_t a_topLevelOnly
-);
+PDBAPI_API PdbApiResult PdbApi_EnumerateSymbolNames(wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize,
+    int32_t a_topLevelOnly);
 
 /// Get source file names for a type by name, newline-separated.
 /// Uses the standard Dump*/GetLastError buffer convention.

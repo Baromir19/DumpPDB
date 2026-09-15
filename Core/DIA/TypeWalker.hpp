@@ -165,7 +165,7 @@ public:
         return FAILED(children->Next(1, &parent, &count)) || count == 0;
     }
 
-/// The MSVC DIA name tag for an anonymous (unnamed) namespace.
+    /// The MSVC DIA name tag for an anonymous (unnamed) namespace.
     inline static const wchar_t* kAnonymousNamespace = L"`anonymous-namespace'";
 
     /// True when a single namespace part is MSVC's anonymous-namespace marker.
@@ -260,10 +260,11 @@ public:
     struct TemplateInstantiation
     {
         bool active = false;
-        std::wstring decl;                                               // e.g. L"template<typename T, size_t U, size_t V>"
-        std::vector<std::pair<std::wstring, std::wstring>> replacements; // { concrete arg, generated param name }
+        std::wstring decl; // e.g. L"template<typename T, size_t U, size_t V>"
+        std::vector<std::pair<std::wstring, std::wstring>>
+            replacements; // { concrete arg, generated param name }
     };
-static bool isWhitespace(wchar_t a_ch)
+    static bool isWhitespace(wchar_t a_ch)
     {
         return a_ch == L' ' || a_ch == L'\t' || a_ch == L'\r' || a_ch == L'\n';
     }
@@ -339,7 +340,7 @@ static bool isWhitespace(wchar_t a_ch)
         }
         return true;
     }
-/// Build a TemplateInstantiation from a requested template-instantiation name.
+    /// Build a TemplateInstantiation from a requested template-instantiation name.
     /// Returns an inactive struct when a_name has no template argument list.
     static TemplateInstantiation makeTemplateInstantiation(const std::wstring& a_name)
     {
@@ -395,7 +396,8 @@ static bool isWhitespace(wchar_t a_ch)
         ti.decl += L">";
 
         // Replace longer (more specific) arguments first to avoid partial overlaps.
-        std::sort(ti.replacements.begin(), ti.replacements.end(),
+        std::sort(ti.replacements.begin(),
+            ti.replacements.end(),
             [](const auto& a, const auto& b) { return a.first.size() > b.first.size(); });
 
         ti.active = true;
@@ -404,10 +406,8 @@ static bool isWhitespace(wchar_t a_ch)
 
     static bool isIdentifierContinuation(wchar_t ach)
     {
-        return (ach >= L'a' && ach <= L'z')
-               || (ach >= L'A' && ach <= L'Z')
-               || (ach >= L'0' && ach <= L'9')
-               || ach == L'_';
+        return (ach >= L'a' && ach <= L'z') || (ach >= L'A' && ach <= L'Z')
+               || (ach >= L'0' && ach <= L'9') || ach == L'_';
     }
 
     /// Replace concrete template arguments with their generated parameter names,
@@ -789,14 +789,13 @@ static bool isWhitespace(wchar_t a_ch)
 
         case SymTagUDT:
         case SymTagEnum:
-{
-
+        {
             // Derive the type name: anonymous/inplace types get a friendly, re-usable
             // identifier (enums get an "Enum" suffix, e.g. <unnamed-type-m_Member>
             // -> "MemberEnum"; <undefined-type> / <unnamed-tag> / $HASH -> empty).
             std::wstring typeBase = (symTag == SymTagEnum)
-                ? TypeWalker::prettyTypeName(name, L"Enum")
-                : TypeWalker::prettyTypeName(name);
+                                        ? TypeWalker::prettyTypeName(name, L"Enum")
+                                        : TypeWalker::prettyTypeName(name);
 
             if (!typeBase.empty())
             {
@@ -893,8 +892,8 @@ static bool isWhitespace(wchar_t a_ch)
     ///     (e.g. L"Enum" for enums), it is appended -> e.g. L"MemberEnum".
     ///   - "$"-prefixed name       -> empty: compiler-generated hash name (anonymous).
     ///   - Anything else            -> returned unchanged (normal named types are untouched).
-    static std::wstring prettyTypeName(const std::wstring& a_name,
-        const wchar_t* a_kindSuffix = nullptr)
+    static std::wstring prettyTypeName(
+        const std::wstring& a_name, const wchar_t* a_kindSuffix = nullptr)
     {
         if (a_name.empty())
             return a_name;
@@ -916,7 +915,7 @@ static bool isWhitespace(wchar_t a_ch)
                 inner.pop_back();
 
             // Strip Hungarian-ish member/static/global prefix (m_, s_, g_).
-            static const wchar_t* memberPrefixes[] = { L"m_", L"s_", L"g_" };
+            static const wchar_t* memberPrefixes[] = {L"m_", L"s_", L"g_"};
 
             for (const auto* pfx : memberPrefixes)
             {

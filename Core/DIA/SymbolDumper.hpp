@@ -24,9 +24,9 @@ struct DumpConfig
     bool m_showEnumHex = false;
     bool m_showTypeSource = false;
     bool m_curlyBraceNewline = true;
-    bool m_hideCompilerGenerated = true;     // hide __local_vftable_ctor_closure, etc.
-    bool m_templateParams = false;           // emit template<...> for requested template instantiations
-    DWORD m_baseAccessType = 0;              // override access type
+    bool m_hideCompilerGenerated = true; // hide __local_vftable_ctor_closure, etc.
+    bool m_templateParams = false;       // emit template<...> for requested template instantiations
+    DWORD m_baseAccessType = 0;          // override access type
     IntStyle m_intStyle = IntStyle::Cstdint; // __int32 vs int32_t
 };
 
@@ -263,9 +263,8 @@ public:
         // <undefined-type> or $HASH names, and turns inplace anonymous enum names
         // like <unnamed-type-m_Member> into a usable "MemberEnum" identifier.
 
-        std::wstring enum_symbolsName
-            = TypeWalker::prettyTypeName(
-                TypeWalker::getName(a_symbol, m_scope, m_config.m_showNonScoped), L"Enum");
+        std::wstring enum_symbolsName = TypeWalker::prettyTypeName(
+            TypeWalker::getName(a_symbol, m_scope, m_config.m_showNonScoped), L"Enum");
         if (!enum_symbolsName.empty())
         {
             ret += L" ";

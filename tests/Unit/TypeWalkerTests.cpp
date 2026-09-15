@@ -101,15 +101,15 @@ TEST(TypeWalkerPrettyTypeName, InplaceAnonymousMember)
 TEST(TypeWalkerPrettyTypeName, InplaceAnonymousMemberEnum)
 {
     // <unnamed-type-m_DeadBodyPart> -> "DeadBodyPartEnum" (m_ stripped, Enum appended).
-    EXPECT_EQ(TypeWalker::prettyTypeName(L"<unnamed-type-m_DeadBodyPart>", L"Enum"),
-              L"DeadBodyPartEnum");
+    EXPECT_EQ(
+        TypeWalker::prettyTypeName(L"<unnamed-type-m_DeadBodyPart>", L"Enum"), L"DeadBodyPartEnum");
 }
 
 TEST(TypeWalkerPrettyTypeName, InplaceAnonymousStatic)
 {
     // s_ prefix (static member) is stripped too.
-    EXPECT_EQ(TypeWalker::prettyTypeName(L"<unnamed-type-s_GlobalState>", L"Enum"),
-              L"GlobalStateEnum");
+    EXPECT_EQ(
+        TypeWalker::prettyTypeName(L"<unnamed-type-s_GlobalState>", L"Enum"), L"GlobalStateEnum");
 }
 
 TEST(TypeWalkerPrettyTypeName, InplaceAnonymousNoMemberPrefix)
@@ -151,7 +151,7 @@ TEST(TypeWalkerLeafName, TemplateName)
 {
     // A "::" inside "<...>" must not be treated as the scope separator.
     EXPECT_EQ(TypeWalker::leafName(L"TB::TList<int, TB::CustomAllocator<int>>"),
-              L"TList<int, TB::CustomAllocator<int>>");
+        L"TList<int, TB::CustomAllocator<int>>");
 }
 
 // ----------------------------------------------------------------------------
@@ -187,8 +187,8 @@ TEST(TypeWalkerParseQualifiedName, TemplateLeafKeepsArgs)
 
 TEST(TypeWalkerNamespace, NamedBlocks)
 {
-    EXPECT_EQ(TypeWalker::namespaceBlockOpen(L"User::Math"),
-              L"namespace User\n{\nnamespace Math\n{\n");
+    EXPECT_EQ(
+        TypeWalker::namespaceBlockOpen(L"User::Math"), L"namespace User\n{\nnamespace Math\n{\n");
     EXPECT_EQ(TypeWalker::namespaceBlockClose(L"User::Math"), L"}\n}\n");
     EXPECT_EQ(TypeWalker::namespacePartCount(L"User::Math"), 2u);
 }
@@ -239,23 +239,21 @@ TEST(TypeWalkerTemplateInstantiation, SubstituteWholeTokens)
     const std::wstring in
         = L"class Type<float, 11, TB::HighRes> : public Type<float, 11, TB::HighRes> { x111; };";
     const std::wstring out = TypeWalker::substituteTemplateArgs(in, ti);
-    EXPECT_EQ(out,
-        L"class Type<T, U, V> : public Type<T, U, V> { x111; };");
+    EXPECT_EQ(out, L"class Type<T, U, V> : public Type<T, U, V> { x111; };");
 }
 TEST(TypeWalkerTemplateInstantiation, ReconCommentKeepsConcreteArgs)
 {
     auto ti = TypeWalker::makeTemplateInstantiation(L"Singleton<WeaponManager>");
     ASSERT_TRUE(ti.active);
 
-    const std::wstring in
-        = L"// size: 1 byte\n"
-          L"// reconstructed by Singleton<WeaponManager>\n"
-          L"template<typename T>\n"
-          L"class Singleton\n"
-          L"{\n"
-          L"    T& Instance();\n"
-          L"    Singleton<T>();\n"
-          L"};\n";
+    const std::wstring in = L"// size: 1 byte\n"
+                            L"// reconstructed by Singleton<WeaponManager>\n"
+                            L"template<typename T>\n"
+                            L"class Singleton\n"
+                            L"{\n"
+                            L"    T& Instance();\n"
+                            L"    Singleton<T>();\n"
+                            L"};\n";
 
     // The concrete-instantiation comment must survive untouched even though the
     // concrete argument appears inside it.
@@ -267,9 +265,8 @@ TEST(TypeWalkerTemplateInstantiation, SubstitutionStillAppliesOutsideReconCommen
     auto ti = TypeWalker::makeTemplateInstantiation(L"Singleton<WeaponManager>");
     ASSERT_TRUE(ti.active);
 
-    const std::wstring in
-        = L"// reconstructed by Singleton<WeaponManager>\n"
-          L"WeaponManager* Get();\n";
+    const std::wstring in = L"// reconstructed by Singleton<WeaponManager>\n"
+                            L"WeaponManager* Get();\n";
 
     // Substitution still happens everywhere except the reconstruction comment.
     EXPECT_EQ(TypeWalker::substituteTemplateArgs(in, ti),
