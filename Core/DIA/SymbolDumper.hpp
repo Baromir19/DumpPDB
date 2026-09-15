@@ -171,11 +171,38 @@ public:
         ret += tab(a_nestingLevel);
         ret += sizeComment(a_symbol);
 
+        // When the requested name is a template instantiation that we reconstruct
+        // into a generic template<...> definition (m_template.active), the concrete
+        // argument list (e.g. "Singleton<WeaponManager>") must be dropped from the
+        // class declaration — a template definition uses the bare class-name. The
+        // full folded/instantiated name is preserved for member scope resolution.
+        std::wstring scopeName = className;
+
         // Emit the generated template<...> header only once — on the outermost
         // top-level declaration of the requested instantiation. Nested members
         // (enum/class/function declarations) must NOT repeat it.
         if (m_template.active && !m_templateHeaderDone)
         {
+            // Remember the concrete instantiation this dump was derived from
+            // (e.g. "Singleton<WeaponManager>") before the class-name is turned
+            // back into its bare class-template name ("Singleton"). This comment
+            // is left untouched by the later argument substitution so the concrete
+            // argument list stays visible.
+            const std::wstring instantiationName = className;
+            const auto lt = className.find(L'<');
+            if (lt != std::wstring::npos)
+            {
+                className = className.substr(0, lt);
+            }
+
+            if (!instantiationName.empty())
+            {
+                ret += tab(a_nestingLevel);
+                ret += L"// reconstructed by ";
+                ret += instantiationName;
+                ret += L"\n";
+            }
+
             ret += tab(a_nestingLevel);
             ret += m_template.decl;
             ret += L"\n";
@@ -190,8 +217,9 @@ public:
         ret += classInheritance(a_symbol);
         ret += scopeBegin(a_nestingLevel);
 
-        // Push this class onto the scope stack
-        m_scope.push(className);
+        // Push this class onto the scope stack (the full instantiated name so
+        // constructor detection and member name resolution keep working).
+        m_scope.push(scopeName);
         ret += dumpMembers(a_symbol, a_nestingLevel + 1);
         m_scope.pop();
 

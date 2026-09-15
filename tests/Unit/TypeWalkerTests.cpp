@@ -242,3 +242,37 @@ TEST(TypeWalkerTemplateInstantiation, SubstituteWholeTokens)
     EXPECT_EQ(out,
         L"class Type<T, U, V> : public Type<T, U, V> { x111; };");
 }
+TEST(TypeWalkerTemplateInstantiation, ReconCommentKeepsConcreteArgs)
+{
+    auto ti = TypeWalker::makeTemplateInstantiation(L"Singleton<WeaponManager>");
+    ASSERT_TRUE(ti.active);
+
+    const std::wstring in
+        = L"// size: 1 byte\n"
+          L"// reconstructed by Singleton<WeaponManager>\n"
+          L"template<typename T>\n"
+          L"class Singleton\n"
+          L"{\n"
+          L"    T& Instance();\n"
+          L"    Singleton<T>();\n"
+          L"};\n";
+
+    // The concrete-instantiation comment must survive untouched even though the
+    // concrete argument appears inside it.
+    EXPECT_EQ(TypeWalker::substituteTemplateArgs(in, ti), in);
+}
+
+TEST(TypeWalkerTemplateInstantiation, SubstitutionStillAppliesOutsideReconComment)
+{
+    auto ti = TypeWalker::makeTemplateInstantiation(L"Singleton<WeaponManager>");
+    ASSERT_TRUE(ti.active);
+
+    const std::wstring in
+        = L"// reconstructed by Singleton<WeaponManager>\n"
+          L"WeaponManager* Get();\n";
+
+    // Substitution still happens everywhere except the reconstruction comment.
+    EXPECT_EQ(TypeWalker::substituteTemplateArgs(in, ti),
+        L"// reconstructed by Singleton<WeaponManager>\n"
+        L"T* Get();\n");
+}

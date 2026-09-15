@@ -412,44 +412,71 @@ static bool isWhitespace(wchar_t a_ch)
 
     /// Replace concrete template arguments with their generated parameter names,
     /// matching only whole tokens so "11" does not rewrite "x11" or "111".
+    /// Lines that document the original instantiation ("// reconstructed by ...")
+    /// are emitted verbatim so the concrete argument list stays visible in the
+    /// comment even though it is substituted with a parameter name everywhere else.
     static std::wstring substituteTemplateArgs(
         const std::wstring& a_text, const TemplateInstantiation& a_ti)
     {
-        std::wstring result = a_text;
-        for (const auto& [from, to] : a_ti.replacements)
+        static const std::wstring kReconPrefix = L"// reconstructed by ";
+
+        std::wstring result;
+        size_t pos = 0;
+        while (pos < a_text.size())
         {
-            if (from.empty())
-                continue;
+            const size_t eol = a_text.find(L'\n', pos);
+            const bool hasNewline = eol != std::wstring::npos;
+            const size_t end = hasNewline ? eol : a_text.size();
 
-            std::wstring next;
-            size_t pos = 0;
-            while (pos < result.size())
+            std::wstring line = a_text.substr(pos, end - pos);
+
+            if (line.compare(0, kReconPrefix.size(), kReconPrefix) != 0)
             {
-                const size_t found = result.find(from, pos);
-                if (found == std::wstring::npos)
+                for (const auto& [from, to] : a_ti.replacements)
                 {
-                    next += result.substr(pos);
-                    break;
-                }
+                    if (from.empty())
+                        continue;
 
-                const size_t end = found + from.size();
-                const bool boundaryBefore = (found == 0) || !isIdentifierContinuation(result[found - 1]);
-                const bool boundaryAfter = (end >= result.size()) || !isIdentifierContinuation(result[end]);
+                    std::wstring next;
+                    size_t lp = 0;
+                    while (lp < line.size())
+                    {
+                        const size_t found = line.find(from, lp);
+                        if (found == std::wstring::npos)
+                        {
+                            next += line.substr(lp);
+                            break;
+                        }
 
-                if (boundaryBefore && boundaryAfter)
-                {
-                    next += result.substr(pos, found - pos);
-                    next += to;
-                    pos = end;
-                }
-                else
-                {
-                    next += result.substr(pos, found - pos + 1);
-                    pos = found + 1;
+                        const size_t hitEnd = found + from.size();
+                        const bool boundaryBefore
+                            = (found == 0) || !isIdentifierContinuation(line[found - 1]);
+                        const bool boundaryAfter
+                            = (hitEnd >= line.size()) || !isIdentifierContinuation(line[hitEnd]);
+
+                        if (boundaryBefore && boundaryAfter)
+                        {
+                            next += line.substr(lp, found - lp);
+                            next += to;
+                            lp = hitEnd;
+                        }
+                        else
+                        {
+                            next += line.substr(lp, found - lp + 1);
+                            lp = found + 1;
+                        }
+                    }
+                    line = std::move(next);
                 }
             }
-            result = std::move(next);
+
+            result += line;
+            if (!hasNewline)
+                break;
+            result += L'\n';
+            pos = eol + 1;
         }
+
         return result;
     }
     /// Returns true if a_symbol's lexical parent is a UDT (class/struct/union),
