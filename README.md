@@ -1,6 +1,6 @@
-![DumpPDB banner](/docs/images/readme_header.png)
+# DumpPDB
 
-DumpPDB reads a `.pdb` file via the DIA SDK and prints C++ type declarations — with field offsets, sizes, access specifiers, virtual functions, and source file info. It was written as a faster, cleaner alternative to `pdbex` and `Dia2Dump`.
+A PDB reader that reconstructs C++ type declarations with field offsets, sizes, access specifiers, virtual functions, and source file information.
 
 ---
 
