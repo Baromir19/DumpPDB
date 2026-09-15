@@ -1,21 +1,19 @@
 ![DumpPDB banner](/docs/images/readme_header.png)
 
-# About
-The tool was developed on DIA API, with the main goal of speeding up the output of class fields and other types.
-Its functionality includes outputting the type by name (`-type`), outputting the compilands (`-compilands`), and source files (`-sources`).
+DumpPDB reads a `.pdb` file via the DIA SDK and prints C++ type declarations — with field offsets, sizes, access specifiers, virtual functions, and source file info. It was written as a faster, cleaner alternative to `pdbex` and `Dia2Dump`.
 
-In particular, this project was written as the best replacement for `IDA` (of course, only in the implementation of the types, as decompilation is too time-consuming a task), `pdbex` and `Dia2Dump`, which do not provide a normal and fast way to implement code (each has its drawback, and I tried to address them here).
+---
 
-# Usage
-## Type
-Go to the path of DumpPDB, then enter `DumpPDB.exe -type <type_name> <source.pdb>`
+## Quick start
 
-In the output, you may observe a considerable amount of debug information, such as offsets of fields and bit fields, sizes of structures, as well as the source files in which this structure was encountered. 
-While all of this information is useful, it may also be a distraction for you. 
-If you so desire, you can recompile the code by altering the global parameters, or you can await the implementation of serialization.
+```
+DumpPDB.exe -type <typename> <file.pdb>
+DumpPDB.exe -type "TemplateType<Arg>" file.pdb   # quote names with < >
+```
 
 **Example output:**
-``` cpp
+
+```cpp
 // size: 52 byte
 class MainObjectDefinition : public ExposedDefinition
 {
@@ -24,37 +22,126 @@ class MainObjectDefinition : public ExposedDefinition
 
     /// VIRTUALS:
     virtual MainObject* CreateObject(); // 0x0
-    virtual void Init(); // 0x0
+    virtual void Init();                // 0x0
     virtual void ~MainObjectDefinition(); // 0x0
-    virtual void* __vecDelDtor(); // 0x0
 
     /// FUNCS:
     void MainObjectDefinition();
-    void MainObjectDefinition();
     MainObjectDefinition& operator=();
-    void __local_vftable_ctor_closure();
 };
 // f:\user\sample\mainobject.cpp
-// f:\user\sample\mainobject.cpp
-// f:\user\sample\maininstance.cpp
-// f:\user\sample\maininstance.cpp
-// f:\user\sample\maininstance.cpp
-// f:\user\sample\maininstance.cpp
-// f:\user\sample\maininstance.cpp
 // f:\user\sample\maininstance.cpp
 ```
 
-# Goals
-- complete the serialization ✅
-- expanded function type output (e.g. `declspec(__naked)`, `__noinline` etc.)
-- implement a one-time output of the field's scope (if 3-4 fields in succession share the same visibility, display only that visibility at the very top)
-- hints on function generation by the compiler (default constructors, the equality operator, and others are often created by the compiler.)
-- cleanup of the "void" type for the destructor (e.g. `void ~Object()`)
-- print namespace's data
-- code cleanup
+---
 
-# Possible problems
-You may encounter a command line limitations: `> was unexpected at this time.` or `The system cannot find the file specified.` 
-You can encounter this when entering a template type, but `<` controls input and output in the command line; to solve the problem, it is enough to simply enter the above type in quotes, for example `"TemplateType<SizeS>"`.
+## Commands
 
-When outputting functions, sometimes the named args may be incomplete, so the code outputs their complete types (without names, they are displayed after the sign "<-").
+| Command | Description |
+|---|---|
+| `-type <name>` | Dump a type by name (class, struct, union, enum, typedef). Copies to clipboard. |
+| `-compilands [true]` | List compilation units. Pass `true` for compiler/env details. |
+| `-sources` | List all source files recorded in the PDB. |
+| `-settings [-h] <key> <value>` | Read or write a persistent setting. `-h` lists all. |
+| `-help` | Print the command table. |
+
+The search is case-insensitive. Template names must be quoted in the shell (`"TList<int>"`). If no exact match is found, a namespace-prefix fallback is applied automatically.
+
+---
+
+## Settings
+
+Output is controlled by `config.ini` next to the executable (created on first run). Key settings:
+
+| Key | Default | Description |
+|---|---|---|
+| `DumpConfig.ShowOffset` | `true` | Field byte offsets. |
+| `DumpConfig.ShowAccess` | `true` | Access specifier labels. |
+| `DumpConfig.ShowTypeSource` | `false` | Source file paths below the type body. |
+| `DumpConfig.HideCompilerGenerated` | `true` | Hide compiler-generated helpers. |
+| `DumpConfig.IntStyle` | `1` | `0` = `__int32`, `1` = `int32_t`. |
+| `DumpConfig.TemplateParams` | `false` | Emit `template<...>` for instantiation queries. |
+| `CommandConfig.UseClipboard` | `true` | Auto-copy `-type` output to clipboard. |
+
+Full reference: [`docs/user/settings.md`](docs/user/settings.md)
+
+---
+
+## C API (PdbAPI.dll)
+
+The core logic is also exposed as a flat `extern "C"` DLL, suitable for use from Python, C#, or any language with a foreign function interface.
+
+```c
+PdbApi_Initialize(L"Dev.pdb");
+
+uint32_t size = 0;
+PdbApi_DumpTypeByName(L"Actor", 0, nullptr, 0, &size);
+
+wchar_t* buf = malloc(size * sizeof(wchar_t));
+PdbApi_DumpTypeByName(L"Actor", 0, buf, size, nullptr);
+```
+
+Other functions: `PdbApi_EnumerateSymbolNames`, `PdbApi_GetSymbolSourceFiles`, `PdbApi_FindStringsInFile`, `PdbApi_FindSignaturesInFile`.
+
+Full reference: [`docs/developer/api.md`](docs/developer/api.md)
+
+---
+
+## Python scripts
+
+`scripts/` contains tooling built on top of `PdbAPI.dll`:
+
+| Script | Purpose |
+|---|---|
+| `dump_pdb.py` | General-purpose query tool (types, symbols, strings, signatures). |
+| `resolve_type_sources.py` | Map every PDB type to its best-matching source file. |
+| `reconstruct_sources.py` | Render per-type source snippets from a template. |
+| `recover_file_sources.py` | Recover the original source tree from PDB paths + binary strings. |
+| `verify_sources.py` | GUI for reviewing and correcting type → source mappings. |
+
+Full reference: [`docs/user/scripts.md`](docs/user/scripts.md)
+
+---
+
+## Building
+
+Requires MSVC 2019+, CMake 3.20+, and the DIA SDK (ships with Visual Studio). CMake locates the DIA SDK automatically via `%VSINSTALLDIR%` or `vswhere`.
+
+```bat
+cmake -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release
+```
+
+With tests:
+
+```bat
+cmake -B build -DBUILD_TESTS=ON
+cmake --build build --config Release
+ctest --test-dir build --output-on-failure
+```
+
+Details: [`docs/developer/dependencies.md`](docs/developer/dependencies.md)
+
+---
+
+## Documentation
+
+| | |
+|---|---|
+| [CLI usage](docs/user/cli.md) | Commands, output format, template names |
+| [Settings](docs/user/settings.md) | All `config.ini` keys |
+| [Python scripts](docs/user/scripts.md) | Script reference |
+| [Architecture](docs/developer/architecture.md) | Code structure, data flow |
+| [C API](docs/developer/api.md) | PdbAPI.dll function reference |
+| [Dependencies](docs/developer/dependencies.md) | Build setup |
+
+---
+
+## Roadmap
+
+- Expanded function attribute output (`__declspec(__naked)`, `__noinline`, etc.)
+- Compact visibility blocks (group successive same-access members under a single label)
+- Compiler-hint annotations on generated functions (default constructors, copy operators)
+- `void` cleanup for destructors (`void ~Object()` → `~Object()`)
+- Namespace data output
+- Code cleanup
