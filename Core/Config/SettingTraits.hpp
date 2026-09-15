@@ -49,7 +49,7 @@ struct SettingTraits<DWORD>
     {
         try
         {
-            a_out = static_cast<DWORD>(std::stoul(a_str, nullptr, 0)); // base=0 accepts "0x…"
+            a_out = static_cast<DWORD>(std::stoul(a_str, nullptr, 0)); // base=0 accepts "0x..."
             return true;
         }
         catch (...)

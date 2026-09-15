@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <sstream>
+#include <unordered_set>
 
 #include <dia2.h>
 
@@ -23,8 +24,9 @@ struct DumpConfig
     bool m_showEnumHex = false;
     bool m_showTypeSource = false;
     bool m_curlyBraceNewline = true;
-    bool m_hideCompilerGenerated = true;     // hide __local_vftable_ctor_closure, etc.
-    DWORD m_baseAccessType = 0;              // override access type
+    bool m_hideCompilerGenerated = true; // hide __local_vftable_ctor_closure, etc.
+    bool m_templateParams = false;       // emit template<...> for requested template instantiations
+    DWORD m_baseAccessType = 0;          // override access type
     IntStyle m_intStyle = IntStyle::Cstdint; // __int32 vs int32_t
 };
 
@@ -46,6 +48,20 @@ public:
     const DumpConfig& config() const
     {
         return m_config;
+    }
+
+    /// Set the user-requested template instantiation (computed from the query name).
+    /// When active, a "template<...>" header is emitted above the dumped type and
+    /// concrete arguments are substituted back with the generated parameter names.
+    void setTemplateInstantiation(TypeWalker::TemplateInstantiation a_ti)
+    {
+        m_template = std::move(a_ti);
+        m_templateHeaderDone = false;
+    }
+
+    const TypeWalker::TemplateInstantiation& templateInstantiation() const
+    {
+        return m_template;
     }
 
     // --- Scope control (namespace/class hierarchy) ---
@@ -109,10 +125,7 @@ public:
 
         if (hasNs)
         {
-            ret += L"namespace ";
-            ret += ns;
-            ret += L"\n{\n";
-
+            ret += TypeWalker::namespaceBlockOpen(ns);
             pushQualifiedScope(ns);
         }
 
@@ -138,17 +151,9 @@ public:
         if (hasNs)
         {
             // Determine how many scope parts were pushed by pushQualifiedScope.
-            size_t partCount = 1;
-            for (size_t i = 0; i + 1 < ns.size(); ++i)
-            {
-                if (ns[i] == L':' && ns[i + 1] == L':')
-                {
-                    ++partCount;
-                    ++i;
-                }
-            }
+            size_t partCount = TypeWalker::namespacePartCount(ns);
             popQualifiedScope(partCount);
-            ret += L"}\n";
+            ret += TypeWalker::namespaceBlockClose(ns);
         }
 
         return ret;
@@ -166,6 +171,44 @@ public:
         ret += tab(a_nestingLevel);
         ret += sizeComment(a_symbol);
 
+        // When the requested name is a template instantiation that we reconstruct
+        // into a generic template<...> definition (m_template.active), the concrete
+        // argument list (e.g. "Singleton<WeaponManager>") must be dropped from the
+        // class declaration — a template definition uses the bare class-name. The
+        // full folded/instantiated name is preserved for member scope resolution.
+        std::wstring scopeName = className;
+
+        // Emit the generated template<...> header only once — on the outermost
+        // top-level declaration of the requested instantiation. Nested members
+        // (enum/class/function declarations) must NOT repeat it.
+        if (m_template.active && !m_templateHeaderDone)
+        {
+            // Remember the concrete instantiation this dump was derived from
+            // (e.g. "Singleton<WeaponManager>") before the class-name is turned
+            // back into its bare class-template name ("Singleton"). This comment
+            // is left untouched by the later argument substitution so the concrete
+            // argument list stays visible.
+            const std::wstring instantiationName = className;
+            const auto lt = className.find(L'<');
+            if (lt != std::wstring::npos)
+            {
+                className = className.substr(0, lt);
+            }
+
+            if (!instantiationName.empty())
+            {
+                ret += tab(a_nestingLevel);
+                ret += L"// reconstructed by ";
+                ret += instantiationName;
+                ret += L"\n";
+            }
+
+            ret += tab(a_nestingLevel);
+            ret += m_template.decl;
+            ret += L"\n";
+            m_templateHeaderDone = true;
+        }
+
         ret += tab(a_nestingLevel);
         ret += modPrefix(a_symbol);
         ret += udtKeyword(a_symbol);
@@ -174,8 +217,9 @@ public:
         ret += classInheritance(a_symbol);
         ret += scopeBegin(a_nestingLevel);
 
-        // Push this class onto the scope stack
-        m_scope.push(className);
+        // Push this class onto the scope stack (the full instantiated name so
+        // constructor detection and member name resolution keep working).
+        m_scope.push(scopeName);
         ret += dumpMembers(a_symbol, a_nestingLevel + 1);
         m_scope.pop();
 
@@ -215,10 +259,13 @@ public:
         ret += modPrefix(a_symbol);
         ret += L"enum";
 
-        // Filter synthetic names like <unnamed-tag> or $HASH names
-        std::wstring enum_symbolsName
-            = TypeWalker::getName(a_symbol, m_scope, m_config.m_showNonScoped);
-        if (!TypeWalker::isSyntheticName(enum_symbolsName))
+        // Derive a friendly name: filters synthetic names like <unnamed-tag>,
+        // <undefined-type> or $HASH names, and turns inplace anonymous enum names
+        // like <unnamed-type-m_Member> into a usable "MemberEnum" identifier.
+
+        std::wstring enum_symbolsName = TypeWalker::prettyTypeName(
+            TypeWalker::getName(a_symbol, m_scope, m_config.m_showNonScoped), L"Enum");
+        if (!enum_symbolsName.empty())
         {
             ret += L" ";
             ret += enum_symbolsName;
@@ -674,8 +721,8 @@ public:
         struct FieldGroup
         {
             std::vector<ComPtr<IDiaSymbol>> fields;
-            LONG beginOffset;
-            LONG endOffset;
+            LONG beginOffset = 0L;
+            LONG endOffset = 0L;
         };
 
         struct FieldBranch
@@ -1083,11 +1130,14 @@ public:
         return ret;
     }
 
-    /// Register source file info for a symbol (stores for later output).
-    void registerTypeSource(IDiaSymbol* a_symbol)
+    /// Get source file names for a symbol, newline-separated.
+    /// Uses the same address->line->sourceFile lookup as registerTypeSource,
+    /// but returns the result instead of storing it for later output.
+    std::wstring getTypeSourceFiles(IDiaSymbol* a_symbol)
     {
-        if (!m_config.m_showTypeSource)
-            return;
+        std::wstring ret;
+        if (!a_symbol)
+            return ret;
 
         ComPtr<IDiaEnumLineNumbers> enum_symbolsLines;
         ComPtr<IDiaSourceFile> sourceFile;
@@ -1105,7 +1155,7 @@ public:
                 && enum_symbolsLines)
             {
                 ULONG celt = 0;
-                if (SUCCEEDED(enum_symbolsLines->Next(1, &lineNumber, &celt)) && celt == 1)
+                while (SUCCEEDED(enum_symbolsLines->Next(1, &lineNumber, &celt)) && celt == 1)
                 {
                     if (SUCCEEDED(lineNumber->get_sourceFile(&sourceFile)) && sourceFile)
                     {
@@ -1114,12 +1164,39 @@ public:
                         {
                             // Convert BSTR to std::wstring immediately to avoid
                             // ownership issues (double-free, use-after-free, leaks)
-                            m_typeSources.emplace_back(_filename, SysStringLen(_filename));
+                            ret += _filename;
+                            ret += L"\n";
                             SysFreeString(_filename);
                         }
                     }
                 }
             }
+        }
+        return ret;
+    }
+
+    /// Register source file info for a symbol (stores for later output).
+    void registerTypeSource(IDiaSymbol* a_symbol)
+    {
+        if (!m_config.m_showTypeSource)
+            return;
+
+        std::wstring srcs = getTypeSourceFiles(a_symbol);
+        if (srcs.empty())
+            return;
+
+        // Split the newline-separated result and store each file.
+        size_t start = 0;
+        while (start < srcs.size())
+        {
+            auto nl = srcs.find(L'\n', start);
+            if (nl == std::wstring::npos)
+            {
+                m_typeSources.emplace_back(srcs.substr(start));
+                break;
+            }
+            m_typeSources.emplace_back(srcs.substr(start, nl - start));
+            start = nl + 1;
         }
     }
 
@@ -1179,6 +1256,62 @@ public:
     }
 
     // --- Helpers ---
+
+public:
+
+    std::wstring getTypeSourceFilesRecursive(
+        IDiaSymbol* a_symbol, std::unordered_set<DWORD>& a_visited, int depth = 0)
+    {
+        if (depth > kMaxDepth)
+            return {};
+
+        std::wstring ret;
+
+        if (!a_symbol)
+            return ret;
+
+        DWORD id = 0;
+        a_symbol->get_symIndexId(&id);
+
+        if (!a_visited.insert(id).second)
+        {
+            return {};
+        }
+
+        ret += getTypeSourceFiles(a_symbol);
+
+        ComPtr<IDiaEnumSymbols> children;
+
+        if (FAILED(a_symbol->findChildren(SymTagNull, nullptr, nsNone, &children)) || !children)
+        {
+            return ret;
+        }
+
+        ComPtr<IDiaSymbol> child;
+        ULONG celt = 0;
+
+        while (SUCCEEDED(children->Next(1, &child, &celt)) && celt == 1)
+        {
+            DWORD tag = SymTagNull;
+            child->get_symTag(&tag);
+
+            switch (tag)
+            {
+            case SymTagFunction:
+            case SymTagData:
+            case SymTagUDT:
+            case SymTagEnum:
+            case SymTagTypedef:
+                ret += getTypeSourceFilesRecursive(child.get(), a_visited, depth + 1);
+                break;
+
+            default:
+                break;
+            }
+        }
+
+        return ret;
+    }
 
 private:
 
@@ -1523,4 +1656,7 @@ private:
     ScopeContext m_scope;
     std::vector<std::wstring> m_typeSources;
     IDiaSession* m_session = nullptr;
+    TypeWalker::TemplateInstantiation m_template;
+    bool m_templateHeaderDone = false;
+    static constexpr int kMaxDepth = 256;
 };

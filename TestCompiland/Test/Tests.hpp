@@ -608,6 +608,26 @@ struct TemplateUsage
     TemplateWithNonTypeParam<int, 5> arrayTemplate;
 };
 
+// Template with a nested enum and a nested class — used to verify that the
+// generated template<...> header is emitted ONLY on the outermost type and
+// not repeated on nested members (enums can't be templated).
+template <typename T, int N>
+struct TemplateWithNestedEnum
+{
+    enum MemberEnum : int
+    {
+        MEMBER_A = N,
+    };
+
+    struct Nested
+    {
+        T value2;
+    };
+
+    T value;
+    char data[N];
+};
+
 // ========================================================================
 // 18. CONST QUALIFIED FUNCTIONS
 // ========================================================================
@@ -682,6 +702,7 @@ class CompileTested
     AnonymousTest compile_ANON;
     TypedefUsage compile_TYPEDEF;
     TemplateUsage compile_TEMPLATE;
+    TemplateWithNestedEnum<Test::Weapon, 5> compile_NESTED_TEMPLATE;
     ConstMethodTest compile_CONST_METHOD;
     ComplexFieldTypes compile_COMPLEX;
     StaticConstMembers compile_CONST_MEMBERS;

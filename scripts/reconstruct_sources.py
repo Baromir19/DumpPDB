@@ -1,0 +1,771 @@
+#!/usr/bin/env python3
+"""Render text templates with a small inline DSL.
+
+The DSL is used to reconstruct per-type source snippets. A template is a
+plain-text file such as ``reconstruction_type.example.txt``; it is fed a JSON
+object with the data (e.g. ``{"TYPE": {"NAME": "Actor", ...}}``) and the result
+is the rendered text.
+
+DSL overview
+------------
+
+* Plain text lines are kept as-is and are the only thing that ends up in the
+  output.
+* ``<path>``          - a variable reference resolved against the data.
+* ``\\<path>``         - "mirrored" (escaped) variable: emitted literally as
+  ``<path>`` as plain text instead of being resolved.
+* ``!IF <path>`` ... ``!END`` - evaluates ``<path>``; the block is emitted only
+  when the value is truthy (not ``None``, not ``0``, not an empty container).
+* ``!FOR <var> IN <path>`` ... ``!END`` - iterates over the list at ``<path>``;
+  each element is bound to ``<var>`` (which may be a scalar or an object
+  addressable as ``<var.field>``) and the block body is rendered per element.
+* Lines starting with ``#`` are comments and are ignored.
+
+Example::
+
+    !FOR <PREFIX> IN <TYPE.PREFIXES>
+    MACRO_<PREFIX>(<TYPE.NAME>)
+    !END
+
+    \\hidden<TYPE.SECRET>   <-- emitted literally (mirrored, not resolved)
+"""
+
+import argparse
+from dataclasses import dataclass
+import json
+import sys
+from pathlib import Path
+
+from dumppdb_tools import PdbClient
+from dumppdb_tools.sources import (
+    TypeSource,
+    load_type_sources,
+    locate_browse_definitions,
+    macro_found_types,
+    missing_from_project,
+)
+
+
+# ---------------------------------------------------------------------------
+# Reconstruction model
+# ---------------------------------------------------------------------------
+
+@dataclass(slots=True)
+class TypeReconstruction:
+    """Data the DSL needs to reconstruct a base type and its meta variants.
+
+    Attributes:
+        name:     The base type name (the real type stored in the PDB).
+        prefixes: Meta prefixes derived from the type's ``meta_variant``
+            relations (e.g. ``["C"]`` for ``CVehicleDefinition``).
+        suffixes: Meta suffixes derived from the type's ``meta_variant``
+            relations (e.g. ``["Definition"]`` for ``CVehicleDefinition``).
+        object:   The dumped definition text of the type, or ``None`` when
+            no PDB was provided.
+    """
+
+    name: str
+    prefixes: list[str]
+    suffixes: list[str]
+    object: str | None
+    template: str | None = None
+    path: str | None = None
+
+
+def split_meta(base_name: str, meta_name: str) -> tuple[str, str]:
+    """Split a meta-variant name around the *base_name*.
+
+    The "cut" between the base type and its meta variant is what produces the
+    prefix/suffix markers. For ``base_name="Vehicle"`` and
+    ``meta_name="CVehicleDefinition"`` this returns ``("C", "Definition")``.
+    """
+    index = meta_name.find(base_name)
+    if index == -1:
+        return "", ""
+    prefix = meta_name[:index]
+    suffix = meta_name[index + len(base_name):]
+    return prefix, suffix
+
+
+def build_reconstruction(item: TypeSource, meta_upper: bool = True) -> TypeReconstruction:
+    """Derive prefixes/suffixes for *item* and bundle them with its name.
+
+    The base name comes from *item.type_name*; every name in *item.metas*
+    (the ``meta_variant`` relations recorded for this type) is cut around the
+    base name to recover the prefix/suffix markers of that wrapper type.
+    """
+    prefixes: list[str] = []
+    suffixes: list[str] = []
+
+    for meta_name in item.metas or []:
+        prefix, suffix = split_meta(item.type_name, meta_name)
+        if prefix:
+            prefixes.append(prefix.upper() if meta_upper else prefix)
+        if suffix:
+            suffixes.append(suffix.upper() if meta_upper else suffix)
+
+    # Keep order but drop duplicates (several variants may share a marker).
+    return TypeReconstruction(
+        name=item.type_name,
+        prefixes=list(dict.fromkeys(prefixes)),
+        suffixes=list(dict.fromkeys(suffixes)),
+        object=None,
+        template=item.related_name,
+        path=item.path,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Node types
+# ---------------------------------------------------------------------------
+
+class _Node:
+    """Base class for a parsed template node."""
+
+    def render(self, context):
+        raise NotImplementedError
+
+
+class _Text(_Node):
+    """A text line that may contain ``<variable>`` tokens."""
+
+    __slots__ = ("text",)
+
+    def __init__(self, text):
+        self.text = text
+
+    def render(self, context):
+        return _resolve_line(self.text, context) + "\n"
+
+
+class _If(_Node):
+    """A conditional block: ``!IF <path> ... !END``."""
+
+    __slots__ = ("path", "body")
+
+    def __init__(self, path, body):
+        self.path = path
+        self.body = body
+
+    def render(self, context):
+        if _truthy(_resolve(self.path, context, allow_missing=True)):
+            return _render(self.body, context)
+        return ""
+
+
+class _For(_Node):
+    """A list loop: ``!FOR <var> IN <path> ... !END``."""
+
+    __slots__ = ("var", "path", "body")
+
+    def __init__(self, var, path, body):
+        self.var = var
+        self.path = path
+        self.body = body
+
+    def render(self, context):
+        seq = _resolve(self.path, context, allow_missing=True)
+        if seq is None:
+            return ""
+        if not _is_iterable(seq):
+            seq = (seq,)
+
+        parts = []
+        for element in seq:
+            scope = dict(context.scope)
+            scope[self.var] = element
+            parts.append(_render(self.body, _Context(context.root, scope)))
+        return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Resolution context
+# ---------------------------------------------------------------------------
+
+class _Context:
+    """Resolution context: the root data plus a flat variable scope."""
+
+    __slots__ = ("root", "scope")
+
+    def __init__(self, root, scope=None):
+        self.root = root
+        self.scope = scope or {}
+
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
+def _is_iterable(value):
+    if isinstance(value, (str, bytes)):
+        return False
+    try:
+        iter(value)
+        return True
+    except TypeError:
+        return False
+
+
+def _truthy(value):
+    """DLS truthiness: everything is truthy except None, 0, False and empties."""
+    if value is None:
+        return False
+    if value is False or value == 0:
+        return False
+    if isinstance(value, (str, list, tuple, dict, set)) and len(value) == 0:
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Parser
+# ---------------------------------------------------------------------------
+
+def _strip_var(text):
+    """Turn ``<some.path>`` or ``some.path`` into ``some.path``."""
+    text = text.strip()
+    if text.startswith("<") and text.endswith(">"):
+        return text[1:-1].strip()
+    return text
+
+
+def _parse(lines, index, depth=0):
+    """Parse ``lines`` starting at ``index``.
+
+    Returns ``(nodes, next_index)`` where ``next_index`` points just past the
+    closing ``!END`` (or at ``len(lines)`` for the top-level call). ``depth``
+    is the current block-nesting level and is used only to reject an
+    unmatched ``!END``.
+    """
+    nodes = []
+
+    while index < len(lines):
+        stripped = lines[index].strip()
+
+        if stripped != "" and stripped.startswith("#"):
+            index += 1
+            continue
+
+        if stripped.startswith("!"):
+            keyword, _, argument = stripped.partition(" ")
+
+            if keyword == "!END":
+                if depth == 0:
+                    raise SyntaxError(f"unexpected !END at line {index + 1}")
+                return nodes, index + 1
+
+            if keyword == "!IF":
+                if not argument.strip():
+                    raise SyntaxError(f"!IF without a path at line {index + 1}")
+                body, index = _parse(lines, index + 1, depth + 1)
+                nodes.append(_If(_strip_var(argument), body))
+                continue
+
+            if keyword == "!FOR":
+                if argument.count(" IN ") != 1:
+                    raise SyntaxError(
+                        f"!FOR must look like '!FOR <var> IN <path>' "
+                        f"(line {index + 1})"
+                    )
+                var_part, _, path_part = argument.partition(" IN ")
+                var = _strip_var(var_part)
+                if not var:
+                    raise SyntaxError(f"!FOR without a variable at line {index + 1}")
+                path = _strip_var(path_part)
+                if not path:
+                    raise SyntaxError(f"!FOR without a list path at line {index + 1}")
+                body, index = _parse(lines, index + 1, depth + 1)
+                nodes.append(_For(var, path, body))
+                continue
+
+            raise SyntaxError(f"unknown directive '{keyword}' at line {index + 1}")
+
+        # Plain (or variable-bearing) line.
+        nodes.append(_Text(lines[index]))
+        index += 1
+
+    return nodes, index
+# ---------------------------------------------------------------------------
+# Resolution & rendering
+# ---------------------------------------------------------------------------
+
+def _resolve(path, context, allow_missing=False):
+    """Resolve dotted ``path`` against the current scope and the root data."""
+    segments = [s for s in (c.strip() for c in path.split(".")) if s]
+    if not segments:
+        if allow_missing:
+            return None
+        raise KeyError(f"empty variable token '<{path}>'")
+
+    first, rest = segments[0], segments[1:]
+
+    if first in context.scope:
+        current = context.scope[first]
+    elif isinstance(context.root, dict) and first in context.root:
+        current = context.root[first]
+    else:
+        if allow_missing:
+            return None
+        raise KeyError(
+            f"unknown variable '<{first}>' "
+            f"(available: {sorted(context.scope)} + root keys)"
+        )
+
+    for seg in rest:
+        if isinstance(current, dict) and seg in current:
+            current = current[seg]
+        elif allow_missing:
+            return None
+        else:
+            current_type = type(current).__name__
+            raise KeyError(f"cannot resolve '<{seg}>' on {current_type} value")
+
+    return current
+
+
+def _stringify(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def _resolve_line(text, context):
+    """Render a single line, resolving ``<path>`` tokens and mirroring
+    ``\\<path>`` (and ``\\<path\\>``) as literal text."""
+    output = []
+    i, n = 0, len(text)
+
+    while i < n:
+        ch = text[i]
+
+        if ch == "\\" and i + 1 < n and text[i + 1] == "<":
+            end = text.find(">", i + 2)
+            if end == -1:  # no closing '>', keep the rest verbatim
+                output.append(text[i:])
+                break
+            segment = text[i:end + 1]  # e.g. "\<X>" or "\<X\>"
+            if segment.endswith("\\>"):
+                segment = segment[:-2] + ">"  # drop trailing backslash-close
+            if segment.startswith("\\"):
+                segment = segment[1:]  # drop the leading escape backslash
+            output.append(segment)
+            i = end + 1
+            continue
+
+        if ch == "<":
+            end = text.find(">", i + 1)
+            if end == -1:  # no closing '>', keep the rest verbatim
+                output.append(text[i:])
+                break
+            path = text[i + 1:end].strip()
+            output.append(_stringify(_resolve(path, context)))
+            i = end + 1
+            continue
+
+        output.append(ch)
+        i += 1
+
+    return "".join(output)
+
+
+def _render(nodes, context):
+    return "".join(node.render(context) for node in nodes)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def reconstruct(template_text, data=None):
+    """Render ``template_text`` against ``data``.
+
+    Args:
+        template_text: Raw template string containing the DSL.
+        data: The JSON-like object providing the values for ``<path>`` tokens.
+
+    Returns:
+        The fully rendered text.
+    """
+    data = data if data is not None else {}
+    lines = template_text.split("\n")
+    nodes, index = _parse(lines, 0)
+    if index < len(lines):
+        stripped = lines[index].strip()
+        if stripped.startswith("!"):
+            raise SyntaxError(
+                f"missing !END for block opened at line {index + 1}"
+            )
+    context = _Context(data)
+    result = _render(nodes, context)
+    return result[: -1] if result.endswith("\n") else result
+
+
+def reconstruct_from_file(template_path, data=None):
+    """Read ``template_path`` and render it with ``reconstruct``."""
+    with open(template_path, "r", encoding="utf-8") as handle:
+        return reconstruct(handle.read(), data)
+
+
+# ---------------------------------------------------------------------------
+# Target-file integration
+# ---------------------------------------------------------------------------
+
+_OPEN_TYPES_MARKER = "/* <reconstruction:types> */"
+_CLOSE_TYPES_MARKER = "/* </reconstruction:types> */"
+
+
+def _log(message):
+    # Progress notes go to stderr so stdout stays clean for a possible pipe.
+    print(f"[reconstruct_sources] {message}", file=sys.stderr)
+
+
+def _leading_whitespace(line):
+    # Everything up to (not including) the first non-space/tab character.
+    stripped = line.lstrip(" \t")
+    return line[: len(line) - len(stripped)]
+
+
+def _strip_blank_lines(lines):
+    # Drop leading and trailing blank lines, keeping the interior untouched.
+    lines = list(lines)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return lines
+
+
+def _merge_into_content(content, result_text, newline="\n"):
+    """Merge ``result_text`` into ``content`` between the reconstruction markers.
+
+    Existing text already written between the markers is preserved untouched; the
+    freshly rendered result is appended after it (a section is separated from a
+    neighbouring one by ``1-2`` line breaks). If the markers are missing, they
+    are appended to the end of the content.
+
+    Args:
+        content:     Current text of the target file (``""`` for a new file).
+        result_text: The freshly reconstructed snippet(s) to add.
+        newline:    Newline sequence used by the target file (``"\\n"`` or ``"\\r\\n"``).
+
+    Returns:
+        ``(updated_content, info)``. ``info["marker"]`` is ``"within"`` when the
+        result landed between already-present markers, ``"appended"`` when the
+        markers were added to the end (or the file was brand-new), and
+        ``info["created"]`` records whether the content started out empty.
+    """
+    open_marker = _OPEN_TYPES_MARKER
+    close_marker = _CLOSE_TYPES_MARKER
+    created = not content.strip()
+
+    lines = content.split(newline) if content else []
+
+    open_idx = close_idx = None
+    for i, line in enumerate(lines):
+        if open_idx is None and open_marker in line:
+            open_idx = i
+        if close_idx is None and close_marker in line:
+            close_idx = i
+        if open_idx is not None and close_idx is not None:
+            break
+
+    result_lines = _strip_blank_lines(
+        [line.rstrip("\r") for line in result_text.split("\n")]
+    )
+
+    valid_pair = (
+        open_idx is not None and close_idx is not None and open_idx <= close_idx
+    )
+
+    if not valid_pair:
+        # No usable marker pair -> append the region at the end of the file.
+        info = {"marker": "appended", "created": created}
+        indent = ""
+        result_region = [indent + line for line in result_lines]
+        if not result_region:
+            result_region = [""]
+        region = [indent + open_marker] + result_region + [indent + close_marker]
+        tail = [""] if (lines and lines[-1].strip()) else []
+        new_lines = lines + tail + region
+    else:
+        info = {"marker": "within", "created": created}
+
+        if open_idx == close_idx:
+            # Open and close markers on the same line -> split them apart.
+            inline = lines[open_idx]
+            start = inline.find(open_marker) + len(open_marker)
+            end = inline.find(close_marker, start)
+            mid = inline[start:end].strip() if end != -1 else ""
+            indent = _leading_whitespace(inline)
+            existing = _strip_blank_lines([mid]) if mid else []
+            open_line = indent + open_marker
+            close_line = indent + close_marker
+        else:
+            indent = _leading_whitespace(lines[open_idx])
+            existing = _strip_blank_lines(lines[open_idx + 1 : close_idx])
+            open_line = lines[open_idx]
+            close_line = lines[close_idx]
+
+        interior = list(existing)
+        if existing and result_lines:
+            interior.append("")  # one blank line between the old and the new block
+        interior.extend([indent + line for line in result_lines])
+        if not interior:
+            interior = [""]  # keep markers readable even without any content
+
+        new_lines = (
+            lines[:open_idx]
+            + [open_line]
+            + interior
+            + [close_line]
+            + lines[close_idx + 1 :]
+        )
+
+    updated = newline.join(new_lines).rstrip(newline) + newline
+    return updated, info
+
+
+DEFAULT_EXTENSIONS = (".h", ".hpp", ".hxx", ".hh", ".inl")
+"""Extensions tried, in priority order, when a reconstructed path needs one.
+
+The recorded ``TypeSource.path`` is extension-stripped, so the tool picks a
+header extension for the file it writes. ``.h`` is the first (default)
+priority and ``.hpp`` the fallback; a user-supplied ``--extension`` is tried
+first, with these defaults kept as further fallbacks.
+"""
+
+
+def resolve_target_path(source_root, rel_path, extensions=DEFAULT_EXTENSIONS):
+    """Full path under *source_root* for an extension-stripped *rel_path*.
+
+    Args:
+        source_root: Root of the (reconstructed) project tree (``--source-path``).
+        rel_path:    Extension-stripped, normalized *relative* path as recorded
+            in the database (``TypeSource.path``), or ``None``.
+        extensions:  Extensions to try, highest priority first.
+
+    Returns:
+        The full ``Path`` to write to, or ``None`` when *rel_path* is empty.
+        The first candidate that already exists under *source_root* wins, so
+        several types recorded against the same file append to one file
+        instead of creating siblings; otherwise the highest-priority extension
+        is used for a brand-new file.
+    """
+    if not rel_path:
+        return None
+
+    ext_stripped = Path(rel_path).as_posix()
+
+    for ext in extensions:
+        if ext == "":
+            continue
+        candidate = source_root / (ext_stripped + ext)
+        try:
+            if candidate.exists():
+                return candidate
+        except OSError:
+            continue
+
+    return source_root / (ext_stripped + next(e for e in extensions if e))
+
+
+def apply_reconstruction(target_path, result_text):
+    """Write ``result_text`` into ``target_path`` inside the markers region.
+
+    The target file is created (including any missing parent directories) when
+    it does not exist yet. Progress notes are logged to stderr.
+    """
+    path = Path(target_path)
+
+    if path.exists():
+        content = path.read_text(encoding="utf-8")
+        newline = "\r\n" if "\r\n" in content else "\n"
+    else:
+        content = ""
+        newline = "\n"
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+    updated, info = _merge_into_content(content, result_text, newline)
+    path.write_text(updated, encoding="utf-8")
+
+    if info["created"]:
+        _log(f"created {target_path} with a reconstruction section")
+    elif info["marker"] == "within":
+        _log(f"inserted reconstruction into {target_path}")
+    else:
+        _log(f"appended a reconstruction section to {target_path}")
+
+    return updated
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def _type_data(rec: TypeReconstruction) -> dict:
+    """Build the DSL template data for a reconstructed type.
+
+    Values come from the loaded database record: the base type name, the
+    prefix/suffix markers derived from its ``meta_variant`` relations and the
+    dumped definition (``OBJECT``). ``OBJECT`` is left empty when a PDB was
+    not requested or the type could not be dumped.
+    """
+    return {
+        "TYPE": {
+            "NAME": rec.name,
+            "PREFIXES": rec.prefixes,
+            "SUFFIXES": rec.suffixes,
+            "OBJECT": rec.object or "",
+        }
+    }
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description=(
+            "Reconstruct source snippets (DSL) for the types recorded in the "
+            "DumpPDB database that are not yet present in the project tree."
+        ),
+    )
+    parser.add_argument(
+        "--sources-db",
+        required=True,
+        help="DumpPDB SQLite database with the `types` table (required).",
+    )
+    parser.add_argument(
+        "--source-path",
+        required=True,
+        help="Root of the (reconstructed) project tree used to skip types "
+             "whose source file already exists.",
+    )
+    parser.add_argument(
+        "--template",
+        required=True,
+        help="Path to the template file (e.g. reconstruction_type.example.txt)",
+    )
+    parser.add_argument(
+        "--extension",
+        default=None,
+        help="Priority extension to append to reconstructed file paths. "
+        "Defaults to .h (falling back to .hpp/.hxx/.hh/.inl). Use e.g. "
+        "--extension .hpp to prioritise a different header extension.",
+    )
+    parser.add_argument(
+        "--browse-db",
+        help="Visual Studio browse database (Browse.VC.db). When given, types "
+        "already defined there are skipped.",
+    )
+    parser.add_argument(
+        "--macro-patterns",
+        help="Git-ignore-style file describing macros that define types. "
+        "Each non-comment line is a call template with a <type> placeholder for "
+        "the type name, e.g. BUILD_EXPOSED_STRUCTURE_STRUCT_BEGIN(<type>). "
+        "Types detected via these macros are skipped.",
+    )
+    parser.add_argument(
+        "--pdb",
+        help="PDB file to dump each type's definition (OBJECT) from. When "
+        "omitted, OBJECT is left empty.",
+    )
+    parser.add_argument(
+        "--dll",
+        default="./PdbAPI.dll",
+        help="Path to PdbAPI.dll (default: ./PdbAPI.dll)",
+    )
+    args = parser.parse_args(argv)
+
+    items = load_type_sources(args.sources_db)
+
+    discovered: set[str] = set()
+
+    if args.browse_db:
+        browse_found = set(locate_browse_definitions(args.browse_db, items))
+        if browse_found:
+            _log(
+                f"skipped {len(browse_found)} type(s) already defined in "
+                f"{args.browse_db}"
+            )
+        discovered |= browse_found
+
+    if args.macro_patterns:
+        macro_found = macro_found_types(
+            args.source_path,
+            args.macro_patterns,
+            items,
+            discovered,
+        )
+        if macro_found:
+            _log(
+                f"skipped {len(macro_found)} type(s) already defined via macros "
+                f"in {args.source_path}"
+            )
+        discovered |= macro_found
+
+    if discovered:
+        items = [it for it in items if it.type_name not in discovered]
+
+    # Cut each remaining record (its name plus the meta-variant relations)
+    # into a reconstruction object carrying the prefix/suffix markers and,
+    # when a PDB is provided, the dumped definition of the type itself.
+    reconstructions = [build_reconstruction(item) for item in items]
+
+    if args.pdb:
+        pdb = PdbClient(args.dll)
+
+        try:
+            pdb.open(args.pdb)
+
+            pdb.set_config(templateParams=True)
+
+            for rec in reconstructions:
+                try:
+                    rec.object = pdb.dump_type(rec.template or rec.name, True)
+                except Exception:
+                    _log(
+                        f"could not dump type {rec.name}; "
+                        f"leaving OBJECT empty"
+                    )
+                    rec.object = None
+        except Exception as exc:
+            _log(f"failed to open {args.pdb}: {exc}")
+        finally:
+            pdb.close()
+
+    with_object = sum(rec.object is not None for rec in reconstructions)
+    _log(
+        f"{len(reconstructions)} type(s) ready "
+        f"({with_object} with OBJECT)"
+    )
+
+    template_text = Path(args.template).read_text(encoding="utf-8")
+
+    source_root = Path(args.source_path)
+
+    if args.extension:
+        extensions = (args.extension,) + DEFAULT_EXTENSIONS
+    else:
+        extensions = DEFAULT_EXTENSIONS
+
+    written = 0
+
+    for rec in reconstructions:
+        target = resolve_target_path(source_root, rec.path, extensions)
+
+        if target is None:
+            _log(f"no recorded path for {rec.name}; skipping")
+            continue
+
+        rec.path = str(target)
+        result = reconstruct(template_text, _type_data(rec))
+        apply_reconstruction(target, result)
+        written += 1
+
+    _log(f"reconstructed {written} type(s) into {source_root}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

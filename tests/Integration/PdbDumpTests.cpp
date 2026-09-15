@@ -137,6 +137,65 @@ TEST_F(PdbDumpTest, FindGlobalWeapon)
 }
 
 // ============================================================================
+// 2b. TOP-LEVEL / NESTED TYPE SEARCH TESTS
+// ============================================================================
+
+TEST_F(PdbDumpTest, EnumerateSymbolNamesTopLevelOnly)
+{
+    // Top-level enumeration should include Test::Actor but not Test::Actor::Weapon
+    std::wstring result = PdbToolset::instance().enumerateSymbolNames(true);
+    ASSERT_FALSE(result.empty());
+
+    EXPECT_NE(result.find(L"Test::Actor"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Weapon"), std::wstring::npos);
+
+    // Nested types like Test::Actor::Weapon should NOT appear
+    EXPECT_EQ(result.find(L"Test::Actor::Weapon"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, EnumerateSymbolNamesIncludeNested)
+{
+    // All-types enumeration should include both top-level and nested types
+    std::wstring result = PdbToolset::instance().enumerateSymbolNames(false);
+    ASSERT_FALSE(result.empty());
+
+    EXPECT_NE(result.find(L"Test::Actor"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Weapon"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Actor::Weapon"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Actor::NestedEnum"), std::wstring::npos);
+    EXPECT_NE(result.find(L"Test::Outer::Inner::Deep"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, EnumerateNestedTypeNames)
+{
+    // Test::Actor has nested types: Weapon, SaveData, NestedStruct, NestedClass, NestedEnum
+    std::wstring result = PdbToolset::instance().enumerateNestedTypeNames(L"Test::Actor", false);
+    ASSERT_FALSE(result.empty());
+
+    EXPECT_NE(result.find(L"Weapon"), std::wstring::npos);
+    EXPECT_NE(result.find(L"SaveData"), std::wstring::npos);
+    EXPECT_NE(result.find(L"NestedStruct"), std::wstring::npos);
+    EXPECT_NE(result.find(L"NestedClass"), std::wstring::npos);
+    EXPECT_NE(result.find(L"NestedEnum"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, EnumerateNestedTypeNamesDeep)
+{
+    // Test::Actor::SaveData has nested Weapon
+    std::wstring result
+        = PdbToolset::instance().enumerateNestedTypeNames(L"Test::Actor::SaveData", false);
+    ASSERT_FALSE(result.empty());
+    EXPECT_NE(result.find(L"Weapon"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, EnumerateNestedTypeNamesNotFound)
+{
+    // Test::Weapon has no nested types
+    std::wstring result = PdbToolset::instance().enumerateNestedTypeNames(L"Test::Weapon", false);
+    EXPECT_TRUE(result.empty());
+}
+
+// ============================================================================
 // 3. INHERITANCE TESTS
 // ============================================================================
 
@@ -246,4 +305,24 @@ TEST_F(PdbDumpTest, FindNamespaceNested)
 {
     auto sym = findType(L"Test::OuterNamespace::InnerNamespace::NestedNamespaceStruct");
     ASSERT_NE(sym, nullptr);
+}
+
+// ============================================================================
+// 7. SOURCE FILE ENUMERATION TESTS
+// ============================================================================
+
+TEST_F(PdbDumpTest, EnumerateSourceFiles)
+{
+    std::wstring files = PdbToolset::instance().dumpSourceFiles();
+    ASSERT_FALSE(files.empty());
+
+    // Should find at least the TestCompiland main test file
+    EXPECT_NE(files.find(L"Tests.hpp"), std::wstring::npos);
+    EXPECT_NE(files.find(L"Tests.cpp"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, GetSymbolsBySourceFileNotFound)
+{
+    std::wstring symbols = PdbToolset::instance().getSymbolsBySourceFile(L"nonexistent.hpp", false);
+    EXPECT_TRUE(symbols.empty());
 }

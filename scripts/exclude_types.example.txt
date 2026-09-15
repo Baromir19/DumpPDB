@@ -1,0 +1,16 @@
+# Type exclusion patterns (git-ignore style)
+#
+# Each non-comment, non-blank line is a pattern matched against
+# fully-qualified type names using fnmatch wildcards:
+#   *  matches any sequence of characters
+#   ?  matches a single character
+#
+# Examples:
+#   std::*        excludes every type in the std namespace
+#   hkPreferences excludes exactly the type named hkPreferences
+#   *FdbData      excludes any type whose name ends with FdbData
+#
+# Lines starting with '#' are comments and are ignored.
+
+std::*
+hk*

@@ -9,7 +9,7 @@
 
 namespace
 {
-// DIA / PdbToolset::instance() is a single shared session � serialize all
+// DIA / PdbToolset::instance() is a single shared session, serialize all
 // access to it. If you need concurrent sessions for different PDBs later,
 // this whole file needs to move to a handle-based design instead of the
 // Singleton
@@ -69,6 +69,7 @@ PdbApiDumpConfig toApi(const DumpConfig& a_cfg)
     out.showTypeSource = static_cast<int32_t>(a_cfg.m_showTypeSource);
     out.curlyBraceNewline = static_cast<int32_t>(a_cfg.m_curlyBraceNewline);
     out.hideCompilerGenerated = static_cast<int32_t>(a_cfg.m_hideCompilerGenerated);
+    out.templateParams = static_cast<int32_t>(a_cfg.m_templateParams);
     out.baseAccessType = static_cast<uint32_t>(a_cfg.m_baseAccessType);
     out.intStyle = static_cast<int32_t>(a_cfg.m_intStyle);
     return out;
@@ -90,6 +91,7 @@ bool fromApi(const PdbApiDumpConfig& a_in, DumpConfig& a_out)
     a_out.m_showTypeSource = a_in.showTypeSource != 0;
     a_out.m_curlyBraceNewline = a_in.curlyBraceNewline != 0;
     a_out.m_hideCompilerGenerated = a_in.hideCompilerGenerated != 0;
+    a_out.m_templateParams = a_in.templateParams != 0;
     a_out.m_baseAccessType = a_in.baseAccessType;
     a_out.m_intStyle = static_cast<IntStyle>(a_in.intStyle);
     return true;
@@ -302,6 +304,274 @@ PdbApiResult PdbApi_DumpTypeByName(const wchar_t* a_name,
                 a_outBuffer,
                 a_bufferSize,
                 a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_EnumerateNestedTypeNames(const wchar_t* a_name,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (a_name == nullptr)
+            {
+                setLastError(L"a_name is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            if (PdbToolset::instance().session() == nullptr)
+            {
+                setLastError(L"DIA session not initialized");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            std::wstring result
+                = PdbToolset::instance().enumerateNestedTypeNames(a_name, a_caseSensitive != 0);
+
+            if (result.empty())
+            {
+                setLastError(L"Symbol not found or has no nested types");
+                if (a_outRequiredSize != nullptr)
+                {
+                    *a_outRequiredSize = 0;
+                }
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+// --- Symbol enumeration ---
+
+PdbApiResult PdbApi_EnumerateSymbolNames(wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize,
+    int32_t a_topLevelOnly)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (PdbToolset::instance().session() == nullptr)
+            {
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            std::wstring result = PdbToolset::instance().enumerateSymbolNames(a_topLevelOnly != 0);
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_GetSymbolSourceFiles(const wchar_t* a_name,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (a_name == nullptr)
+            {
+                setLastError(L"a_name is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            if (PdbToolset::instance().session() == nullptr)
+            {
+                setLastError(L"DIA session not initialized");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            std::wstring result;
+
+            try
+            {
+                result
+                    = PdbToolset::instance().getTypeSourceFilesByName(a_name, a_caseSensitive != 0);
+            }
+            catch (const DumpError& e)
+            {
+                setLastError(L"DumpError: " + e.wideMessage());
+                return PDBAPI_ERROR_EXCEPTION;
+            }
+
+            catch (const std::exception& e)
+            {
+                setLastError(L"std::exception: " + exceptionToWString(e));
+                return PDBAPI_ERROR_EXCEPTION;
+            }
+
+            catch (...)
+            {
+                setLastError(L"Unknown C++ exception");
+                return PDBAPI_ERROR_EXCEPTION;
+            }
+
+            if (result.empty())
+            {
+                setLastError(L"Symbol not found or has no source files");
+                if (a_outRequiredSize != nullptr)
+                {
+                    *a_outRequiredSize = 0;
+                }
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_EnumerateSourceFiles(
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (PdbToolset::instance().session() == nullptr)
+            {
+                setLastError(L"DIA session not initialized");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            std::wstring result = PdbToolset::instance().dumpSourceFiles();
+
+            if (result.empty())
+            {
+                setLastError(L"No source files found");
+                if (a_outRequiredSize != nullptr)
+                {
+                    *a_outRequiredSize = 0;
+                }
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+/*PdbApiResult PdbApi_GetSymbolsBySourceFile(const wchar_t* a_fileName,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (a_fileName == nullptr)
+            {
+                setLastError(L"a_fileName is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            if (PdbToolset::instance().session() == nullptr)
+            {
+                setLastError(L"DIA session not initialized");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            std::wstring result
+                = PdbToolset::instance().getSymbolsBySourceFile(a_fileName, a_caseSensitive != 0);
+
+            if (result.empty())
+            {
+                setLastError(L"No symbols found for the given source file");
+                if (a_outRequiredSize != nullptr)
+                {
+                    *a_outRequiredSize = 0;
+                }
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}*/
+
+// --- Binary file search (strings / signatures) ---
+
+PdbApiResult PdbApi_FindStringsInFile(const wchar_t* a_filePath,
+    uint32_t a_minLength,
+    int32_t a_encodingFlags,
+    uint32_t a_outStringFlags,
+    const char* a_sectionNames,
+    const char* a_regexPattern,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (a_filePath == nullptr)
+            {
+                setLastError(L"a_filePath is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            if (a_encodingFlags == 0)
+            {
+                setLastError(L"a_encodingFlags is 0 (no encodings selected)");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+
+            std::wstring result = PdbToolset::instance().findStringsInFile(a_filePath,
+                a_minLength,
+                a_encodingFlags,
+                a_outStringFlags,
+                a_sectionNames,
+                a_regexPattern);
+
+            if (result.empty())
+            {
+                setLastError(L"No strings found or file could not be loaded");
+                if (a_outRequiredSize != nullptr)
+                {
+                    *a_outRequiredSize = 0;
+                }
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_FindSignaturesInFile(const wchar_t* a_filePath,
+    const char* a_pattern,
+    const char* a_sectionNames,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (a_filePath == nullptr)
+            {
+                setLastError(L"a_filePath is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            if (a_pattern == nullptr)
+            {
+                setLastError(L"a_pattern is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+
+            std::wstring result = PdbToolset::instance().findSignaturesInFile(
+                a_filePath, a_pattern, a_sectionNames);
+
+            if (result.empty())
+            {
+                setLastError(
+                    L"No signature matches found, file could not be loaded, or pattern is invalid");
+                if (a_outRequiredSize != nullptr)
+                {
+                    *a_outRequiredSize = 0;
+                }
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
         });
 }
 

@@ -22,6 +22,7 @@ struct IniSerializer<DumpConfig>
         a_ini.set(kSection, "ShowTypeSource", a_cfg.m_showTypeSource);
         a_ini.set(kSection, "CurlyBraceNewline", a_cfg.m_curlyBraceNewline);
         a_ini.set(kSection, "HideCompilerGenerated", a_cfg.m_hideCompilerGenerated);
+        a_ini.set(kSection, "TemplateParams", a_cfg.m_templateParams);
         a_ini.set(kSection, "BaseAccessType", static_cast<unsigned long>(a_cfg.m_baseAccessType));
         a_ini.set(kSection, "IntStyle", static_cast<long>(a_cfg.m_intStyle));
     }
@@ -40,6 +41,7 @@ struct IniSerializer<DumpConfig>
             = a_ini.getBool(kSection, "CurlyBraceNewline", a_cfg.m_curlyBraceNewline);
         a_cfg.m_hideCompilerGenerated
             = a_ini.getBool(kSection, "HideCompilerGenerated", a_cfg.m_hideCompilerGenerated);
+        a_cfg.m_templateParams = a_ini.getBool(kSection, "TemplateParams", a_cfg.m_templateParams);
         a_cfg.m_baseAccessType = a_ini.getUlong(kSection, "BaseAccessType", a_cfg.m_baseAccessType);
 
         const long rawStyle
