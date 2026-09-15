@@ -68,12 +68,11 @@ public:
                 std::wstring retTypeStr;
                 try
                 {
-                    retTypeStr
-                        = TypeWalker::resolveType(retType.get(),
-                              m_ctx.scope(),
-                              m_ctx.config().m_showNonScoped,
-                              m_ctx.config().m_intStyle)
-                              .build();
+                    retTypeStr = TypeWalker::resolveType(retType.get(),
+                        m_ctx.scope(),
+                        m_ctx.config().m_showNonScoped,
+                        m_ctx.config().m_intStyle)
+                                     .build();
                 }
                 catch (...)
                 {
@@ -185,9 +184,9 @@ public:
         std::wstring typeText;
         try
         {
-            typeText = TypeWalker::resolveType(
-                a_symbol, m_ctx.scope(), true, m_ctx.config().m_intStyle)
-                           .build();
+            typeText
+                = TypeWalker::resolveType(a_symbol, m_ctx.scope(), true, m_ctx.config().m_intStyle)
+                      .build();
         }
         catch (...)
         {

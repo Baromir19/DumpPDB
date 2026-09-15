@@ -14,8 +14,7 @@ class EnumRenderer
 {
 public:
 
-    EnumRenderer(
-        DumpContext& a_ctx, DumpFormatter& a_fmt, ConstantRenderer& a_constants)
+    EnumRenderer(DumpContext& a_ctx, DumpFormatter& a_fmt, ConstantRenderer& a_constants)
         : m_ctx(a_ctx)
         , m_fmt(a_fmt)
         , m_constants(a_constants)

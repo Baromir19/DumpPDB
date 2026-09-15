@@ -126,8 +126,8 @@ public:
                 ret += isBegin ? L" : " : L", ";
                 isBegin = false;
 
-                auto access = TypeWalker::getAccessName(
-                    baseSymbol.get(), m_ctx.config().m_baseAccessType);
+                auto access
+                    = TypeWalker::getAccessName(baseSymbol.get(), m_ctx.config().m_baseAccessType);
                 if (access)
                 {
                     ret += access;

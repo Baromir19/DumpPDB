@@ -46,14 +46,8 @@ public:
         , m_enums(m_ctx, m_formatter, m_constants)
         , m_typedefs(m_ctx, m_formatter)
         , m_functions(m_ctx, m_formatter, *this)
-        , m_members(m_ctx,
-              m_formatter,
-              m_constants,
-              m_classes,
-              m_enums,
-              m_typedefs,
-              m_functions,
-              *this)
+        , m_members(
+              m_ctx, m_formatter, m_constants, m_classes, m_enums, m_typedefs, m_functions, *this)
         , m_topLevel(m_ctx, *this)
     {
     }
@@ -211,11 +205,13 @@ public:
     }
 
 private:
+
     // ── IDumpCoordinator back-channel (used by renderers to call each other) ───
 
-    DWORD emitAccessLabel(
-        std::wstring& a_output, IDiaSymbol* a_symbol, DWORD a_lastAccess, int a_nestingLevel)
-        override
+    DWORD emitAccessLabel(std::wstring& a_output,
+        IDiaSymbol* a_symbol,
+        DWORD a_lastAccess,
+        int a_nestingLevel) override
     {
         return m_formatter.emitAccessLabel(a_output, a_symbol, a_lastAccess, a_nestingLevel);
     }

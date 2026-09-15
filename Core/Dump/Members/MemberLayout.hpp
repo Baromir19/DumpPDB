@@ -122,8 +122,7 @@ public:
 
         for (auto& typedefSym : childContainers[4])
         {
-            lastAccess
-                = m_fmt.emitAccessLabel(ret, typedefSym.get(), lastAccess, a_nestingLevel);
+            lastAccess = m_fmt.emitAccessLabel(ret, typedefSym.get(), lastAccess, a_nestingLevel);
             ret += m_typedefs.dumpTypedef(typedefSym.get(), a_nestingLevel);
         }
 
