@@ -800,6 +800,198 @@ public:
         return builder;
     }
 
+    /// True when a function-type argument symbol is the "..." (ellipsis) marker.
+    ///
+    /// MSVC encodes a variadic function by appending one extra argument to the
+    /// function type whose type is a base type with `btNoType` (a "no type" record).
+    /// DIA reports it as an ordinary SymTagFunctionArgType child whose type has no
+    /// name and no length, so it must be detected explicitly to be rendered as "...".
+    static bool isVariadicMarker(IDiaSymbol* a_argSymbol)
+    {
+        if (!a_argSymbol)
+            return false;
+
+        ComPtr<IDiaSymbol> argType;
+        if (FAILED(a_argSymbol->get_type(&argType)) || !argType)
+            return false;
+
+        DWORD tag = SymTagNull;
+        if (FAILED(argType->get_symTag(&tag)) || tag != SymTagBaseType)
+            return false;
+
+        DWORD baseType = 0;
+        if (FAILED(argType->get_baseType(&baseType)) || baseType != btNoType)
+            return false;
+
+        ULONGLONG length = 0;
+        if (SUCCEEDED(argType->get_length(&length)) && length != 0)
+            return false;
+
+        return true;
+    }
+
+    /// True when the given function type carries a variadic ("...") argument.
+    static bool isVariadicFunction(IDiaSymbol* a_functionType)
+    {
+        if (!a_functionType)
+            return false;
+
+        ComPtr<IDiaEnumSymbols> enum_args;
+        if (FAILED(a_functionType->findChildren(SymTagFunctionArgType, nullptr, nsNone, &enum_args))
+            || !enum_args)
+        {
+            return false;
+        }
+
+        ComPtr<IDiaSymbol> arg;
+        ULONG celt = 0;
+        while (SUCCEEDED(enum_args->Next(1, &arg, &celt)) && celt == 1)
+        {
+            if (isVariadicMarker(arg.get()))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Number of declared arguments of a function type, ignoring the "..." marker.
+    static DWORD countFunctionArgs(IDiaSymbol* a_functionType)
+    {
+        if (!a_functionType)
+            return 0;
+
+        DWORD count = 0;
+
+        ComPtr<IDiaEnumSymbols> enum_args;
+        if (FAILED(a_functionType->findChildren(SymTagFunctionArgType, nullptr, nsNone, &enum_args))
+            || !enum_args)
+        {
+            return count;
+        }
+
+        ComPtr<IDiaSymbol> arg;
+        ULONG celt = 0;
+        while (SUCCEEDED(enum_args->Next(1, &arg, &celt)) && celt == 1)
+        {
+            if (!isVariadicMarker(arg.get()))
+            {
+                ++count;
+            }
+        }
+
+        return count;
+    }
+
+    /// True when the symbol belongs to a class/struct (i.e. has a named class parent).
+    static bool hasClassParent(IDiaSymbol* a_symbol)
+    {
+        if (!a_symbol)
+            return false;
+
+        ComPtr<IDiaSymbol> classParent;
+        if (FAILED(a_symbol->get_classParent(&classParent)) || !classParent)
+            return false;
+
+        BSTR rawName = nullptr;
+        const bool hasName
+            = SUCCEEDED(classParent->get_name(&rawName)) && rawName && rawName[0] != L'\0';
+
+        if (rawName)
+        {
+            SysFreeString(rawName);
+        }
+
+        return hasName;
+    }
+
+    /// True when a function type declares the implicit object ("this") pointer.
+    /// Non-static member functions have one; free and static member functions do not.
+    static bool hasObjectPointer(IDiaSymbol* a_functionType)
+    {
+        if (!a_functionType)
+            return false;
+
+        ComPtr<IDiaSymbol> objectPointer;
+        return SUCCEEDED(a_functionType->get_objectPointerType(&objectPointer)) && objectPointer;
+    }
+
+    /// The class the object ("this") pointer of a member function points to.
+    /// The returned symbol carries the cv-qualifiers of the member function.
+    /// Empty for free and static member functions.
+    static ComPtr<IDiaSymbol> objectPointerClass(IDiaSymbol* a_functionType)
+    {
+        ComPtr<IDiaSymbol> result;
+
+        if (!a_functionType)
+            return result;
+
+        ComPtr<IDiaSymbol> objectPointer;
+        if (FAILED(a_functionType->get_objectPointerType(&objectPointer)) || !objectPointer)
+            return result;
+
+        ComPtr<IDiaSymbol> target;
+        if (SUCCEEDED(objectPointer->get_type(&target)))
+        {
+            result = std::move(target);
+        }
+
+        return result;
+    }
+
+    /// True for a member function that is const-qualified.
+    ///
+    /// MSVC stores the cv-qualifiers of a member function on the implicit object
+    /// pointer type, so IDiaSymbol::get_constType() must be queried on the class the
+    /// object pointer refers to (the function type itself always reports false).
+    static bool isConstMemberFunction(IDiaSymbol* a_functionType)
+    {
+        auto objectClass = objectPointerClass(a_functionType);
+
+        BOOL isConst = FALSE;
+        return objectClass && SUCCEEDED(objectClass->get_constType(&isConst)) && isConst;
+    }
+
+    /// True for a member function that is volatile-qualified.
+    static bool isVolatileMemberFunction(IDiaSymbol* a_functionType)
+    {
+        auto objectClass = objectPointerClass(a_functionType);
+
+        BOOL isVolatile = FALSE;
+        return objectClass && SUCCEEDED(objectClass->get_volatileType(&isVolatile)) && isVolatile;
+    }
+
+    /// True for a static member function.
+    ///
+    /// IDiaSymbol::get_isStatic() is not set for C++ static member functions, but such
+    /// a function is still a class member while its function type has no implicit
+    /// object pointer — that combination identifies it unambiguously.
+    static bool isStaticMemberFunction(IDiaSymbol* a_functionSymbol)
+    {
+        if (!a_functionSymbol)
+            return false;
+
+        BOOL isStatic = FALSE;
+        if (SUCCEEDED(a_functionSymbol->get_isStatic(&isStatic)) && isStatic)
+        {
+            return true;
+        }
+
+        if (!hasClassParent(a_functionSymbol))
+        {
+            return false;
+        }
+
+        ComPtr<IDiaSymbol> functionType;
+        if (FAILED(a_functionSymbol->get_type(&functionType)) || !functionType)
+        {
+            return false;
+        }
+
+        return !hasObjectPointer(functionType.get());
+    }
+
     /// Get function arguments as a comma-separated string.
     static std::wstring getFuncArgsString(IDiaSymbol* a_symbol,
         const ScopeContext& a_scope = ScopeContext(),
@@ -818,6 +1010,18 @@ public:
             ULONG celt = 0;
             while (SUCCEEDED(enum_symbolsParams->Next(1, &child, &celt)) && celt == 1)
             {
+                if (isVariadicMarker(child.get()))
+                {
+                    if (!isFirst)
+                    {
+                        result += L", ";
+                    }
+
+                    result += L"...";
+                    isFirst = false;
+                    continue;
+                }
+
                 ComPtr<IDiaSymbol> _argType;
                 if (SUCCEEDED(child->get_type(&_argType)) && _argType)
                 {
@@ -825,6 +1029,7 @@ public:
                     {
                         result += L", ";
                     }
+
                     result
                         += resolveType(_argType.get(), a_scope, a_stripScope, a_intStyle).build();
                     isFirst = false;

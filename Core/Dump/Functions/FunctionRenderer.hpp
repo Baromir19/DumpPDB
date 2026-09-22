@@ -41,10 +41,14 @@ public:
 
         auto functionType = getTypeCom(a_symbol); // SymTagFunctionType
 
+        // DIA reports the "..." marker as an extra argument, but it is not a named
+        // parameter: it is excluded from the count and rendered separately.
         DWORD argCount = 0;
+        bool isVariadic = false;
         if (functionType)
         {
-            argCount = countChildren(functionType.get(), SymTagFunctionArgType);
+            argCount = TypeWalker::countFunctionArgs(functionType.get());
+            isVariadic = TypeWalker::isVariadicFunction(functionType.get());
         }
 
         // Return type
@@ -104,20 +108,27 @@ public:
                 m_ctx.config().m_showNonScoped,
                 m_ctx.config().m_intStyle);
         }
+        else if (isVariadic)
+        {
+            if (namedArgCount > 0)
+            {
+                ret += L", ";
+            }
+
+            ret += L"...";
+        }
 
         ret += L")";
 
-        // Const qualifier on function
+        // Const / volatile qualifiers of the member function
         if (functionType)
         {
-            BOOL isConst = FALSE;
-            if (SUCCEEDED(functionType->get_constType(&isConst)) && isConst)
+            if (TypeWalker::isConstMemberFunction(functionType.get()))
             {
                 ret += L" const";
             }
 
-            BOOL isVolatile = FALSE;
-            if (SUCCEEDED(functionType->get_volatileType(&isVolatile)) && isVolatile)
+            if (TypeWalker::isVolatileMemberFunction(functionType.get()))
             {
                 ret += L" volatile";
             }
@@ -255,8 +266,7 @@ public:
 
     static const wchar_t* getStaticName(IDiaSymbol* a_symbol)
     {
-        BOOL isStatic;
-        return SUCCEEDED(a_symbol->get_isStatic(&isStatic)) && isStatic ? L"static" : nullptr;
+        return TypeWalker::isStaticMemberFunction(a_symbol) ? L"static" : nullptr;
     }
 
     static ComPtr<IDiaSymbol> getTypeCom(IDiaSymbol* a_symbol)
@@ -265,23 +275,6 @@ public:
         if (SUCCEEDED(a_symbol->get_type(&type)))
             return type;
         return ComPtr<IDiaSymbol>();
-    }
-
-    static DWORD countChildren(IDiaSymbol* a_symbol, enum SymTagEnum a_tag)
-    {
-        DWORD count = 0;
-        ComPtr<IDiaEnumSymbols> enum_symbols;
-        if (SUCCEEDED(a_symbol->findChildren(a_tag, nullptr, nsNone, &enum_symbols))
-            && enum_symbols)
-        {
-            ComPtr<IDiaSymbol> child;
-            ULONG celt = 0;
-            while (SUCCEEDED(enum_symbols->Next(1, &child, &celt)) && celt == 1)
-            {
-                ++count;
-            }
-        }
-        return count;
     }
 
 private:

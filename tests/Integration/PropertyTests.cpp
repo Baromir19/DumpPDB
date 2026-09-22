@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <set>
 #include <map>
+#include <utility>
 
 #include <Core/PdbToolset.hpp>
 #include <Core/DIA/SymbolFinder.hpp>
@@ -93,6 +94,28 @@ protected:
     std::vector<ComPtr<IDiaSymbol>> functions(IDiaSymbol* a_symbol) const
     {
         return children(a_symbol, SymTagFunction, [](IDiaSymbol*) { return true; });
+    }
+
+    /// Find a method of a UDT by its (undecorated) name.
+    ComPtr<IDiaSymbol> method(IDiaSymbol* a_udt, const wchar_t* a_name) const
+    {
+        for (auto& function : functions(a_udt))
+        {
+            if (getName(function.get()) == a_name)
+                return function;
+        }
+
+        return ComPtr<IDiaSymbol>();
+    }
+
+    /// Symbol of the function type of a function symbol.
+    static ComPtr<IDiaSymbol> functionType(IDiaSymbol* a_function)
+    {
+        ComPtr<IDiaSymbol> type;
+        if (a_function && SUCCEEDED(a_function->get_type(&type)))
+            return type;
+
+        return ComPtr<IDiaSymbol>();
     }
 
     std::vector<ComPtr<IDiaSymbol>> nestedUdts(IDiaSymbol* a_symbol) const
@@ -382,7 +405,9 @@ FunctionInfo buildFuncInfo(ComPtr<IDiaSymbol>& func)
     ComPtr<IDiaSymbol> funcType;
     if (SUCCEEDED(func->get_type(&funcType)) && funcType)
     {
-        funcType->get_constType(&info.isConst);
+        // A member function's cv-qualifiers are stored on its object pointer, not on
+        // the function type itself (TypeWalker::isConstMemberFunction handles that).
+        info.isConst = TypeWalker::isConstMemberFunction(funcType.get()) ? TRUE : FALSE;
     }
 
     // override = virtual && !intro (new virtual)
@@ -892,7 +917,6 @@ TEST_F(PropertyTest, CompileTested_HasAllTestTypesAsFields)
 // CONST METHOD TEST (const / volatile qualifiers)
 // ============================================================================
 
-/*
 TEST_F(PropertyTest, ConstMethodTest_HasConstMethod)
 {
     auto sym = findUdt(L"Test::ConstMethodTest");
@@ -909,19 +933,14 @@ TEST_F(PropertyTest, ConstMethodTest_HasConstMethod)
 
     // "constMethod" should have isConst == true
     auto it = byName.find(L"constMethod");
-    if (it != byName.end())
-    {
-        EXPECT_TRUE(it->second.isConst);
-    }
+    ASSERT_NE(it, byName.end());
+    EXPECT_TRUE(it->second.isConst);
 
     // "volatileMethod" should NOT be const
     auto itVol = byName.find(L"volatileMethod");
-    if (itVol != byName.end())
-    {
-        EXPECT_FALSE(itVol->second.isConst);
-    }
+    ASSERT_NE(itVol, byName.end());
+    EXPECT_FALSE(itVol->second.isConst);
 }
-*/
 
 // ============================================================================
 // NESTED TYPE / DEEP NESTING
@@ -964,4 +983,270 @@ TEST_F(PropertyTest, TypedefUsage_Fields)
 
     auto fields = dataMembers(sym.get());
     EXPECT_EQ(fields.size(), 5u);
+}
+
+// ============================================================================
+// VARIADIC / CONST / STATIC METHOD QUALIFIERS
+//
+// None of these three properties is exposed by the obvious DIA attributes:
+//   * a variadic method has one extra argument whose type is a base type with
+//     `btNoType` (the "..." marker) — it has to be recognized explicitly;
+//   * cv-qualifiers of a method live on the implicit object pointer type, not on
+//     the function type symbol itself (get_constType() on it always reports false);
+//   * get_isStatic() is never set for C++ static member functions.
+// TypeWalker recovers all three; the expectations below guard the detection.
+// ============================================================================
+
+TEST_F(PropertyTest, VariadicFunctionTest_Detection)
+{
+    auto udt = findUdt(L"Test::VariadicFunctionTest");
+    ASSERT_NE(udt, nullptr);
+
+    struct Expectation
+    {
+        const wchar_t* name;
+        bool isVariadic;
+        DWORD declaredArgs;
+    };
+
+    const Expectation expectations[] = {
+        {L"plainMethod", false, 1},
+        {L"constMethod", false, 1},
+        {L"volatileMethod", false, 1},
+        {L"constVolatileMethod", false, 1},
+        {L"staticMethod", false, 1},
+        {L"variadicMethod", true, 1},
+        {L"constVariadicMethod", true, 1},
+        {L"staticVariadicMethod", true, 1},
+        {L"variadicOnly", true, 0},
+    };
+
+    for (const auto& expectation : expectations)
+    {
+        auto symbol = method(udt.get(), expectation.name);
+        ASSERT_NE(symbol, nullptr);
+
+        auto type = functionType(symbol.get());
+        ASSERT_NE(type, nullptr);
+
+        EXPECT_EQ(TypeWalker::isVariadicFunction(type.get()), expectation.isVariadic);
+        EXPECT_EQ(TypeWalker::countFunctionArgs(type.get()), expectation.declaredArgs);
+    }
+}
+
+TEST_F(PropertyTest, VariadicFunctionTest_VariadicMarkerIsNotAType)
+{
+    auto udt = findUdt(L"Test::VariadicFunctionTest");
+    ASSERT_NE(udt, nullptr);
+
+    auto symbol = method(udt.get(), L"variadicMethod");
+    ASSERT_NE(symbol, nullptr);
+
+    auto type = functionType(symbol.get());
+    ASSERT_NE(type, nullptr);
+
+    // The declared argument is rendered as a normal type, the marker as "...".
+    std::wstring args = TypeWalker::getFuncArgsString(type.get());
+    EXPECT_NE(args.find(L"..."), std::wstring::npos);
+    EXPECT_EQ(args.find(L"<unnamed>"), std::wstring::npos);
+}
+
+TEST_F(PropertyTest, VariadicFunctionTest_FreeFunctionIsVariadic)
+{
+    auto symbol = findType(L"Test::freeVariadicFunction");
+    ASSERT_NE(symbol, nullptr);
+
+    auto type = functionType(symbol.get());
+    ASSERT_NE(type, nullptr);
+
+    EXPECT_TRUE(TypeWalker::isVariadicFunction(type.get()));
+    EXPECT_EQ(TypeWalker::countFunctionArgs(type.get()), 1u);
+
+    std::wstring args = TypeWalker::getFuncArgsString(type.get());
+    EXPECT_NE(args.find(L", ..."), std::wstring::npos);
+}
+
+TEST_F(PropertyTest, VariadicFunctionTest_NonVariadicFreeFunction)
+{
+    auto symbol = findType(L"Test::freePlainFunction");
+    ASSERT_NE(symbol, nullptr);
+
+    auto type = functionType(symbol.get());
+    ASSERT_NE(type, nullptr);
+
+    EXPECT_FALSE(TypeWalker::isVariadicFunction(type.get()));
+    EXPECT_EQ(TypeWalker::countFunctionArgs(type.get()), 1u);
+}
+
+TEST_F(PropertyTest, MethodStatic_Detection)
+{
+    auto udt = findUdt(L"Test::VariadicFunctionTest");
+    ASSERT_NE(udt, nullptr);
+
+    const std::pair<const wchar_t*, bool> expectations[] = {
+        {L"plainMethod", false},
+        {L"constMethod", false},
+        {L"volatileMethod", false},
+        {L"constVolatileMethod", false},
+        {L"staticMethod", true},
+        {L"variadicMethod", false},
+        {L"constVariadicMethod", false},
+        {L"staticVariadicMethod", true},
+        {L"variadicOnly", false},
+    };
+
+    for (const auto& expectation : expectations)
+    {
+        auto symbol = method(udt.get(), expectation.first);
+        ASSERT_NE(symbol, nullptr);
+
+        EXPECT_EQ(TypeWalker::isStaticMemberFunction(symbol.get()), expectation.second);
+    }
+}
+
+TEST_F(PropertyTest, MethodStatic_ConstructorsAndFreeFunctionsAreNotStatic)
+{
+    // Constructors have an object pointer, so they must not be reported as static.
+    auto ctorUdt = findUdt(L"Test::ConstructorTest");
+    ASSERT_NE(ctorUdt, nullptr);
+
+    for (auto& function : functions(ctorUdt.get()))
+    {
+        EXPECT_FALSE(TypeWalker::isStaticMemberFunction(function.get()));
+    }
+
+    // Free functions have no class parent at all.
+    auto freeFunction = findType(L"Test::freePlainFunction");
+    ASSERT_NE(freeFunction, nullptr);
+    EXPECT_FALSE(TypeWalker::isStaticMemberFunction(freeFunction.get()));
+}
+
+TEST_F(PropertyTest, MethodConst_Detection)
+{
+    auto udt = findUdt(L"Test::VariadicFunctionTest");
+    ASSERT_NE(udt, nullptr);
+
+    const std::pair<const wchar_t*, bool> expectations[] = {
+        {L"plainMethod", false},
+        {L"constMethod", true},
+        {L"volatileMethod", false},
+        {L"constVolatileMethod", true},
+        {L"staticMethod", false},
+        {L"variadicMethod", false},
+        {L"constVariadicMethod", true},
+        {L"staticVariadicMethod", false},
+    };
+
+    for (const auto& expectation : expectations)
+    {
+        auto symbol = method(udt.get(), expectation.first);
+        ASSERT_NE(symbol, nullptr);
+
+        auto type = functionType(symbol.get());
+        ASSERT_NE(type, nullptr);
+
+        EXPECT_EQ(TypeWalker::isConstMemberFunction(type.get()), expectation.second);
+    }
+}
+
+TEST_F(PropertyTest, MethodVolatile_Detection)
+{
+    auto udt = findUdt(L"Test::VariadicFunctionTest");
+    ASSERT_NE(udt, nullptr);
+
+    const std::pair<const wchar_t*, bool> expectations[] = {
+        {L"plainMethod", false},
+        {L"constMethod", false},
+        {L"volatileMethod", true},
+        {L"constVolatileMethod", true},
+        {L"staticMethod", false},
+    };
+
+    for (const auto& expectation : expectations)
+    {
+        auto symbol = method(udt.get(), expectation.first);
+        ASSERT_NE(symbol, nullptr);
+
+        auto type = functionType(symbol.get());
+        ASSERT_NE(type, nullptr);
+
+        EXPECT_EQ(TypeWalker::isVolatileMemberFunction(type.get()), expectation.second);
+    }
+}
+
+TEST_F(PropertyTest, ConstMethodTest_Qualifiers)
+{
+    auto udt = findUdt(L"Test::ConstMethodTest");
+    ASSERT_NE(udt, nullptr);
+
+    const std::pair<const wchar_t*, bool> constExpectations[] = {
+        {L"nonConstMethod", false},
+        {L"constMethod", true},
+        {L"volatileMethod", false},
+        {L"constVolatileMethod", true},
+        {L"getValue", true},
+    };
+
+    for (const auto& expectation : constExpectations)
+    {
+        auto symbol = method(udt.get(), expectation.first);
+        ASSERT_NE(symbol, nullptr);
+
+        auto type = functionType(symbol.get());
+        ASSERT_NE(type, nullptr);
+
+        EXPECT_EQ(TypeWalker::isConstMemberFunction(type.get()), expectation.second);
+    }
+
+    auto volatileSymbol = method(udt.get(), L"volatileMethod");
+    ASSERT_NE(volatileSymbol, nullptr);
+
+    auto volatileType = functionType(volatileSymbol.get());
+    ASSERT_NE(volatileType, nullptr);
+    EXPECT_TRUE(TypeWalker::isVolatileMemberFunction(volatileType.get()));
+}
+
+TEST_F(PropertyTest, MemberPointerTest_Qualifiers)
+{
+    auto udt = findUdt(L"Test::MemberPointerTest");
+    ASSERT_NE(udt, nullptr);
+
+    auto plain = method(udt.get(), L"method");
+    ASSERT_NE(plain, nullptr);
+    EXPECT_FALSE(TypeWalker::isConstMemberFunction(functionType(plain.get()).get()));
+    EXPECT_FALSE(TypeWalker::isStaticMemberFunction(plain.get()));
+
+    auto constMethod = method(udt.get(), L"constMethod");
+    ASSERT_NE(constMethod, nullptr);
+    EXPECT_TRUE(TypeWalker::isConstMemberFunction(functionType(constMethod.get()).get()));
+    EXPECT_FALSE(TypeWalker::isStaticMemberFunction(constMethod.get()));
+
+    auto staticMethod = method(udt.get(), L"staticMethod");
+    ASSERT_NE(staticMethod, nullptr);
+    EXPECT_TRUE(TypeWalker::isStaticMemberFunction(staticMethod.get()));
+    EXPECT_FALSE(TypeWalker::isConstMemberFunction(functionType(staticMethod.get()).get()));
+}
+
+TEST_F(PropertyTest, VariadicFunctionTest_CallbackFieldIsVariadic)
+{
+    auto udt = findUdt(L"Test::VariadicFunctionTest");
+    ASSERT_NE(udt, nullptr);
+
+    ComPtr<IDiaSymbol> callback;
+    for (auto& field : dataMembers(udt.get()))
+    {
+        if (getName(field.get()) == L"variadicCallback")
+            callback = field;
+    }
+
+    ASSERT_NE(callback, nullptr);
+
+    // data member -> pointer -> function type
+    auto pointer = functionType(callback.get());
+    ASSERT_NE(pointer, nullptr);
+
+    auto type = functionType(pointer.get());
+    ASSERT_NE(type, nullptr);
+
+    EXPECT_TRUE(TypeWalker::isVariadicFunction(type.get()));
 }

@@ -326,3 +326,74 @@ TEST_F(PdbDumpTest, GetSymbolsBySourceFileNotFound)
     std::wstring symbols = PdbToolset::instance().getSymbolsBySourceFile(L"nonexistent.hpp", false);
     EXPECT_TRUE(symbols.empty());
 }
+
+// ============================================================================
+// 8. VARIADIC / CONST / STATIC METHOD RENDERING
+//
+// End-to-end checks that the "..." marker, the trailing cv-qualifiers and the
+// leading "static" keyword survive the whole dump pipeline.
+// ============================================================================
+
+TEST_F(PdbDumpTest, RenderVariadicMethods)
+{
+    std::wstring text = dumpType(L"Test::VariadicFunctionTest");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"void variadicMethod(int32_t a_count, ...);"), std::wstring::npos);
+    EXPECT_NE(text.find(L"void variadicOnly(...);"), std::wstring::npos);
+    EXPECT_EQ(text.find(L"<NoType"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, RenderConstAndVolatileMethods)
+{
+    std::wstring text = dumpType(L"Test::VariadicFunctionTest");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"void constMethod(int32_t a_value) const;"), std::wstring::npos);
+    EXPECT_NE(text.find(L"void volatileMethod(int32_t a_value) volatile;"), std::wstring::npos);
+    EXPECT_NE(text.find(L"void constVolatileMethod(int32_t a_value) const volatile;"),
+        std::wstring::npos);
+    EXPECT_NE(
+        text.find(L"void constVariadicMethod(int32_t a_count, ...) const;"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, RenderStaticMethods)
+{
+    std::wstring text = dumpType(L"Test::VariadicFunctionTest");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"static void staticMethod(int32_t a_value);"), std::wstring::npos);
+    EXPECT_NE(
+        text.find(L"static void staticVariadicMethod(int32_t a_count, ...);"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, RenderNonStaticMethodsWithoutStaticKeyword)
+{
+    std::wstring text = dumpType(L"Test::VariadicFunctionTest");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"void plainMethod(int32_t a_value);"), std::wstring::npos);
+    EXPECT_EQ(text.find(L"static void plainMethod"), std::wstring::npos);
+    EXPECT_EQ(text.find(L"static void variadicMethod"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, RenderConstMethodTestQualifiers)
+{
+    std::wstring text = dumpType(L"Test::ConstMethodTest");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"void nonConstMethod();"), std::wstring::npos);
+    EXPECT_NE(text.find(L"void constMethod() const;"), std::wstring::npos);
+    EXPECT_NE(text.find(L"void volatileMethod() volatile;"), std::wstring::npos);
+    EXPECT_NE(text.find(L"void constVolatileMethod() const volatile;"), std::wstring::npos);
+    EXPECT_NE(text.find(L"int32_t getValue() const;"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, RenderVariadicFunctionPointerField)
+{
+    std::wstring text = dumpType(L"Test::VariadicFunctionTest");
+    ASSERT_FALSE(text.empty());
+
+    // The "..." of a nested function type is rendered as well.
+    EXPECT_NE(text.find(L", ...)"), std::wstring::npos);
+}
