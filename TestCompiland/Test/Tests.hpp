@@ -678,7 +678,35 @@ struct ComplexFieldTypes
 };
 
 // ========================================================================
-// 21. COMPILE TEST TRIGGER
+// 21. VARIADIC AND QUALIFIER FUNCTIONS
+// ========================================================================
+
+using VariadicFunctionPtr = void (*)(int, ...);
+
+class VariadicFunctionTest
+{
+public:
+
+    void plainMethod(int a_value);
+    void constMethod(int a_value) const;
+    void volatileMethod(int a_value) volatile;
+    void constVolatileMethod(int a_value) const volatile;
+    static void staticMethod(int a_value);
+
+    void variadicMethod(int a_count, ...);
+    void constVariadicMethod(int a_count, ...) const;
+    static void staticVariadicMethod(int a_count, ...);
+    void variadicOnly(...);
+
+    VariadicFunctionPtr variadicCallback;
+};
+
+void freeVariadicFunction(const char* a_format, ...);
+
+void freePlainFunction(int a_value);
+
+// ========================================================================
+// 22. COMPILE TEST TRIGGER
 // ========================================================================
 
 class CompileTested
@@ -708,6 +736,7 @@ class CompileTested
     StaticConstMembers compile_CONST_MEMBERS;
     MemberPointerTest compile_POINTER_TEST;
     EnumTest compile_ENUM;
+    VariadicFunctionTest compile_VARIADIC;
 
 public:
 
@@ -756,6 +785,18 @@ public:
         compile_COMPLEX.nsNested.value = 2;
         compile_COMPLEX.innerPtr = &compile_OUTER.inner;
         compile_COMPLEX.constDeepPtr = &compile_OUTER.inner.deep;
+        compile_VARIADIC.plainMethod(1);
+        compile_VARIADIC.constMethod(2);
+        compile_VARIADIC.volatileMethod(3);
+        compile_VARIADIC.constVolatileMethod(4);
+        VariadicFunctionTest::staticMethod(5);
+        compile_VARIADIC.variadicMethod(1, 2, 3);
+        compile_VARIADIC.constVariadicMethod(1, 2);
+        VariadicFunctionTest::staticVariadicMethod(1, 2);
+        compile_VARIADIC.variadicOnly(1, 2);
+        compile_VARIADIC.variadicCallback = nullptr;
+        freeVariadicFunction("%d", 1);
+        freePlainFunction(6);
     }
 };
 } // namespace Test
