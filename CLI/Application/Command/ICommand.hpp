@@ -10,13 +10,15 @@ public:
 
     enum class Type : std::uint8_t
     {
-        COMMAND_HELP = 0x0,
-        COMMAND_OPTIONS = 0x1,
+        COMMAND_HELP       = 0x0,
+        COMMAND_OPTIONS    = 0x1,
 
-        COMMAND_EXECUTE = 0x10
+        COMMAND_EXECUTE    = 0x10, ///< Requires a .pdb file (last arg).
+        COMMAND_EXE_EXECUTE = 0x20 ///< Requires a .exe file (last arg), no PDB/DIA needed.
     };
 
-    static constexpr unsigned int s_executableMask = 0xF0;
+    static constexpr unsigned int s_executableMask    = 0xF0;
+    static constexpr unsigned int s_exeExecutableMask = 0x20;
 
     virtual ~ICommand() = default;
 

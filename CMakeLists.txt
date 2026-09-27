@@ -6,6 +6,27 @@ project(DumpPDB
 )
 
 # ============================================================================
+# Zydis — x86/x64 disassembler (used by RTTI/EXE type reconstruction)
+# ============================================================================
+
+include(FetchContent)
+
+FetchContent_Declare(
+    zydis
+    GIT_REPOSITORY https://github.com/zyantific/zydis.git
+    GIT_TAG        v4.1.0
+    GIT_SHALLOW    TRUE
+)
+
+# Disable Zydis extras we don't need
+set(ZYDIS_BUILD_TOOLS   OFF CACHE BOOL "" FORCE)
+set(ZYDIS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ZYDIS_BUILD_TESTS   OFF CACHE BOOL "" FORCE)
+set(ZYDIS_FEATURE_ENCODER OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(zydis)
+
+# ============================================================================
 # C++ standard
 # ============================================================================
 
@@ -142,6 +163,11 @@ target_compile_definitions(DumpPDBCore
         UNICODE
         _UNICODE
         NOMINMAX
+)
+
+target_link_libraries(DumpPDBCore
+    INTERFACE
+        Zydis
 )
 
 # ============================================================================

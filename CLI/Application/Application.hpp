@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/PdbToolset.hpp>
+#include <Core/RTTI/ExeToolset.hpp>
 
 #include <Core/Config/SaveManager.hpp>
 #include <Core/Util/Debug/DebugManager.hpp>
@@ -40,8 +41,11 @@ public:
         const auto& cmdString = ConsoleManager::instance().getCommand().c_str();
         const auto& cmd = CommandManager::instance().getCommand(cmdString, a_argc);
 
-        if (static_cast<unsigned int>(cmd->getType()) & ICommand::s_executableMask
-            && ConsoleManager::instance().verifyPDBFormat())
+        const bool isExeCmd = (static_cast<unsigned int>(cmd->getType()) & ICommand::s_exeExecutableMask) != 0;
+        const bool isPdbCmd = !isExeCmd
+                           && (static_cast<unsigned int>(cmd->getType()) & ICommand::s_executableMask) != 0;
+
+        if (isPdbCmd && ConsoleManager::instance().verifyPDBFormat())
         {
             const auto& path = ConsoleManager::instance().getPath();
 

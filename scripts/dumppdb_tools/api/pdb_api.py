@@ -179,6 +179,38 @@ class PdbApiNative:
         ]
         self.dll.PdbApi_GetLastError.restype = ctypes.c_int
 
+        # ── EXE / RTTI API ────────────────────────────────────────────────────
+        # Works on a plain .exe without any .pdb. Call ExeApi_LoadExe first.
+
+        # ExeApi_LoadExe(exePath) -> int32
+        self.dll.ExeApi_LoadExe.argtypes = [wintypes.LPCWSTR]
+        self.dll.ExeApi_LoadExe.restype  = ctypes.c_int32
+
+        # ExeApi_ReconstructType(typeName, buf, bufSize, outRequired) -> int32
+        self.dll.ExeApi_ReconstructType.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.LPWSTR,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32),
+        ]
+        self.dll.ExeApi_ReconstructType.restype = ctypes.c_int32
+
+        # ExeApi_EnumerateVftableTypes(buf, bufSize, outRequired) -> int32
+        self.dll.ExeApi_EnumerateVftableTypes.argtypes = [
+            wintypes.LPWSTR,
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint32),
+        ]
+        self.dll.ExeApi_EnumerateVftableTypes.restype = ctypes.c_int32
+
+        # ExeApi_GetVftableCount() -> uint32
+        self.dll.ExeApi_GetVftableCount.argtypes = []
+        self.dll.ExeApi_GetVftableCount.restype  = ctypes.c_uint32
+
+        # ExeApi_GetTypeCount() -> uint32
+        self.dll.ExeApi_GetTypeCount.argtypes = []
+        self.dll.ExeApi_GetTypeCount.restype  = ctypes.c_uint32
+
 
 def read_string_call(call):
     """Run a two-phase buffer API call and return the resulting string.

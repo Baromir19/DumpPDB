@@ -170,3 +170,35 @@ PDBAPI_API PdbApiResult PdbApi_FindSignaturesInFile(const wchar_t* a_filePath,
 /// Returns the last error message via the standard buffer convention.
 PDBAPI_API PdbApiResult PdbApi_GetLastError(
     wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+
+// ============================================================================
+// EXE / RTTI API
+// Reconstructs C++ types directly from an executable using MSVC RTTI data.
+// Does NOT require a .pdb file.
+// ============================================================================
+
+/// Load (or reload) an executable for RTTI analysis.
+/// Must be called before any ExeApi_* function.
+/// Returns PDBAPI_OK on success, PDBAPI_ERROR_PDB_LOAD_FAILED if the file is
+/// not a valid x64 MSVC PE image.
+PDBAPI_API PdbApiResult ExeApi_LoadExe(const wchar_t* a_exePath);
+
+/// Reconstruct a single type by name and return a C++ declaration.
+/// Uses the buffer convention (see above).
+/// Searches by exact name first, falls back to substring match.
+PDBAPI_API PdbApiResult ExeApi_ReconstructType(const wchar_t* a_typeName,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
+/// Enumerate all types found via RTTI in the loaded executable.
+/// Returns a newline-separated list of fully-qualified demangled type names.
+/// Also includes a summary line at the top.
+PDBAPI_API PdbApiResult ExeApi_EnumerateVftableTypes(
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+
+/// Returns the number of vftable entries found in the loaded executable.
+PDBAPI_API uint32_t ExeApi_GetVftableCount();
+
+/// Returns the number of unique type names found.
+PDBAPI_API uint32_t ExeApi_GetTypeCount();

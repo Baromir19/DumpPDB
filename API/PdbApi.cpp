@@ -1,6 +1,7 @@
 #include <API/PdbApi.h>
 
 #include <Core/PdbToolset.hpp>
+#include <Core/RTTI/ExeToolset.hpp>
 #include <Core/Util/Error/DumpError.hpp>
 
 #include <mutex>
@@ -574,4 +575,101 @@ PdbApiResult PdbApi_GetLastError(
 {
     std::scoped_lock lock(g_mutex);
     return copyToBuffer(g_lastError, a_outBuffer, a_bufferSize, a_outRequiredSize);
+}
+
+// ============================================================================
+// EXE / RTTI API implementation
+// ============================================================================
+
+PdbApiResult ExeApi_LoadExe(const wchar_t* a_exePath)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (!a_exePath)
+            {
+                setLastError(L"a_exePath is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+
+            if (!DumpPDB::ExeToolset::instance().load(a_exePath))
+            {
+                setLastError(L"Failed to load EXE: not a valid x64 MSVC PE image");
+                return PDBAPI_ERROR_PDB_LOAD_FAILED;
+            }
+
+            return PDBAPI_OK;
+        });
+}
+
+PdbApiResult ExeApi_ReconstructType(const wchar_t* a_typeName,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (!a_typeName)
+            {
+                setLastError(L"a_typeName is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+
+            auto& toolset = DumpPDB::ExeToolset::instance();
+            if (!toolset.isLoaded())
+            {
+                setLastError(L"ExeApi not initialized. Call ExeApi_LoadExe first.");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            std::wstring result = toolset.reconstructType(a_typeName);
+
+            if (result.empty())
+            {
+                setLastError(L"Type not found");
+                if (a_outRequiredSize) *a_outRequiredSize = 0;
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+PdbApiResult ExeApi_EnumerateVftableTypes(
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            auto& toolset = DumpPDB::ExeToolset::instance();
+            if (!toolset.isLoaded())
+            {
+                setLastError(L"ExeApi not initialized. Call ExeApi_LoadExe first.");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            std::wstring result = toolset.enumerateVftableTypes();
+
+            if (result.empty())
+            {
+                setLastError(L"No RTTI types found in the loaded executable");
+                if (a_outRequiredSize) *a_outRequiredSize = 0;
+                return PDBAPI_ERROR_NOT_FOUND;
+            }
+
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+uint32_t ExeApi_GetVftableCount()
+{
+    std::scoped_lock lock(g_mutex);
+    return static_cast<uint32_t>(DumpPDB::ExeToolset::instance().vftableCount());
+}
+
+uint32_t ExeApi_GetTypeCount()
+{
+    std::scoped_lock lock(g_mutex);
+    return static_cast<uint32_t>(DumpPDB::ExeToolset::instance().typeCount());
 }

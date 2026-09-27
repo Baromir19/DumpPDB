@@ -13,6 +13,8 @@
 #include <CLI/Application/Command/Commands/CommandSource.hpp>
 #include <CLI/Application/Command/Commands/CommandSettings.hpp>
 #include <CLI/Application/Command/Commands/CommandHelp.hpp>
+#include <CLI/Application/Command/Commands/CommandExeType.hpp>
+#include <CLI/Application/Command/Commands/CommandExeTypes.hpp>
 
 class CommandManager : public Singleton<CommandManager>
 {
@@ -37,6 +39,8 @@ public:
         m_commands.push_back(std::make_unique<CommandCompiland>());
         m_commands.push_back(std::make_unique<CommandSource>());
         m_commands.push_back(std::make_unique<CommandSettings>());
+        m_commands.push_back(std::make_unique<CommandExeType>());
+        m_commands.push_back(std::make_unique<CommandExeTypes>());
 
         initState = true;
         return true;
@@ -101,9 +105,13 @@ public:
         auto count = ret->getArgCount();
         auto type = ret->getType();
 
-        count += static_cast<unsigned int>(type) & ICommand::s_executableMask
-                     ? 1
-                     : 0; // is it need name of .pdb?
+        // For PDB-execute commands: the .pdb path is NOT counted in getArgCount(),
+        // so we add 1 here. For EXE-execute commands: the .exe path IS already
+        // counted inside getArgCount() (it's part of the command's args), so no +1.
+        if (type == ICommand::Type::COMMAND_EXECUTE)
+        {
+            count += 1; // .pdb file path
+        }
 
         count += 2; // executable path + command name
 

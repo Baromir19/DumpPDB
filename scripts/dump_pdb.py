@@ -141,6 +141,23 @@ def main():
         default="",
         help="Regex filter for strings",
     )
+    parser.add_argument(
+        "--exe",
+        metavar="EXE",
+        help="Path to a PE executable (.exe/.dll) for RTTI analysis (no PDB needed)",
+    )
+    parser.add_argument(
+        "--exe-type",
+        dest="exe_type",
+        metavar="TYPENAME",
+        help="Reconstruct a type by name from EXE RTTI (requires --exe)",
+    )
+    parser.add_argument(
+        "--exe-types",
+        dest="exe_types",
+        action="store_true",
+        help="Enumerate all RTTI types found in the EXE (requires --exe)",
+    )
 
     args = parser.parse_args()
 
@@ -151,6 +168,8 @@ def main():
             args.file and
             (args.strings or args.signatures)
         )
+
+        exe_mode = bool(args.exe and (args.exe_type or args.exe_types))
 
         pdb_mode = (
             args.pdb and
@@ -179,6 +198,15 @@ def main():
         if binary_mode:
             if not args.file:
                 parser.error("--file is required")
+
+        if exe_mode:
+            if not args.exe:
+                parser.error("--exe is required for --exe-type / --exe-types")
+            pdb.load_exe(args.exe)
+            vft = pdb.exe_vftable_count()
+            typ = pdb.exe_type_count()
+            print(f"// Loaded {args.exe}")
+            print(f"// Found {vft} vftables across {typ} unique types.\n")
 
         if args.type_name:
             print(pdb.dump_type(args.type_name, args.case_sensitive))
@@ -225,6 +253,12 @@ def main():
 
         if args.symbols:
             print(pdb.enumerate_symbols(top_level_only=not args.all_types))
+
+        if args.exe_type:
+            print(pdb.exe_reconstruct_type(args.exe_type))
+
+        if args.exe_types:
+            print(pdb.exe_enumerate_types())
 
     except Exception as e:
         last_error = pdb.last_error()

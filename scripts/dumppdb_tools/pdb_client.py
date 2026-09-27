@@ -234,6 +234,60 @@ class PdbClient:
 
         return read_string_call(call)
 
+    # ── EXE / RTTI methods ────────────────────────────────────────────────────
+
+    def load_exe(self, exe_path: str):
+        """Load a PE executable for RTTI-based type reconstruction.
+
+        Does NOT require a .pdb file. Detects x86/x64 automatically.
+        Must be called before exe_reconstruct_type() and exe_enumerate_types().
+
+        Raises:
+            RuntimeError: if the file cannot be opened or is not a valid MSVC PE.
+        """
+        result = self.api.dll.ExeApi_LoadExe(exe_path)
+        if result != 0:
+            raise RuntimeError(
+                f"ExeApi_LoadExe failed (code {result}): {self.last_error()}"
+            )
+
+    def exe_reconstruct_type(self, type_name: str) -> str:
+        """Reconstruct a C++ type declaration from RTTI data in the loaded EXE.
+
+        Searches by exact demangled name first, falls back to substring match.
+
+        Returns:
+            A C++ declaration string (class/struct with vftable slots + fields).
+
+        Raises:
+            RuntimeError: if the type is not found or the EXE is not loaded.
+        """
+        def call(buffer, size, required):
+            return self.api.dll.ExeApi_ReconstructType(
+                type_name, buffer, size, required
+            )
+        return read_string_call(call)
+
+    def exe_enumerate_types(self) -> str:
+        """Return a newline-separated list of all RTTI type names in the EXE.
+
+        Includes a summary line at the top.
+
+        Raises:
+            RuntimeError: if the EXE is not loaded.
+        """
+        def call(buffer, size, required):
+            return self.api.dll.ExeApi_EnumerateVftableTypes(buffer, size, required)
+        return read_string_call(call)
+
+    def exe_vftable_count(self) -> int:
+        """Total number of vftable entries found in the loaded EXE."""
+        return int(self.api.dll.ExeApi_GetVftableCount())
+
+    def exe_type_count(self) -> int:
+        """Number of unique demangled type names found in the loaded EXE."""
+        return int(self.api.dll.ExeApi_GetTypeCount())
+
     def _dump(self, fn, name, case_sensitive):
         def call(buffer, size, required):
             return fn(
