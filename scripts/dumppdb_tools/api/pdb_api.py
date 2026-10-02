@@ -186,9 +186,11 @@ class PdbApiNative:
         self.dll.ExeApi_LoadExe.argtypes = [wintypes.LPCWSTR]
         self.dll.ExeApi_LoadExe.restype  = ctypes.c_int32
 
-        # ExeApi_ReconstructType(typeName, buf, bufSize, outRequired) -> int32
+        # ExeApi_ReconstructType(typeName, paddingStyle, buf, bufSize, outRequired) -> int32
+        # paddingStyle: 0 = Array, 1 = Expanded
         self.dll.ExeApi_ReconstructType.argtypes = [
             wintypes.LPCWSTR,
+            ctypes.c_int32,
             wintypes.LPWSTR,
             ctypes.c_uint32,
             ctypes.POINTER(ctypes.c_uint32),

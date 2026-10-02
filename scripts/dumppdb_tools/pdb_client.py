@@ -251,10 +251,15 @@ class PdbClient:
                 f"ExeApi_LoadExe failed (code {result}): {self.last_error()}"
             )
 
-    def exe_reconstruct_type(self, type_name: str) -> str:
+    def exe_reconstruct_type(self, type_name: str, expanded: bool = False) -> str:
         """Reconstruct a C++ type declaration from RTTI data in the loaded EXE.
 
         Searches by exact demangled name first, falls back to substring match.
+
+        Args:
+            type_name: Demangled type name (e.g. "ActorInstance").
+            expanded: If True, padding is rendered as individual fields instead
+                      of arrays (one int32_t per 4 bytes).
 
         Returns:
             A C++ declaration string (class/struct with vftable slots + fields).
@@ -262,11 +267,12 @@ class PdbClient:
         Raises:
             RuntimeError: if the type is not found or the EXE is not loaded.
         """
-        def call(buffer, size, required):
-            return self.api.dll.ExeApi_ReconstructType(
-                type_name, buffer, size, required
+        padding_flag = 1 if expanded else 0
+        return read_string_call(
+            lambda buf, sz, req: self.api.dll.ExeApi_ReconstructType(
+                type_name, padding_flag, buf, sz, req
             )
-        return read_string_call(call)
+        )
 
     def exe_enumerate_types(self) -> str:
         """Return a newline-separated list of all RTTI type names in the EXE.

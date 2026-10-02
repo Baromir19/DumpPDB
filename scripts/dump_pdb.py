@@ -158,6 +158,14 @@ def main():
         action="store_true",
         help="Enumerate all RTTI types found in the EXE (requires --exe)",
     )
+    parser.add_argument(
+        "--padding-style",
+        dest="padding_style",
+        choices=["array", "expanded"],
+        default="array",
+        help="Padding style: 'array' (default, one int32_t[] per gap) or "
+             "'expanded' (one field per 4/2/1 bytes)",
+    )
 
     args = parser.parse_args()
 
@@ -255,7 +263,8 @@ def main():
             print(pdb.enumerate_symbols(top_level_only=not args.all_types))
 
         if args.exe_type:
-            print(pdb.exe_reconstruct_type(args.exe_type))
+            expanded = (args.padding_style == "expanded")
+            print(pdb.exe_reconstruct_type(args.exe_type, expanded=expanded))
 
         if args.exe_types:
             print(pdb.exe_enumerate_types())

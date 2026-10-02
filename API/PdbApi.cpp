@@ -603,6 +603,7 @@ PdbApiResult ExeApi_LoadExe(const wchar_t* a_exePath)
 }
 
 PdbApiResult ExeApi_ReconstructType(const wchar_t* a_typeName,
+    int32_t a_paddingStyle,
     wchar_t* a_outBuffer,
     uint32_t a_bufferSize,
     uint32_t* a_outRequiredSize)
@@ -623,7 +624,11 @@ PdbApiResult ExeApi_ReconstructType(const wchar_t* a_typeName,
                 return PDBAPI_ERROR_NOT_INITIALIZED;
             }
 
-            std::wstring result = toolset.reconstructType(a_typeName);
+            const DumpPDB::PaddingStyle style = (a_paddingStyle == 1)
+                ? DumpPDB::PaddingStyle::Expanded
+                : DumpPDB::PaddingStyle::Array;
+
+            std::wstring result = toolset.reconstructType(a_typeName, style);
 
             if (result.empty())
             {

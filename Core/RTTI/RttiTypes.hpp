@@ -168,6 +168,18 @@ struct VftableInfo
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Padding style — controls how gap fields are emitted in the output
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum class PaddingStyle : uint8_t
+{
+    /// One array entry per gap: `int32_t pad_0xNN[K];`
+    Array,
+    /// One field per element:  `int32_t pad_0xNN;`  repeated
+    Expanded,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Field recovery results
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -202,10 +214,19 @@ struct FieldInfo
 
     /// If non-empty, this field is probably an embedded object of this class.
     std::string embeddedClassName;
-    /// RVA of the foreign vftable if embeddedClassName is set.
+    /// RVA of the foreign vftable if embeddedClassName is set (from annotateEmbeddedHints).
     uint64_t    embeddedVftableRva = 0;
     /// True if this offset is a known MI base vfptr (not a "field" per se).
     bool        isMIBaseVfptr     = false;
+
+    /// Detected from constructor: a non-trivial constructor was called with
+    /// ecx/rcx = this+offset. May contain a demangled class name if resolved.
+    std::string ctorCallHint;
+
+    /// Detected from constructor: a foreign vftable was written to this+offset
+    /// (embedded object with its own vftable, not an MI base).
+    std::string foreignVftableName;
+    uint64_t    foreignVftableRva = 0;
 
     [[nodiscard]] std::string typeName() const
     {
@@ -246,8 +267,10 @@ struct ReconstructedType
     std::string              mangledName;
     uint32_t                 objectSize         = 0;  ///< From operator new, or estimated.
     uint32_t                 maxObservedOffset  = 0;  ///< Highest field offset seen.
+    uint32_t                 ownFieldsStart     = 0;  ///< Offset where own fields begin (after base data).
     bool                     isStruct           = false;
     PEBitness                bitness            = PEBitness::Bits64;
+    PaddingStyle             paddingStyle       = PaddingStyle::Array; ///< How to render padding gaps.
     InheritanceKind          inheritance        = InheritanceKind::None;
     std::vector<BaseClassInfo>  directBases;
     std::vector<VftableInfo>    vftables;

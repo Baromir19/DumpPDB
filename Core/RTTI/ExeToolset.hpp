@@ -55,7 +55,9 @@ public:
     /// Reconstruct a single type by name and return a C++ declaration string.
     /// Searches by exact name first, falls back to substring match.
     /// Returns an error string if not loaded or not found.
-    [[nodiscard]] std::wstring reconstructType(const std::string& a_name)
+    /// a_paddingStyle: PaddingStyle::Array (default) or PaddingStyle::Expanded.
+    [[nodiscard]] std::wstring reconstructType(const std::string& a_name,
+        PaddingStyle a_paddingStyle = PaddingStyle::Array)
     {
         if (!m_loaded)
             return L"// [EXE] Not loaded. Call load() first.\n";
@@ -71,13 +73,19 @@ public:
             return err;
         }
 
+        rt.paddingStyle = a_paddingStyle;
         return TypeReconstructor::format(rt);
     }
 
     /// Reconstruct a single type by wide-string name.
-    [[nodiscard]] std::wstring reconstructType(const std::wstring& a_name)
+    [[nodiscard]] std::wstring reconstructType(const std::wstring& a_name,
+        PaddingStyle a_paddingStyle = PaddingStyle::Array)
     {
-        return reconstructType(std::string(a_name.begin(), a_name.end()));
+        std::string narrow;
+        narrow.reserve(a_name.size());
+        for (wchar_t c : a_name)
+            narrow.push_back(static_cast<char>(c));
+        return reconstructType(narrow, a_paddingStyle);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

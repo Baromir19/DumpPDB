@@ -69,7 +69,7 @@ public:
             return out;
         }
 
-        const wchar_t* bits = (a_type.bitness == PEBitness::Bits32) ? L"x86" : L"x64";
+        const wchar_t* bits  = (a_type.bitness == PEBitness::Bits32) ? L"x86" : L"x64";
         const uint32_t ptrSz = (a_type.bitness == PEBitness::Bits32) ? 4u : 8u;
 
         // ── Header ────────────────────────────────────────────────────────────
@@ -85,7 +85,6 @@ public:
         }
         else if (a_type.maxObservedOffset > 0)
         {
-            // Estimate: last field offset + field size, rounded up to ptr alignment
             const uint32_t est = align(a_type.maxObservedOffset, ptrSz);
             wchar_t buf[64];
             swprintf_s(buf, L"size: ~0x%X bytes (estimated) | ", est);
@@ -119,9 +118,8 @@ public:
         out += L"\n{\npublic:\n";
 
         // ── Vftable comments ─────────────────────────────────────────────────
-        for (size_t vi = 0; vi < a_type.vftables.size(); ++vi)
+        for (const auto& vft : a_type.vftables)
         {
-            const auto& vft = a_type.vftables[vi];
             wchar_t buf[256];
             if (vft.objectOffset == 0)
             {
@@ -131,22 +129,19 @@ public:
             }
             else
             {
-                // Try to identify which base class this vftable belongs to
                 std::wstring baseName;
                 for (const auto& b : a_type.directBases)
-                {
                     if (b.offset == static_cast<int32_t>(vft.objectOffset))
-                    {
-                        baseName = toWide(b.demangledName);
-                        break;
-                    }
-                }
+                    { baseName = toWide(b.demangledName); break; }
+
                 if (baseName.empty())
-                    swprintf_s(buf, L"    /* vftable @ RVA 0x%llX, offset +0x%X (%zu slots) */\n",
+                    swprintf_s(buf,
+                        L"    /* vftable @ RVA 0x%llX, offset +0x%X (%zu slots) */\n",
                         static_cast<unsigned long long>(vft.vftableRva),
                         vft.objectOffset, vft.vfuncs.size());
                 else
-                    swprintf_s(buf, L"    /* vftable @ RVA 0x%llX, offset +0x%X (%zu slots) [%s] */\n",
+                    swprintf_s(buf,
+                        L"    /* vftable @ RVA 0x%llX, offset +0x%X (%zu slots) [%s] */\n",
                         static_cast<unsigned long long>(vft.vftableRva),
                         vft.objectOffset, vft.vfuncs.size(), baseName.c_str());
             }
@@ -154,62 +149,90 @@ public:
         }
 
         // ── Virtual functions ─────────────────────────────────────────────────
-        if (!a_type.vftables.empty() && !a_type.vftables[0].vfuncs.empty())
+        // Rules (evaluated per subobject vftable):
+        //   isDestructor          → primary vftable only (a subobject's slot 0 is
+        //                           an adjustor thunk of the same destructor)
+        //   isNew                 → shown, no suffix
+        //   isOverride            → shown, " override" suffix
+        //   inherited (neither)   → SKIPPED (same address as base, not overridden)
         {
-            out += L"\n    /// VIRTUAL FUNCTIONS:\n";
-            for (const auto& slot : a_type.vftables[0].vfuncs)
+            bool anySlots = false;
+            for (const auto& vft : a_type.vftables)
+                if (!vft.vfuncs.empty()) { anySlots = true; break; }
+
+            if (anySlots)
             {
-                wchar_t buf[256];
-                const std::wstring className = toWide(a_type.className);
+                out += L"\n    /// VIRTUAL FUNCTIONS:\n";
 
-                if (slot.isPureVirtual)
-                {
-                    swprintf_s(buf, L"    virtual void func_%u() = 0;\n", slot.slotIndex);
-                    out += buf;
-                    continue;
-                }
+                const bool multi = (a_type.vftables.size() > 1);
 
-                // Prefix: virtual keyword
-                out += L"    virtual ";
+                for (const auto& vft : a_type.vftables)
+                {
+                    if (vft.vfuncs.empty()) continue;
 
-                if (slot.isDestructor)
-                {
-                    swprintf_s(buf, L"~%s();", className.c_str());
-                    out += buf;
-                }
-                else
-                {
-                    swprintf_s(buf, L"void func_%u();", slot.slotIndex);
-                    out += buf;
-                    if (slot.isOverride) out += L" override";
-                }
+                    const bool primary = (vft.objectOffset == 0);
 
-                // Suffix comment with RVA and override/new annotation
-                if (slot.isDestructor)
-                {
-                    swprintf_s(buf, L"  // [%u] dtor  0x%llX\n",
-                        slot.slotIndex,
-                        static_cast<unsigned long long>(slot.funcRva));
+                    if (multi)
+                    {
+                        wchar_t hbuf[256];
+                        std::wstring baseName;
+                        for (const auto& b : a_type.directBases)
+                            if (b.offset == static_cast<int32_t>(vft.objectOffset))
+                            { baseName = toWide(b.demangledName); break; }
+
+                        if (primary)
+                            swprintf_s(hbuf, L"    // --- primary vftable (+0x00) ---\n");
+                        else if (!baseName.empty())
+                            swprintf_s(hbuf, L"    // --- vftable (+0x%X, %s) ---\n",
+                                vft.objectOffset, baseName.c_str());
+                        else
+                            swprintf_s(hbuf, L"    // --- vftable (+0x%X) ---\n",
+                                vft.objectOffset);
+                        out += hbuf;
+                    }
+
+                    for (const auto& slot : vft.vfuncs)
+                    {
+                        // Skip pure-inherited slots (not overridden, not new)
+                        if (slot.isDestructor && !primary) continue;
+                        if (!slot.isDestructor && !slot.isNew && !slot.isOverride
+                            && !slot.isPureVirtual)
+                            continue;
+
+                        wchar_t buf[256];
+
+                        if (slot.isPureVirtual)
+                        {
+                            swprintf_s(buf, L"    virtual void func_%u() = 0;  // [%u]\n",
+                                slot.slotIndex, slot.slotIndex);
+                            out += buf;
+                            continue;
+                        }
+
+                        out += L"    virtual ";
+
+                        if (slot.isDestructor)
+                        {
+                            swprintf_s(buf, L"~%s();  // [%u] 0x%llX\n",
+                                toWide(a_type.className).c_str(),
+                                slot.slotIndex,
+                                static_cast<unsigned long long>(slot.funcRva));
+                        }
+                        else if (slot.isOverride)
+                        {
+                            swprintf_s(buf, L"void func_%u() override;  // [%u] 0x%llX\n",
+                                slot.slotIndex, slot.slotIndex,
+                                static_cast<unsigned long long>(slot.funcRva));
+                        }
+                        else // isNew
+                        {
+                            swprintf_s(buf, L"void func_%u();  // [%u] 0x%llX\n",
+                                slot.slotIndex, slot.slotIndex,
+                                static_cast<unsigned long long>(slot.funcRva));
+                        }
+                        out += buf;
+                    }
                 }
-                else if (slot.isNew)
-                {
-                    swprintf_s(buf, L"  // [%u] 0x%llX  (new)\n",
-                        slot.slotIndex,
-                        static_cast<unsigned long long>(slot.funcRva));
-                }
-                else if (slot.isOverride)
-                {
-                    swprintf_s(buf, L"  // [%u] 0x%llX\n",
-                        slot.slotIndex,
-                        static_cast<unsigned long long>(slot.funcRva));
-                }
-                else
-                {
-                    swprintf_s(buf, L"  // [%u] 0x%llX\n",
-                        slot.slotIndex,
-                        static_cast<unsigned long long>(slot.funcRva));
-                }
-                out += buf;
             }
         }
 
@@ -217,77 +240,95 @@ public:
         if (!a_type.fields.empty())
         {
             out += L"\n    /// FIELDS:\n";
+
+            // Show base region header if we trimmed inherited fields
+            if (a_type.ownFieldsStart > 0)
+            {
+                wchar_t buf[128];
+                swprintf_s(buf, L"    // ... base class data [0x00 - 0x%02X] ...\n",
+                    a_type.ownFieldsStart - 1);
+                out += buf;
+            }
+
             for (const auto& f : a_type.fields)
             {
                 wchar_t buf[320];
 
                 if (f.isMIBaseVfptr)
                 {
-                    // MI base vftable pointer — show as vfptr with base name hint
                     const std::wstring hint = toWide(f.embeddedClassName);
                     if (hint.empty())
-                        swprintf_s(buf, L"    void*    vfptr_%02X;           /* 0x%02X */\n",
-                            f.offset, f.offset);
+                        swprintf_s(buf, L"    void*    vfptr_0x%02X;\n", f.offset);
                     else
-                        swprintf_s(buf, L"    void*    vfptr_%02X;           /* 0x%02X */  // %s\n",
-                            f.offset, f.offset, hint.c_str());
+                        swprintf_s(buf, L"    void*    vfptr_0x%02X;  // %s\n",
+                            f.offset, hint.c_str());
                     out += buf;
                     continue;
                 }
 
                 if (f.kind == FieldKind::Padding)
                 {
-                    // Gap filler
-                    swprintf_s(buf, L"    uint8_t  pad_0x%02X[%u];",
-                        f.offset, f.size);
-                    out += buf;
-                    wchar_t padBuf[64];
-                    swprintf_s(padBuf, L"  /* 0x%02X */  // padding\n", f.offset);
-                    out += padBuf;
+                    // Padding — choose Array or Expanded based on paddingStyle
+                    const wchar_t* padType = L"int8_t ";
+                    uint32_t elemSize = 1;
+                    if      (f.size % 4 == 0) { padType = L"int32_t"; elemSize = 4; }
+                    else if (f.size % 2 == 0) { padType = L"int16_t"; elemSize = 2; }
+
+                    const uint32_t count = f.size / elemSize;
+
+                    if (a_type.paddingStyle == PaddingStyle::Array)
+                    {
+                        if (count == 1)
+                            swprintf_s(buf, L"    %s  pad_0x%02X;\n",   padType, f.offset);
+                        else
+                            swprintf_s(buf, L"    %s  pad_0x%02X[%u];\n", padType, f.offset, count);
+                        out += buf;
+                    }
+                    else // Expanded: one declaration per element
+                    {
+                        for (uint32_t k = 0; k < count; ++k)
+                        {
+                            const uint32_t elemOff = f.offset + k * elemSize;
+                            swprintf_s(buf, L"    %s  pad_0x%02X;\n", padType, elemOff);
+                            out += buf;
+                        }
+                    }
                     continue;
                 }
 
                 const std::wstring typeName = toWide(f.typeName());
 
-                if (!f.embeddedClassName.empty())
+                // Build comment suffix
+                std::wstring comment;
+                if (!f.foreignVftableName.empty())
                 {
-                    // Embedded object hint
-                    if (f.isBitfield)
-                    {
-                        swprintf_s(buf, L"    %-8s fld_0x%02X : %u;",
-                            typeName.c_str(), f.offset, f.bitSize);
-                    }
-                    else
-                    {
-                        swprintf_s(buf, L"    %-8s fld_0x%02X;",
-                            typeName.c_str(), f.offset);
-                    }
-                    out += buf;
-                    wchar_t cmt[160];
-                    swprintf_s(cmt, L"  /* 0x%02X */  // probably: %s (RVA 0x%llX)\n",
-                        f.offset,
-                        toWide(f.embeddedClassName).c_str(),
-                        static_cast<unsigned long long>(f.embeddedVftableRva));
-                    out += cmt;
+                    // Embedded object with its own vftable (e.g. FadeIconMiniMapModifier)
+                    comment = L"  // embedded: " + toWide(f.foreignVftableName);
                 }
-                else if (f.isBitfield)
+                else if (!f.ctorCallHint.empty() && f.ctorCallHint != "?")
                 {
-                    swprintf_s(buf, L"    %-8s fld_0x%02X : %u;",
-                        typeName.c_str(), f.offset, f.bitSize);
-                    out += buf;
-                    wchar_t cmt[64];
-                    swprintf_s(cmt, L"  /* 0x%02X */\n", f.offset);
-                    out += cmt;
+                    comment = L"  // ctor: " + toWide(f.ctorCallHint);
+                }
+                else if (!f.ctorCallHint.empty()) // "?"
+                {
+                    comment = L"  // ctor called here";
+                }
+                else if (!f.embeddedClassName.empty())
+                {
+                    comment = L"  // probably: " + toWide(f.embeddedClassName);
+                }
+
+                if (f.isBitfield)
+                {
+                    swprintf_s(buf, L"    %-8s fld_0x%02X : %u;%s\n",
+                        typeName.c_str(), f.offset, f.bitSize, comment.c_str());
                 }
                 else
                 {
-                    swprintf_s(buf, L"    %-8s fld_0x%02X;",
-                        typeName.c_str(), f.offset);
-                    out += buf;
-                    wchar_t cmt[64];
-                    swprintf_s(cmt, L"  /* 0x%02X */\n", f.offset);
-                    out += cmt;
+                    swprintf_s(buf, L"    %-8s fld_0x%02X;%s\n",
+                        typeName.c_str(), f.offset, comment.c_str());
                 }
+                out += buf;
             }
         }
         else
@@ -344,10 +385,10 @@ private:
             [](const VftableInfo& a, const VftableInfo& b)
             { return a.objectOffset < b.objectOffset; });
 
-        // ── Override / new detection for primary vftable ──────────────────────
-        if (!rt.vftables.empty())
+        // ── Override / new detection for every subobject vftable ──────────────
+        for (auto& vft : rt.vftables)
         {
-            annotateOverrides(rt.vftables[0], a_reader);
+            annotateOverrides(vft, a_reader);
         }
 
         // ── Collect all MI base vftable RVAs for FieldRecovery ────────────────
@@ -362,6 +403,17 @@ private:
             }
         }
 
+        // ── Collect ALL known vftables from the reader for foreign-vftable detection ──
+        std::vector<uint64_t> allVftRvas;
+        std::vector<std::string> allVftNames;
+        allVftRvas.reserve(a_reader.vftables().size());
+        allVftNames.reserve(a_reader.vftables().size());
+        for (const auto& vft : a_reader.vftables())
+        {
+            allVftRvas.push_back(vft.vftableRva);
+            allVftNames.push_back(vft.fullName);
+        }
+
         // ── Field recovery ────────────────────────────────────────────────────
         {
             FieldRecovery fr;
@@ -369,6 +421,7 @@ private:
             uint32_t maxObservedOff  = 0;
             rt.fields = fr.recover(primary->vftableRva, a_pe, a_bitness,
                                    baseVftableRvas, baseVftableOffsets,
+                                   allVftRvas, allVftNames,
                                    objectSize, maxObservedOff);
             rt.objectSize        = objectSize;
             rt.maxObservedOffset = maxObservedOff;
@@ -377,14 +430,34 @@ private:
         // ── Annotate embedded class hints in fields ───────────────────────────
         annotateEmbeddedHints(rt.fields, rt.vftables, a_reader, a_bitness);
 
+        // ── Compute ownFieldsStart: skip fields belonging to base classes ──────
+        // Strategy: find the end of the last direct base class's data region.
+        // For each direct base at offset B, find its estimated size via its
+        // own maxObservedOffset (reconstruct the base lightly). Then
+        // ownFieldsStart = max(B + baseSize) over all direct bases.
+        rt.ownFieldsStart = computeOwnFieldsStart(rt.directBases, rt.vftables,
+                                                   a_reader, a_pe, a_bitness);
+
+        // Strip fields that fall entirely within base class region
+        if (rt.ownFieldsStart > 0)
+        {
+            std::vector<FieldInfo> ownFields;
+            for (const auto& f : rt.fields)
+            {
+                if (f.offset + f.size > rt.ownFieldsStart)
+                    ownFields.push_back(f);
+            }
+            rt.fields = std::move(ownFields);
+        }
+
         // ── Gap filling ───────────────────────────────────────────────────────
         const uint32_t ptrSz = (a_bitness == PEBitness::Bits32) ? 4u : 8u;
         const uint32_t totalSize = rt.objectSize > 0
             ? rt.objectSize
             : (rt.maxObservedOffset > 0 ? align(rt.maxObservedOffset, ptrSz) : 0);
 
-        if (totalSize > 0)
-            fillGaps(rt.fields, totalSize, ptrSz);
+        if (totalSize > rt.ownFieldsStart)
+            fillGaps(rt.fields, rt.ownFieldsStart, totalSize, ptrSz);
 
         return rt;
     }
@@ -392,99 +465,76 @@ private:
     // ─────────────────────────────────────────────────────────────────────────
     // Override / new annotation
     //
-    // For each slot i in the primary vftable:
-    //   - Collect the funcRva of slot i from each direct base's primary vftable.
-    //   - If our slot RVA matches any base slot RVA → isOverride = true.
-    //   - If slot index >= base vftable size → isNew = true.
+    // Each vftable corresponds to one subobject (objectOffset). Its comparison
+    // baseline is the primary vftable (objectOffset == 0) of the direct base
+    // that occupies the SAME subobject offset:
+    //   - the primary vftable (offset 0)      -> compared with the primary base
+    //                                            (offset 0), e.g. ExposedObject
+    //   - the subobject vftable at +0x30      -> compared with that interface's
+    //                                            own vftable (AI::INavMeshRegisterable)
+    //
+    //   slot RVA unchanged vs base      -> inherited  (not printed)
+    //   slot exists in base, RVA differs-> overridden (override)
+    //   slot index >= base vftable size -> new
     // ─────────────────────────────────────────────────────────────────────────
 
     static void annotateOverrides(VftableInfo& a_vft, const RttiReader& a_reader)
     {
-        // Collect all base primary vftables (objectOffset == 0 for the base type)
-        // by looking up the base class names in the reader.
-        struct BaseVft
+        // Find the direct base that owns this subobject offset.
+        const BaseClassInfo* match = nullptr;
+        for (const auto& b : a_vft.bases)
         {
-            std::vector<uint64_t> slotRvas; // indexed by slot
-        };
-        std::vector<BaseVft> baseVfts;
+            if (b.demangledName == a_vft.fullName) continue;
+            if (!b.isDirect) continue;
+            if (b.offset != static_cast<int32_t>(a_vft.objectOffset)) continue;
+            match = &b;
+            break;
+        }
 
-        for (size_t bi = 1; bi < a_vft.bases.size(); ++bi)
+        // Fallback for the primary subobject: take the first direct base.
+        if (!match && a_vft.objectOffset == 0)
         {
-            const auto& base = a_vft.bases[bi];
-            if (base.demangledName.empty()) continue;
-            if (base.demangledName == a_vft.fullName) continue;
+            for (const auto& b : a_vft.bases)
+                if (b.isDirect && b.demangledName != a_vft.fullName)
+                {
+                    match = &b;
+                    break;
+                }
+        }
 
-            // Find this base in the reader
-            auto baseFound = a_reader.findExact(base.demangledName);
+        std::vector<uint64_t> baseSlotRvas;
+        if (match && !match->demangledName.empty())
+        {
+            auto baseFound = a_reader.findExact(match->demangledName);
             for (const auto* bv : baseFound)
             {
-                if (bv->objectOffset != 0) continue; // only primary vftable
-
-                BaseVft bvft;
-                bvft.slotRvas.reserve(bv->vfuncs.size());
+                if (bv->objectOffset != 0) continue; // the base's own primary vftable
                 for (const auto& s : bv->vfuncs)
-                    bvft.slotRvas.push_back(s.funcRva);
-                baseVfts.push_back(std::move(bvft));
+                    baseSlotRvas.push_back(s.funcRva);
+                break;
             }
         }
 
-        if (baseVfts.empty())
-        {
-            // No base vftables found — mark all non-dtor as new
-            for (auto& slot : a_vft.vfuncs)
-            {
-                slot.isNew      = !slot.isDestructor;
-                slot.isOverride = false;
-            }
-            return;
-        }
-
-        // Determine max base vftable size
-        size_t maxBaseSize = 0;
-        for (const auto& bv : baseVfts)
-            maxBaseSize = std::max(maxBaseSize, bv.slotRvas.size());
+        const size_t baseSize = baseSlotRvas.size();
 
         for (auto& slot : a_vft.vfuncs)
         {
-            if (slot.isDestructor)
+            slot.isNew      = false;
+            slot.isOverride = false;
+
+            if (slot.isDestructor || slot.isPureVirtual)
+                continue;
+
+            if (baseSlotRvas.empty() || slot.slotIndex >= baseSize)
             {
-                slot.isNew      = false;
-                slot.isOverride = false;
+                slot.isNew = true;
                 continue;
             }
 
-            if (slot.slotIndex >= maxBaseSize)
-            {
-                slot.isNew      = true;
-                slot.isOverride = false;
-                continue;
-            }
+            if (slot.funcRva != 0 && slot.funcRva == baseSlotRvas[slot.slotIndex])
+                continue; // inherited, unchanged
 
-            // Check if any base has the same RVA at this slot
-            bool sameAsBase = false;
-            for (const auto& bv : baseVfts)
-            {
-                if (slot.slotIndex < bv.slotRvas.size()
-                    && bv.slotRvas[slot.slotIndex] == slot.funcRva
-                    && slot.funcRva != 0)
-                {
-                    sameAsBase = true;
-                    break;
-                }
-            }
-
-            if (sameAsBase)
-            {
-                // Inherited but not overridden — still show, but neither new nor override
-                slot.isNew      = false;
-                slot.isOverride = false;
-            }
-            else
-            {
-                // Different RVA than base — it's overridden
-                slot.isNew      = false;
-                slot.isOverride = true;
-            }
+            slot.isOverride = true; // re-implemented by the derived class
         }
     }
 
@@ -557,28 +607,103 @@ private:
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Gap filling
+    // Compute ownFieldsStart
     //
-    // Walk the sorted field list, insert Padding entries for every byte range
-    // not covered by a known field. Stop at a_totalSize.
+    // Strategy (most reliable for MSVC MI):
+    //   1. If there are MI vftables (objectOffset > 0): the first one's offset
+    //      is the boundary — everything before it belongs to the primary base.
+    //   2. Otherwise: run FieldRecovery on the direct base to find its extent.
+    //   3. Fallback: ptrSize (just skip the primary vfptr).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    static uint32_t computeOwnFieldsStart(
+        const std::vector<BaseClassInfo>& a_bases,
+        const std::vector<VftableInfo>&   a_vftables,
+        const RttiReader& a_reader,
+        const PEImage& a_pe,
+        PEBitness a_bitness)
+    {
+        if (a_bases.empty()) return 0;
+
+        const uint32_t ptrSz = (a_bitness == PEBitness::Bits32) ? 4u : 8u;
+
+        // ── Multiple inheritance ──────────────────────────────────────────────
+        // Every vftable with objectOffset > 0 marks a base subobject; a pure
+        // interface occupies just its vfptr. The base region therefore ends at
+        //     max(subobjectOffset) + ptrSize
+        // e.g. ActorInstance: ICharacterProxyHitOverrider @ 0xB8 -> 0xBC.
+        uint32_t maxEnd = 0;
+        for (const auto& vft : a_vftables)
+            if (vft.objectOffset > 0)
+                maxEnd = std::max(maxEnd, vft.objectOffset + ptrSz);
+
+        if (maxEnd > 0)
+            return maxEnd;
+
+        // ── Single inheritance ────────────────────────────────────────────────
+        // Recover the primary base's extent from its own vftable/constructor.
+        for (const auto& base : a_bases)
+        {
+            if (base.demangledName.empty() || base.offset < 0) continue;
+            const uint32_t baseOffset = static_cast<uint32_t>(base.offset);
+
+            auto baseVfts = a_reader.findExact(base.demangledName);
+            const VftableInfo* bPrimary = nullptr;
+            for (const auto* bv : baseVfts)
+                if (bv->objectOffset == 0) { bPrimary = bv; break; }
+
+            if (!bPrimary)
+            {
+                maxEnd = std::max(maxEnd, baseOffset + ptrSz);
+                continue;
+            }
+
+            FieldRecovery fr;
+            uint32_t baseObjSize = 0;
+            uint32_t baseMaxOff  = 0;
+            std::vector<uint64_t> emptyRvas;
+            std::vector<uint32_t> emptyOffs;
+            std::vector<std::string> emptyNames;
+            (void)fr.recover(bPrimary->vftableRva, a_pe, a_bitness,
+                             emptyRvas, emptyOffs, emptyRvas, emptyNames,
+                             baseObjSize, baseMaxOff);
+
+            uint32_t baseEnd = 0;
+            if (baseObjSize > 0)
+                baseEnd = baseOffset + baseObjSize;
+            else if (baseMaxOff > 0)
+                baseEnd = baseOffset + align(baseMaxOff, ptrSz);
+            else
+                baseEnd = baseOffset + ptrSz;
+
+            maxEnd = std::max(maxEnd, baseEnd);
+        }
+
+        return maxEnd > 0 ? maxEnd : ptrSz;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Gap filling — fill [startOffset, totalSize) with padding entries
     // ─────────────────────────────────────────────────────────────────────────
 
     static void fillGaps(std::vector<FieldInfo>& a_fields,
+                         uint32_t a_startOffset,
                          uint32_t a_totalSize,
                          uint32_t /*ptrSz*/)
     {
-        if (a_totalSize == 0) return;
+        if (a_totalSize <= a_startOffset) return;
 
         std::vector<FieldInfo> result;
         result.reserve(a_fields.size() * 2);
 
-        uint32_t cursor = 0;
+        uint32_t cursor = a_startOffset;
 
         for (const auto& f : a_fields)
         {
+            if (f.offset < a_startOffset) continue; // skip base region
+
             if (f.offset > cursor)
             {
-                // There's a gap [cursor, f.offset)
                 FieldInfo pad;
                 pad.offset    = cursor;
                 pad.size      = f.offset - cursor;
@@ -588,15 +713,13 @@ private:
             }
             else if (f.offset < cursor)
             {
-                // Overlapping field (can happen with bitfields) — skip
-                continue;
+                continue; // overlapping
             }
 
             result.push_back(f);
             cursor = f.offset + f.size;
         }
 
-        // Trailing gap to totalSize
         if (cursor < a_totalSize)
         {
             FieldInfo pad;

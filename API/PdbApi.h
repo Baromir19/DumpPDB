@@ -186,7 +186,9 @@ PDBAPI_API PdbApiResult ExeApi_LoadExe(const wchar_t* a_exePath);
 /// Reconstruct a single type by name and return a C++ declaration.
 /// Uses the buffer convention (see above).
 /// Searches by exact name first, falls back to substring match.
+/// a_paddingStyle: 0 = Array (default), 1 = Expanded (one field per element).
 PDBAPI_API PdbApiResult ExeApi_ReconstructType(const wchar_t* a_typeName,
+    int32_t a_paddingStyle,
     wchar_t* a_outBuffer,
     uint32_t a_bufferSize,
     uint32_t* a_outRequiredSize);

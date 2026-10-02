@@ -394,7 +394,11 @@ private:
             s.slotIndex     = idx;
             s.funcRva       = funcRva;
             s.isPureVirtual = false;
-            s.isDestructor  = (idx == 0 || idx == 1);
+            // Only slot 0 is the (scalar) deleting destructor. On a derived
+            // class's primary vftable MSVC may also emit a vector-deleting
+            // destructor in slot 1, but it is usually inherited from the base,
+            // so it is caught by the plain override/inherit comparison instead.
+            s.isDestructor  = (idx == 0);
             slots.push_back(s);
         }
 
@@ -436,6 +440,14 @@ private:
 
         bases.reserve(chd.numBaseClasses);
 
+        // The MSVC base-class array is a depth-first flattened list:
+        //   [0]             = the class itself
+        //   [1]             = first direct base, immediately followed by its own
+        //                     contained bases, then the second direct base, etc.
+        // numContainedBases counts the transitive bases of an entry (not
+        // including itself), so the next *direct* base sits 1 + ncb entries on.
+        uint32_t nextDirectIndex = 1;
+
         // x86 BCD array: 4-byte abs VA per entry
         // x64 BCD array: 4-byte RVA per entry
         for (uint32_t i = 0; i < chd.numBaseClasses; ++i)
@@ -476,7 +488,11 @@ private:
             bc.demangledName = demangleMsvc(mangledBase);
             bc.offset        = bcd.pmd.mdisp;
             bc.isVirtual     = (bcd.attributes & 1) != 0;
-            bc.isDirect      = (i == 1); // index 0 = self, index 1 = first direct base
+            bc.isDirect      = (i == nextDirectIndex);
+
+            // Advance to the next direct base (skip this base's transitive bases).
+            if (bc.isDirect)
+                nextDirectIndex = i + 1 + bcd.numContainedBases;
 
             bases.push_back(std::move(bc));
         }

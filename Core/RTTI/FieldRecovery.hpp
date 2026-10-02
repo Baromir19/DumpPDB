@@ -44,6 +44,8 @@ public:
     /// a_bitness           — x86 or x64.
     /// a_baseVftRvas       — RVAs of MI base vftables (their vfptr writes are skipped).
     /// a_baseVftOffsets    — corresponding byte offsets in the object for each base vftable.
+    /// a_knownVftRvas      — all vftable RVAs known in the image (for foreign vftable detection).
+    /// a_knownVftNames     — corresponding demangled names for a_knownVftRvas.
     /// a_objectSize        — output: inferred allocation size from operator new (0 if not found).
     /// a_maxObservedOffset — output: last_field.offset + last_field.size (for size estimation).
     [[nodiscard]] std::vector<FieldInfo> recover(
@@ -52,6 +54,8 @@ public:
         PEBitness                    a_bitness,
         const std::vector<uint64_t>& a_baseVftRvas,
         const std::vector<uint32_t>& a_baseVftOffsets,
+        const std::vector<uint64_t>& a_knownVftRvas,
+        const std::vector<std::string>& a_knownVftNames,
         uint32_t&                    a_objectSize,
         uint32_t&                    a_maxObservedOffset)
     {
@@ -61,6 +65,8 @@ public:
         m_bitness         = a_bitness;
         m_layout          = RttiLayout::forBitness(a_bitness);
         m_baseVftOffsets  = a_baseVftOffsets;
+        m_knownVftRvas    = a_knownVftRvas;
+        m_knownVftNames   = a_knownVftNames;
         a_objectSize      = 0;
         a_maxObservedOffset = 0;
 
@@ -73,24 +79,19 @@ public:
         }
         if (!m_text) return {};
 
-        // Initialise Zydis decoder for the right mode
         if (m_bitness == PEBitness::Bits64)
             ZydisDecoderInit(&m_decoder, ZYDIS_MACHINE_MODE_LONG_64,         ZYDIS_STACK_WIDTH_64);
         else
             ZydisDecoderInit(&m_decoder, ZYDIS_MACHINE_MODE_LONG_COMPAT_32,  ZYDIS_STACK_WIDTH_32);
 
-        // 1. Find constructor
         uint64_t ctorRva = findConstructor();
         if (!ctorRva) return {};
 
-        // 2. Infer allocation size
         a_objectSize = extractAllocationSize(ctorRva);
 
-        // 3. Trace field accesses
         std::map<uint32_t, AccessRecord> accesses;
         traceThisAccesses(ctorRva, accesses);
 
-        // 4. Build list and compute maxObservedOffset
         auto fields = buildFields(accesses);
         if (!fields.empty())
         {
@@ -107,12 +108,17 @@ private:
 
     struct AccessRecord
     {
-        uint32_t  offset    = 0;
-        uint32_t  size      = 0;
-        FieldKind kind      = FieldKind::Unknown;
-        bool      isBitfield = false;
-        uint8_t   bitOffset  = 0;
-        uint8_t   bitSize    = 0;
+        uint32_t  offset      = 0;
+        uint32_t  size        = 0;
+        FieldKind kind        = FieldKind::Unknown;
+        bool      isBitfield  = false;
+        uint8_t   bitOffset   = 0;
+        uint8_t   bitSize     = 0;
+        /// Demangled name of class whose constructor was called with this+offset in ecx/rcx.
+        std::string ctorCallHint;
+        /// Demangled name of class whose vftable was written to this+offset (embedded object).
+        std::string foreignVftableName;
+        uint64_t    foreignVftableRva = 0;
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -366,15 +372,22 @@ private:
         ZydisDecodedInstruction insn;
         ZydisDecodedOperand     ops[ZYDIS_MAX_OPERAND_COUNT];
 
-        // `this` register tracking: which Zydis register IDs hold `this`
         constexpr int kMaxReg = ZYDIS_REGISTER_MAX_VALUE + 1;
         bool isThis[kMaxReg]  = {};
 
-        // x64: this = rcx; x86: this = ecx
         const ZydisRegister thisReg = (m_bitness == PEBitness::Bits64)
                                     ? ZYDIS_REGISTER_RCX
                                     : ZYDIS_REGISTER_ECX;
         isThis[thisReg] = true;
+
+        // Track what offset is in ecx/rcx just before a CALL
+        // so we can annotate it as a ctor call hint.
+        // lastThisOffset[reg] = offset that was added to `this` and stored in reg
+        int32_t lastThisOffset[kMaxReg];
+        for (int i = 0; i < kMaxReg; ++i) lastThisOffset[i] = -1;
+
+        // Also track the last immediate loaded into a register (for foreign vftable detection)
+        uint64_t lastImmInReg[kMaxReg] = {};
 
         size_t pos    = startOff;
         size_t endPos = startOff + maxBytes;
@@ -386,7 +399,9 @@ private:
 
             if (!decode(ptr, rem, insn, ops)) { pos++; continue; }
 
-            // ── Track register aliases: MOV dst, src where src is `this` ──
+            const uint64_t curRva = textVa + static_cast<uint64_t>(pos);
+
+            // ── Track MOV dst, src aliases ──
             if (insn.mnemonic == ZYDIS_MNEMONIC_MOV
                 && insn.operand_count >= 2
                 && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER
@@ -395,20 +410,95 @@ private:
                 const ZydisRegister dst = ops[0].reg.value;
                 const ZydisRegister src = ops[1].reg.value;
                 if (src < kMaxReg && dst < kMaxReg)
-                    isThis[dst] = isThis[src];
+                {
+                    isThis[dst]          = isThis[src];
+                    lastThisOffset[dst]  = lastThisOffset[src];
+                    lastImmInReg[dst]    = lastImmInReg[src];
+                }
             }
 
-            // ── On CALL: reset all aliases except `this` itself ──
+            // ── Track MOV reg, imm — for foreign vftable detection ──
+            if (insn.mnemonic == ZYDIS_MNEMONIC_MOV
+                && insn.operand_count >= 2
+                && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER
+                && ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+            {
+                const ZydisRegister dst = ops[0].reg.value;
+                if (dst < kMaxReg)
+                    lastImmInReg[dst] = static_cast<uint64_t>(ops[1].imm.value.u);
+            }
+
+            // ── Track LEA reg, [this+disp] — ecx = this+offset pattern (x86 ctor arg) ──
+            if (insn.mnemonic == ZYDIS_MNEMONIC_LEA
+                && insn.operand_count >= 2
+                && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER
+                && ops[1].type == ZYDIS_OPERAND_TYPE_MEMORY)
+            {
+                const ZydisRegister dst  = ops[0].reg.value;
+                const ZydisRegister base = ops[1].mem.base;
+                if (dst < kMaxReg && base < kMaxReg && isThis[base])
+                {
+                    const int64_t disp = ops[1].mem.disp.has_displacement
+                                       ? ops[1].mem.disp.value : 0;
+                    if (disp >= 0 && disp <= 65535)
+                    {
+                        isThis[dst]         = false; // it's this+offset, not `this`
+                        lastThisOffset[dst] = static_cast<int32_t>(disp);
+                    }
+                }
+            }
+
+            // ── x86: MOV ECX, reg where reg holds this+offset ──
+            // Pattern: lea eax, [ecx+N] ; mov ecx, eax ; call Ctor
+            if (m_bitness == PEBitness::Bits32
+                && insn.mnemonic == ZYDIS_MNEMONIC_MOV
+                && insn.operand_count >= 2
+                && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER
+                && ops[0].reg.value == ZYDIS_REGISTER_ECX
+                && ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER)
+            {
+                const ZydisRegister src = ops[1].reg.value;
+                if (src < kMaxReg && lastThisOffset[src] >= 0)
+                    lastThisOffset[ZYDIS_REGISTER_ECX] = lastThisOffset[src];
+            }
+
+            // ── Detect CALL with ecx/rcx = this+offset → ctor call hint ──
             if (insn.mnemonic == ZYDIS_MNEMONIC_CALL)
             {
+                const int32_t ctorOffset = lastThisOffset[thisReg];
+                if (ctorOffset > 0) // offset 0 = primary ctor, skip
+                {
+                    const uint32_t off = static_cast<uint32_t>(ctorOffset);
+                    auto it = a_out.find(off);
+                    if (it == a_out.end())
+                    {
+                        AccessRecord rec;
+                        rec.offset = off;
+                        rec.size   = m_layout.ptrSize; // assume at least pointer-sized
+                        rec.kind   = FieldKind::Pointer;
+                        a_out[off] = rec;
+                        it = a_out.find(off);
+                    }
+                    // Try to resolve the callee to a class name
+                    if (it->second.ctorCallHint.empty())
+                    {
+                        std::string name = resolveCallTarget(insn, ops, curRva);
+                        if (!name.empty())
+                            it->second.ctorCallHint = name;
+                        else
+                            it->second.ctorCallHint = "?"; // unknown ctor
+                    }
+                }
+
+                // Reset per-call
                 for (int r = 0; r < kMaxReg; ++r)
-                    if (r != thisReg) isThis[r] = false;
+                    if (r != thisReg) { isThis[r] = false; lastThisOffset[r] = -1; }
+                lastThisOffset[thisReg] = -1; // ecx gets clobbered by return value
             }
 
-            // ── Stop at RET ──
             if (insn.mnemonic == ZYDIS_MNEMONIC_RET) break;
 
-            // ── Analyse memory operands ──
+            // ── Analyse memory operands for this-relative field accesses ──
             for (uint8_t oi = 0; oi < insn.operand_count; ++oi)
             {
                 const ZydisDecodedOperand& op = ops[oi];
@@ -417,34 +507,84 @@ private:
                 const ZydisRegister base = op.mem.base;
                 if (base == ZYDIS_REGISTER_NONE) continue;
                 if (base >= kMaxReg || !isThis[base]) continue;
-                if (op.mem.index != ZYDIS_REGISTER_NONE) continue; // skip [ecx + eax*N]
+                if (op.mem.index != ZYDIS_REGISTER_NONE) continue;
 
                 const int64_t disp = op.mem.disp.has_displacement ? op.mem.disp.value : 0;
                 if (disp < 0 || disp > 65535) continue;
 
                 const uint32_t fieldOffset = static_cast<uint32_t>(disp);
-                const uint32_t accessSize  = op.size / 8; // bits -> bytes
+                const uint32_t accessSize  = op.size / 8;
                 if (accessSize == 0) continue;
 
-                // Skip vfptr writes:
-                //   - primary vftable: offset 0
-                //   - MI base vftables: their known objectOffsets
+                // ── Detect foreign vftable write: MOV [this+offset], imm/reg ──
+                // where the immediate is a known vftable VA (not primary, not MI base)
+                if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && oi == 0
+                    && accessSize == m_layout.ptrSize)
+                {
+                    uint64_t writtenVa = 0;
+                    bool isVftableWrite = false;
+
+                    if (ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+                    {
+                        writtenVa = static_cast<uint64_t>(ops[1].imm.value.u);
+                        isVftableWrite = true;
+                    }
+                    else if (ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER)
+                    {
+                        const ZydisRegister src = ops[1].reg.value;
+                        if (src < kMaxReg && lastImmInReg[src] != 0)
+                        {
+                            writtenVa = lastImmInReg[src];
+                            isVftableWrite = true;
+                        }
+                    }
+
+                    if (isVftableWrite && writtenVa != 0)
+                    {
+                        const uint64_t writtenRva = (writtenVa >= m_imageBase)
+                                                  ? writtenVa - m_imageBase : 0;
+
+                        // Check if primary vfptr write — skip
+                        bool isVfptrWrite = (fieldOffset == 0 && writtenRva == m_vftableRva);
+                        if (!isVfptrWrite)
+                        {
+                            for (uint32_t baseOff : m_baseVftOffsets)
+                                if (fieldOffset == baseOff) { isVfptrWrite = true; break; }
+                        }
+
+                        if (!isVfptrWrite && writtenRva != 0)
+                        {
+                            // Check if it's a known foreign vftable
+                            std::string foreignName = lookupVftableName(writtenRva);
+                            if (!foreignName.empty())
+                            {
+                                auto& rec = a_out[fieldOffset];
+                                rec.offset = fieldOffset;
+                                rec.size   = m_layout.ptrSize;
+                                rec.kind   = FieldKind::Pointer;
+                                if (rec.foreignVftableName.empty())
+                                {
+                                    rec.foreignVftableName = foreignName;
+                                    rec.foreignVftableRva  = writtenRva;
+                                }
+                                pos += insn.length;
+                                continue;
+                            }
+                        }
+
+                        // Regular vfptr skip
+                        if (isVfptrWrite) { pos += insn.length; continue; }
+                    }
+                }
+
+                // ── Skip known vfptr offsets ──
                 if (accessSize == m_layout.ptrSize
-                    && insn.mnemonic == ZYDIS_MNEMONIC_MOV
-                    && oi == 0) // destination operand
+                    && insn.mnemonic == ZYDIS_MNEMONIC_MOV && oi == 0)
                 {
                     bool isVfptrWrite = (fieldOffset == 0);
                     if (!isVfptrWrite)
-                    {
                         for (uint32_t baseOff : m_baseVftOffsets)
-                        {
-                            if (fieldOffset == baseOff)
-                            {
-                                isVfptrWrite = true;
-                                break;
-                            }
-                        }
-                    }
+                            if (fieldOffset == baseOff) { isVfptrWrite = true; break; }
                     if (isVfptrWrite) continue;
                 }
 
@@ -557,15 +697,19 @@ private:
 
             // Skip primary vfptr (offset 0, pointer-sized, Pointer kind)
             if (rec.offset == 0 && rec.size == m_layout.ptrSize
-                && rec.kind == FieldKind::Pointer)
+                && rec.kind == FieldKind::Pointer
+                && rec.foreignVftableName.empty()
+                && rec.ctorCallHint.empty())
                 continue;
 
-            // Skip MI base vfptr offsets
+            // Skip MI base vfptr offsets (unless they have extra hints)
             bool isMIVfptr = false;
             for (uint32_t baseOff : m_baseVftOffsets)
             {
                 if (rec.offset == baseOff && rec.size == m_layout.ptrSize
-                    && rec.kind == FieldKind::Pointer)
+                    && rec.kind == FieldKind::Pointer
+                    && rec.foreignVftableName.empty()
+                    && rec.ctorCallHint.empty())
                 {
                     isMIVfptr = true;
                     break;
@@ -574,12 +718,15 @@ private:
             if (isMIVfptr) continue;
 
             FieldInfo fi;
-            fi.offset     = rec.offset;
-            fi.size       = rec.size;
-            fi.kind       = rec.kind;
-            fi.isBitfield = rec.isBitfield;
-            fi.bitOffset  = rec.bitOffset;
-            fi.bitSize    = rec.bitSize;
+            fi.offset              = rec.offset;
+            fi.size                = rec.size;
+            fi.kind                = rec.kind;
+            fi.isBitfield          = rec.isBitfield;
+            fi.bitOffset           = rec.bitOffset;
+            fi.bitSize             = rec.bitSize;
+            fi.ctorCallHint        = rec.ctorCallHint;
+            fi.foreignVftableName  = rec.foreignVftableName;
+            fi.foreignVftableRva   = rec.foreignVftableRva;
             fields.push_back(fi);
         }
 
@@ -602,20 +749,56 @@ private:
             || r == ZYDIS_REGISTER_EBP || r == ZYDIS_REGISTER_ESP;
     }
 
+    /// Try to resolve a CALL target RVA to a known vftable class name.
+    /// Returns empty string if not found.
+    [[nodiscard]] std::string lookupVftableName(uint64_t a_rva) const
+    {
+        for (size_t i = 0; i < m_knownVftRvas.size(); ++i)
+        {
+            if (m_knownVftRvas[i] == a_rva && i < m_knownVftNames.size())
+                return m_knownVftNames[i];
+        }
+        return {};
+    }
+
+    /// Try to extract the call target RVA from a CALL instruction and look it up.
+    /// For direct calls: CALL rel32. For indirect: CALL [mem] — skip.
+    [[nodiscard]] std::string resolveCallTarget(
+        const ZydisDecodedInstruction& insn,
+        const ZydisDecodedOperand* ops,
+        uint64_t a_curRva) const
+    {
+        if (insn.operand_count < 1) return {};
+
+        // Direct CALL rel32
+        if (ops[0].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+        {
+            const uint64_t target = a_curRva + insn.length
+                + static_cast<uint64_t>(static_cast<int64_t>(ops[0].imm.value.s));
+            // Check if target is a known vftable RVA — unlikely for a ctor,
+            // but look it up anyway. More useful: the target function's class name.
+            // We don't have symbol names, so return empty for now.
+            (void)target;
+        }
+        return {};
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Members
     // ─────────────────────────────────────────────────────────────────────────
 
-    const PEImage*         m_pe              = nullptr;
-    uint64_t               m_imageBase       = 0;
-    uint64_t               m_vftableRva      = 0;
-    PEBitness              m_bitness         = PEBitness::Bits64;
-    RttiLayout             m_layout          = RttiLayout::x64();
-    std::vector<uint32_t>  m_baseVftOffsets;   ///< MI base vftable offsets to skip as vfptr writes.
-    const PESection*       m_text            = nullptr;
-    const PESection*       m_rdata           = nullptr;
+    const PEImage*            m_pe              = nullptr;
+    uint64_t                  m_imageBase       = 0;
+    uint64_t                  m_vftableRva      = 0;
+    PEBitness                 m_bitness         = PEBitness::Bits64;
+    RttiLayout                m_layout          = RttiLayout::x64();
+    std::vector<uint32_t>     m_baseVftOffsets;
+    std::vector<uint64_t>     m_knownVftRvas;
+    std::vector<std::string>  m_knownVftNames;
+    const PESection*          m_text            = nullptr;
+    const PESection*          m_rdata           = nullptr;
 
-    ZydisDecoder           m_decoder         = {};
+    ZydisDecoder              m_decoder         = {};
 };
 
 } // namespace DumpPDB
