@@ -5,8 +5,11 @@
 #include <Core/RTTI/RttiTypes.hpp>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace DumpPDB
@@ -211,6 +214,10 @@ public:
 
                         out += L"    virtual ";
 
+                        const std::wstring ownerId = sanitizeIdentifier(
+                            slot.isOverride && !slot.ownerName.empty()
+                                ? slot.ownerName : a_type.fullName);
+
                         if (slot.isDestructor)
                         {
                             swprintf_s(buf, L"~%s();  // [%u] 0x%llX\n",
@@ -220,14 +227,14 @@ public:
                         }
                         else if (slot.isOverride)
                         {
-                            swprintf_s(buf, L"void func_%u() override;  // [%u] 0x%llX\n",
-                                slot.slotIndex, slot.slotIndex,
+                            swprintf_s(buf, L"void func_%u_%s() override;  // [%u] 0x%llX\n",
+                                slot.slotIndex, ownerId.c_str(), slot.slotIndex,
                                 static_cast<unsigned long long>(slot.funcRva));
                         }
                         else // isNew
                         {
-                            swprintf_s(buf, L"void func_%u();  // [%u] 0x%llX\n",
-                                slot.slotIndex, slot.slotIndex,
+                            swprintf_s(buf, L"void func_%u_%s();  // [%u] 0x%llX\n",
+                                slot.slotIndex, ownerId.c_str(), slot.slotIndex,
                                 static_cast<unsigned long long>(slot.funcRva));
                         }
                         out += buf;
@@ -452,9 +459,18 @@ private:
 
         // ── Gap filling ───────────────────────────────────────────────────────
         const uint32_t ptrSz = (a_bitness == PEBitness::Bits32) ? 4u : 8u;
-        const uint32_t totalSize = rt.objectSize > 0
-            ? rt.objectSize
-            : (rt.maxObservedOffset > 0 ? align(rt.maxObservedOffset, ptrSz) : 0);
+        const uint32_t observedEnd = rt.maxObservedOffset > 0
+            ? align(rt.maxObservedOffset, ptrSz)
+            : 0;
+
+        // An allocation size that does not even cover the last observed field
+        // write cannot be the real object size (e.g. a stray
+        // `push imm32 ; call <helper>` found in the constructor body). Discard
+        // it and fall back to the observed extent so gap filling still runs.
+        if (rt.objectSize > 0 && rt.objectSize < observedEnd)
+            rt.objectSize = 0;
+
+        const uint32_t totalSize = rt.objectSize > 0 ? rt.objectSize : observedEnd;
 
         if (totalSize > rt.ownFieldsStart)
             fillGaps(rt.fields, rt.ownFieldsStart, totalSize, ptrSz);
@@ -476,6 +492,10 @@ private:
     //   slot RVA unchanged vs base      -> inherited  (not printed)
     //   slot exists in base, RVA differs-> overridden (override)
     //   slot index >= base vftable size -> new
+    //
+    // Every processed slot records its "owner": the derived class name for new
+    // slots and destructors, the direct base name for overrides. The formatter
+    // renders func_<slot>_<Owner> from this (sanitised) name.
     // ─────────────────────────────────────────────────────────────────────────
 
     static void annotateOverrides(VftableInfo& a_vft, const RttiReader& a_reader)
@@ -521,6 +541,7 @@ private:
         {
             slot.isNew      = false;
             slot.isOverride = false;
+            slot.ownerName  = a_vft.fullName; // default owner: the derived class
 
             if (slot.isDestructor || slot.isPureVirtual)
                 continue;
@@ -534,7 +555,12 @@ private:
             if (slot.funcRva != 0 && slot.funcRva == baseSlotRvas[slot.slotIndex])
                 continue; // inherited, unchanged
 
-            slot.isOverride = true; // re-implemented by the derived class
+            // Re-implemented by the derived class — but the slot signature
+            // still belongs to the base interface that declared it, so the
+            // owner name points at the direct base for the formatter.
+            slot.isOverride = true;
+            if (match && !match->demangledName.empty())
+                slot.ownerName = match->demangledName;
         }
     }
 
@@ -627,11 +653,39 @@ private:
 
         const uint32_t ptrSz = (a_bitness == PEBitness::Bits32) ? 4u : 8u;
 
+        // Diagnostics (DUMPPDB_DEBUG=1): dump the ownFieldsStart decision.
+        if (FieldRecoveryDbgOn())
+        {
+            std::fprintf(stderr, "[TR] computeOwnFieldsStart for %zu base(s):\n",
+                a_bases.size());
+            for (const auto& b : a_bases)
+                std::fprintf(stderr, "[TR]   base '%s' off=0x%X direct=%d virt=%d\n",
+                    b.demangledName.c_str(), static_cast<unsigned>(b.offset),
+                    b.isDirect ? 1 : 0, b.isVirtual ? 1 : 0);
+        }
+
         // ── Multiple inheritance ──────────────────────────────────────────────
-        // Every vftable with objectOffset > 0 marks a base subobject; a pure
-        // interface occupies just its vfptr. The base region therefore ends at
-        //     max(subobjectOffset) + ptrSize
+        // Every vftable with objectOffset > 0 marks a base subobject, but the
+        // extent of a base is NOT just its vfptr: MSVC packs the derived
+        // class's own members after the primary base's full data, while
+        // secondary (interface) subobjects may sit *inside* the derived
+        // region. The RTTI COL offset alone therefore cannot serve as the
+        // own-fields boundary. Use the primary (offset-0) base's full data
+        // size, recovered recursively from *its* direct bases:
+        //     ownStart >= primaryBaseSize (== 0xB0 for VehicleInstance).
+        // Secondary interface vfptrs inside the derived region are reported
+        // as explicit vfptr fields rather than hidden base data.
         // e.g. ActorInstance: ICharacterProxyHitOverrider @ 0xB8 -> 0xBC.
+        std::unordered_set<std::string> visited;
+        const uint32_t primaryEnd = baseDataSize(a_bases, a_reader, a_pe,
+            a_bitness, visited, 0);
+        if (FieldRecoveryDbgOn())
+            std::fprintf(stderr, "[TR]   baseDataSize -> 0x%X\n", primaryEnd);
+        if (primaryEnd > 0)
+            return primaryEnd;
+
+        // Recursive recovery failed: fall back to the largest secondary
+        // subobject offset + vfptr, as before.
         uint32_t maxEnd = 0;
         for (const auto& vft : a_vftables)
             if (vft.objectOffset > 0)
@@ -680,6 +734,123 @@ private:
         }
 
         return maxEnd > 0 ? maxEnd : ptrSz;
+    }
+
+    /// Recursively estimate the full data extent of the primary (offset-0)
+    /// base chain:
+    ///     extent(base) = max( extent(primaryBaseOfBase),
+    ///                        max over direct secondary bases (base.offset + ptrSize) )
+    /// with the recovered constructor field extent of the base itself as a
+    /// lower bound. Returns 0 when nothing could be recovered (caller falls
+    /// back to the old subobject-offset heuristic).
+    ///
+    /// a_visited guards against cyclic hierarchies; a_depth caps recursion.
+    static uint32_t baseDataSize(const std::vector<BaseClassInfo>& a_bases,
+        const RttiReader& a_reader,
+        const PEImage& a_pe,
+        PEBitness a_bitness,
+        std::unordered_set<std::string>& a_visited,
+        int a_depth)
+    {
+        if (a_depth > 8) return 0;
+
+        const uint32_t ptrSz = (a_bitness == PEBitness::Bits32) ? 4u : 8u;
+        uint32_t maxEnd = 0;
+
+        for (const auto& base : a_bases)
+        {
+            if (base.demangledName.empty() || base.offset < 0 || !base.isDirect)
+                continue;
+
+            const uint32_t baseOffset = static_cast<uint32_t>(base.offset);
+
+            if (base.isVirtual)
+            {
+                // Virtual bases live at the tail of the object; only their
+                // vbptr slot inside the derived region matters here.
+                maxEnd = std::max(maxEnd, baseOffset + ptrSz);
+                continue;
+            }
+
+            if (baseOffset == 0)
+            {
+                // Primary base: its own extent determines the boundary.
+                // Recurse through ITS direct bases + ctor data so that a long
+                // primary chain accumulates correctly.
+                if (a_visited.count(base.demangledName)) continue;
+                a_visited.insert(base.demangledName);
+
+                uint32_t inner = 0;
+                auto baseVfts = a_reader.findExact(base.demangledName);
+                const VftableInfo* bPrimary = nullptr;
+                for (const auto* bv : baseVfts)
+                    if (bv->objectOffset == 0) { bPrimary = bv; break; }
+
+                if (bPrimary)
+                {
+                    // 1) Recursive extent from the base's own hierarchy.
+                    inner = std::max(inner, baseDataSize(bPrimary->bases,
+                        a_reader, a_pe, a_bitness, a_visited, a_depth + 1));
+
+                    // 2) Collect secondary vftable RVAs/offsets for this base
+                    //    so FieldRecovery can correctly identify its most-derived
+                    //    constructor (the one that installs secondary vfptrs).
+                    std::vector<uint64_t> baseSecRvas;
+                    std::vector<uint32_t> baseSecOffs;
+                    for (const auto* bv : baseVfts)
+                    {
+                        if (bv->objectOffset > 0)
+                        {
+                            baseSecRvas.push_back(bv->vftableRva);
+                            baseSecOffs.push_back(bv->objectOffset);
+                        }
+                    }
+
+                    // 3) All known vftable RVAs/names for foreign-vftable detection.
+                    std::vector<uint64_t> allVftRvas;
+                    std::vector<std::string> allVftNames;
+                    allVftRvas.reserve(a_reader.vftables().size());
+                    allVftNames.reserve(a_reader.vftables().size());
+                    for (const auto& vft : a_reader.vftables())
+                    {
+                        allVftRvas.push_back(vft.vftableRva);
+                        allVftNames.push_back(vft.fullName);
+                    }
+
+                    // 4) Lower bound from the base's own recovered fields.
+                    FieldRecovery fr;
+                    uint32_t baseObjSize = 0;
+                    uint32_t baseMaxOff  = 0;
+                    auto bFields = fr.recover(bPrimary->vftableRva, a_pe, a_bitness,
+                        baseSecRvas, baseSecOffs, allVftRvas, allVftNames,
+                        baseObjSize, baseMaxOff);
+                    uint32_t ownMax = 0;
+                    for (const auto& f : bFields)
+                        ownMax = std::max(ownMax, f.offset + f.size);
+                    if (baseObjSize > 0 && baseObjSize < 0x1000000)
+                        ownMax = std::max(ownMax, baseObjSize);
+                    inner = std::max(inner, ownMax);
+
+                    if (FieldRecoveryDbgOn())
+                        std::fprintf(stderr,
+                            "[TR]   depth=%d base='%s' off=0x%X inner=0x%X "
+                            "baseFields=%zu ownMax=0x%X baseObjSize=0x%X\n",
+                            a_depth, base.demangledName.c_str(), baseOffset,
+                            inner, bFields.size(), ownMax, baseObjSize);
+                }
+
+                a_visited.erase(base.demangledName);
+                maxEnd = std::max(maxEnd, baseOffset + inner);
+            }
+            else
+            {
+                // Secondary non-virtual base: at minimum its vfptr/subobject
+                // slot at the recorded offset.
+                maxEnd = std::max(maxEnd, baseOffset + ptrSz);
+            }
+        }
+
+        return maxEnd;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -742,6 +913,13 @@ private:
         return (v + a - 1) & ~(a - 1);
     }
 
+    /// Diagnostics switch (mirrors FieldRecovery::dbgOn): DUMPPDB_DEBUG=1.
+    [[nodiscard]] static bool FieldRecoveryDbgOn()
+    {
+        static const bool on = std::getenv("DUMPPDB_DEBUG") != nullptr;
+        return on;
+    }
+
     static bool detectIsStruct(const std::string& a_mangled)
     {
         return a_mangled.size() >= 4
@@ -752,6 +930,23 @@ private:
     static std::wstring toWide(const std::string& s)
     {
         return std::wstring(s.begin(), s.end());
+    }
+
+    /// Make a demangled "NS::Class<T>" name a valid C++ identifier fragment:
+    /// alphanumerics and '_' are kept, everything else becomes '_'.
+    /// e.g. "AI::INavMeshRegisterable" -> "AI_INavMeshRegisterable".
+    static std::wstring sanitizeIdentifier(const std::string& s)
+    {
+        std::wstring out;
+        out.reserve(s.size());
+        for (char c : s)
+        {
+            const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                || (c >= '0' && c <= '9') || c == '_';
+            out.push_back(ok ? static_cast<wchar_t>(c) : L'_');
+        }
+        if (out.empty()) out = L"Unknown";
+        return out;
     }
 };
 

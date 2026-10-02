@@ -141,6 +141,9 @@ struct VfuncSlot
     bool     isDestructor;  ///< Heuristic: slot 0 or 1.
     bool     isOverride;    ///< Same RVA exists in a direct base class at the same slot.
     bool     isNew;         ///< Not present in any direct base (slot index >= base vftable size).
+    /// Demangled name of the class whose vftable this slot belongs to
+    /// (own class for new slots, base class name for overrides).
+    std::string ownerName;
 };
 
 /// Hint that a field at some offset may be an embedded object (detected via
