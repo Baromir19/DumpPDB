@@ -132,10 +132,7 @@ public:
             }
             else
             {
-                std::wstring baseName;
-                for (const auto& b : a_type.directBases)
-                    if (b.offset == static_cast<int32_t>(vft.objectOffset))
-                    { baseName = toWide(b.demangledName); break; }
+                std::wstring baseName = toWide(vft.subobjectBaseName);
 
                 if (baseName.empty())
                     swprintf_s(buf,
@@ -178,10 +175,7 @@ public:
                     if (multi)
                     {
                         wchar_t hbuf[256];
-                        std::wstring baseName;
-                        for (const auto& b : a_type.directBases)
-                            if (b.offset == static_cast<int32_t>(vft.objectOffset))
-                            { baseName = toWide(b.demangledName); break; }
+                        std::wstring baseName = toWide(vft.subobjectBaseName);
 
                         if (primary)
                             swprintf_s(hbuf, L"    // --- primary vftable (+0x00) ---\n");
@@ -498,29 +492,48 @@ private:
     // renders func_<slot>_<Owner> from this (sanitised) name.
     // ─────────────────────────────────────────────────────────────────────────
 
-    static void annotateOverrides(VftableInfo& a_vft, const RttiReader& a_reader)
+    /// Resolve the base class that owns the subobject vftable at
+    /// a_vft.objectOffset.
+    ///
+    /// A *direct* base whose offset matches always wins. When no direct base
+    /// owns the subobject (the interface was inherited through an intermediate
+    /// class, e.g. TrolleyCarInstance -> VehicleInstance -> AI::INavMeshRegisterable),
+    /// fall back to the most-derived transitive base at that offset. The COL
+    /// base array is a depth-first list ordered most-derived first, so the first
+    /// matching entry is the closest owner.
+    [[nodiscard]] static const BaseClassInfo* findSubobjectBase(const VftableInfo& a_vft)
     {
-        // Find the direct base that owns this subobject offset.
-        const BaseClassInfo* match = nullptr;
+        const BaseClassInfo* fallback = nullptr;
+
         for (const auto& b : a_vft.bases)
         {
-            if (b.demangledName == a_vft.fullName) continue;
-            if (!b.isDirect) continue;
+            if (b.demangledName.empty()) continue;
+            if (b.demangledName == a_vft.fullName) continue; // the class itself
             if (b.offset != static_cast<int32_t>(a_vft.objectOffset)) continue;
-            match = &b;
-            break;
+
+            if (b.isDirect) return &b;
+            if (!fallback) fallback = &b; // depth-first => most derived first
         }
 
-        // Fallback for the primary subobject: take the first direct base.
-        if (!match && a_vft.objectOffset == 0)
+        // Primary subobject: any direct base (its offset is 0 by construction).
+        if (!fallback && a_vft.objectOffset == 0)
         {
             for (const auto& b : a_vft.bases)
                 if (b.isDirect && b.demangledName != a_vft.fullName)
                 {
-                    match = &b;
+                    fallback = &b;
                     break;
                 }
         }
+        return fallback;
+    }
+
+    static void annotateOverrides(VftableInfo& a_vft, const RttiReader& a_reader)
+    {
+        // Find the base that owns this subobject — direct if possible, else the
+        // most-derived transitive base (see findSubobjectBase).
+        const BaseClassInfo* match = findSubobjectBase(a_vft);
+        a_vft.subobjectBaseName = match ? match->demangledName : std::string();
 
         std::vector<uint64_t> baseSlotRvas;
         if (match && !match->demangledName.empty())

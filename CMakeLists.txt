@@ -237,6 +237,7 @@ set_target_properties(PdbAPI PROPERTIES
 add_executable(TestCompiland
     TestCompiland/Main.cpp
     TestCompiland/Test/Tests.cpp
+    TestCompiland/Rtti/RttiTests.cpp
 )
 
 target_include_directories(TestCompiland
@@ -246,6 +247,19 @@ target_include_directories(TestCompiland
 
 target_compile_options(TestCompiland PRIVATE /Zi)
 target_link_options(TestCompiland PRIVATE /DEBUG)
+
+# The EXE/RTTI reconstructor disassembles the image: it finds a constructor by
+# locating the function prologue that owns the vftable-writing instruction. At
+# /O2 most of this fixture's constructors become prologue-less leaf functions
+# (`mov [ecx], offset vftable; mov eax, ecx; ...; ret`), which the reconstructor
+# cannot attribute to a function — it walks back past the real start and reads
+# an unrelated function instead. Compiling the fixture at /Od keeps a
+# conventional frame in every function, which is what makes the field-recovery
+# half of the fixture meaningful in every configuration.
+set_source_files_properties(
+    TestCompiland/Rtti/RttiTests.cpp
+    PROPERTIES COMPILE_OPTIONS "/Od"
+)
 
 set_target_properties(TestCompiland PROPERTIES
     PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"

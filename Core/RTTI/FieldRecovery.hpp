@@ -552,6 +552,11 @@ private:
                 if (v & 0x80000000ULL) v &= ~0x80000000ULL;
                 // Reject suspicious sentinel values: 0, 0xFFFF, 0xFFFFFFFF, etc.
                 if (v == 0 || v == 0xFFFF || v == 0xFFFFFFFF) continue;
+                // A size can never be an image address. Without this, an
+                // immediate such as `mov eax, offset ??_7Foo@@6B@` is read as a
+                // multi-megabyte allocation and then dominates the constructor
+                // ranking score, selecting a function that is not a constructor.
+                if (v >= m_imageBase) continue;
                 // Reject values that are not plausible object sizes
                 // (must be >= 4, < 16MB, and aligned to 4)
                 if (v >= 4 && v < 0x1000000 && (v % 4) == 0)

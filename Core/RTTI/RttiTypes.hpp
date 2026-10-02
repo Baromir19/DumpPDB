@@ -168,6 +168,13 @@ struct VftableInfo
     std::vector<BaseClassInfo>     bases;
     std::vector<VfuncSlot>         vfuncs;
     std::vector<EmbeddedClassHint> embeddedHints; ///< Foreign vftable pointers found in fields.
+
+    /// Demangled name of the base class that owns this subobject vftable,
+    /// resolved against the *whole* hierarchy (a direct base when one matches
+    /// the subobject offset, otherwise the most-derived transitive base at that
+    /// offset). Empty for the primary vftable. This is what makes an interface
+    /// inherited through an intermediate class still attributed correctly.
+    std::string          subobjectBaseName;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
