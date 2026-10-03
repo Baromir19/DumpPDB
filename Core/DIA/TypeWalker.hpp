@@ -639,6 +639,31 @@ public:
         return nullptr;
     }
 
+    /// True when the symbol is a bit-field member, i.e. it carries a non-zero
+    /// bit length. On success a_bitPosition receives the 0-based bit position
+    /// within the containing storage unit and a_bitLength receives the width.
+    static bool getBitField(IDiaSymbol* a_symbol, DWORD& a_bitPosition, ULONGLONG& a_bitLength)
+    {
+        if (!a_symbol)
+        {
+            return false;
+        }
+
+        DWORD bitPosition = 0;
+        ULONGLONG bitLength = 0;
+
+        if (FAILED(a_symbol->get_bitPosition(&bitPosition))
+            || FAILED(a_symbol->get_length(&bitLength)) || bitLength == 0
+            || bitLength == MAXULONGLONG)
+        {
+            return false;
+        }
+
+        a_bitPosition = bitPosition;
+        a_bitLength = bitLength;
+        return true;
+    }
+
     /// Build a TypeBuilder chain by recursively walking the DIA type tree.
     /// @param a_stripScope  When true, strips the current scope prefix from names.
     static TypeBuilder resolveType(IDiaSymbol* a_symbol,
@@ -745,8 +770,7 @@ public:
 
             DWORD bitPos = 0;
             ULONGLONG bitLen = 0;
-            if (SUCCEEDED(a_symbol->get_bitPosition(&bitPos))
-                && SUCCEEDED(a_symbol->get_length(&bitLen)) && bitLen > 0 && bitLen != MAXULONGLONG)
+            if (getBitField(a_symbol, bitPos, bitLen))
             {
                 builder.bitField(bitPos, bitLen);
             }

@@ -392,8 +392,22 @@ public:
                 LONG offset = 0xFFFFFFFC;
                 if (SUCCEEDED(field->get_offset(&offset)) && offset != 0xFFFFFFFC)
                 {
-                    wchar_t buf[32];
-                    swprintf_s(buf, L"// 0x%X", offset);
+                    wchar_t buf[64];
+
+                    DWORD bitPosition = 0;
+                    ULONGLONG bitLength = 0;
+                    if (TypeWalker::getBitField(field.get(), bitPosition, bitLength))
+                    {
+                        // Bit-fields share their storage unit with siblings: report
+                        // the byte offset followed by the 0-based bit position,
+                        // e.g. "// 0x8.2".
+                        swprintf_s(buf, L"// 0x%X.%u", offset, bitPosition);
+                    }
+                    else
+                    {
+                        swprintf_s(buf, L"// 0x%X", offset);
+                    }
+
                     size_t padNeeded = ret.length() < 60 ? 60 - ret.length() : 1;
                     ret.append(padNeeded, L' ');
                     ret += buf;

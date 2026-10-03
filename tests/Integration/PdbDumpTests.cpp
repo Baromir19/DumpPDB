@@ -277,6 +277,22 @@ TEST_F(PdbDumpTest, FindBitfieldTest)
     ASSERT_NE(sym, nullptr);
 }
 
+TEST_F(PdbDumpTest, BitfieldOffsetCommentIncludesBitPosition)
+{
+    std::wstring text = dumpType(L"Test::BitfieldTest");
+    ASSERT_FALSE(text.empty());
+
+    // Bit-fields share their storage unit with siblings, so the offset comment
+    // must report the byte offset followed by the 0-based bit position
+    // (e.g. "// 0x0.1") to keep overlapping fields distinguishable.
+    EXPECT_NE(text.find(L"flagA : 1"), std::wstring::npos);
+    EXPECT_NE(text.find(L"// 0x0.0"), std::wstring::npos); // flagA : 1
+    EXPECT_NE(text.find(L"// 0x0.1"), std::wstring::npos); // flagB : 2
+    EXPECT_NE(text.find(L"// 0x0.3"), std::wstring::npos); // flagC : 3
+    EXPECT_NE(text.find(L"// 0x8.0"), std::wstring::npos); // signedField : 5
+    EXPECT_NE(text.find(L"// 0xC.0"), std::wstring::npos); // nextField : 8
+}
+
 TEST_F(PdbDumpTest, FindAnonymousTest)
 {
     auto sym = findType(L"Test::AnonymousTest");

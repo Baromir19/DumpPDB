@@ -701,6 +701,52 @@ TEST_F(PropertyTest, BitfieldTest_TotalFields)
     EXPECT_GE(fields.size(), 4u);
 }
 
+TEST_F(PropertyTest, BitfieldTest_PositionsAndWidths)
+{
+    auto sym = findUdt(L"Test::BitfieldTest");
+    ASSERT_NE(sym, nullptr);
+
+    struct Expectation
+    {
+        const wchar_t* name;
+        LONG offset;
+        DWORD bitPosition;
+        ULONGLONG bitWidth;
+    };
+
+    // Layout produced by MSVC for Test::BitfieldTest.
+    const Expectation expectations[] = {
+        {L"flagA", 0x0, 0, 1},
+        {L"flagB", 0x0, 1, 2},
+        {L"flagC", 0x0, 3, 3},
+        {L"signedField", 0x8, 0, 5},
+        {L"nextField", 0xC, 0, 8},
+    };
+
+    std::map<std::wstring, ComPtr<IDiaSymbol>> byName;
+    for (auto& field : dataMembers(sym.get()))
+    {
+        byName[getName(field.get())] = field;
+    }
+
+    for (const auto& expectation : expectations)
+    {
+        auto it = byName.find(expectation.name);
+        ASSERT_NE(it, byName.end()) << "missing field";
+
+        LONG offset = 0;
+        ASSERT_TRUE(SUCCEEDED(it->second->get_offset(&offset)));
+
+        DWORD bitPosition = 0;
+        ULONGLONG bitWidth = 0;
+        ASSERT_TRUE(TypeWalker::getBitField(it->second.get(), bitPosition, bitWidth));
+
+        EXPECT_EQ(offset, expectation.offset);
+        EXPECT_EQ(bitPosition, expectation.bitPosition);
+        EXPECT_EQ(bitWidth, expectation.bitWidth);
+    }
+}
+
 // ============================================================================
 // ANONYMOUS STRUCTS / UNIONS
 // ============================================================================
