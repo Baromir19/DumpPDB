@@ -50,7 +50,7 @@ public:
             return false;
         }
 
-        ConsoleManager::print(text.c_str());
+        ConsoleManager::print(L"%s", text.c_str());
         return true;
     }
 };

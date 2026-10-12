@@ -57,14 +57,20 @@ public:
         a_symbol->get_constructor(&isCtor);
         bool isDtor = !funcName.empty() && funcName[0] == L'~';
 
+        // A conversion function (`operator bool`, `operator int`, ...) carries its
+        // "return type" as part of the operator name — rendering it separately
+        // would produce ill-formed C++ (`bool operator bool()`).
+        const bool isConversionOp = isConversionOperator(funcName);
+
         if (!isCtor && !m_ctx.scope().empty()
             && funcName == TypeWalker::leafName(m_ctx.scope().top()))
         {
             isCtor = TRUE;
         }
 
-        // Return type — skipped for constructors/destructors
-        if (!isCtor && !isDtor && functionType)
+        // Return type — skipped for constructors/destructors and conversion
+        // functions (their target type is already part of the operator name)
+        if (!isCtor && !isDtor && !isConversionOp && functionType)
         {
             ComPtr<IDiaSymbol> retType;
             if (SUCCEEDED(functionType->get_type(&retType)) && retType)
@@ -256,6 +262,81 @@ public:
         if (SUCCEEDED(a_symbol->get_compilerGenerated(&isGen)) && isGen)
             return true;
         return false;
+    }
+
+    /// Returns true when a function name denotes a C++ conversion function
+    /// (`operator bool`, `operator int`, `operator const char *`, ...).
+    /// Symbolic operators (`operator+`, `operator[]`, ...) and the allocation
+    /// operators `new`/`delete` are NOT conversions — they keep their return type.
+    static bool isConversionOperator(const std::wstring& a_name)
+    {
+        static const std::wstring keyword = L"operator";
+
+        // The keyword is either at the very start of the name or preceded by a
+        // scope separator (member functions may arrive scope-qualified).
+        size_t pos = 0;
+        while ((pos = a_name.find(keyword, pos)) != std::wstring::npos)
+        {
+            const bool atStart = (pos == 0);
+            const bool afterScope = pos >= 2 && a_name[pos - 1] == L':' && a_name[pos - 2] == L':';
+            if (atStart || afterScope)
+            {
+                break;
+            }
+            pos += keyword.size();
+        }
+
+        if (pos == std::wstring::npos)
+        {
+            return false;
+        }
+
+        size_t i = pos + keyword.size();
+        while (i < a_name.size() && iswspace(a_name[i]))
+        {
+            ++i;
+        }
+
+        if (i >= a_name.size())
+        {
+            return false;
+        }
+
+        // A symbolic token (`+`, `[]`, `()`, `->`, `""`, ...) — a real operator.
+        if (a_name[i] == L'+' || a_name[i] == L'-' || a_name[i] == L'*' || a_name[i] == L'/'
+            || a_name[i] == L'%' || a_name[i] == L'^' || a_name[i] == L'&' || a_name[i] == L'|'
+            || a_name[i] == L'~' || a_name[i] == L'!' || a_name[i] == L'=' || a_name[i] == L'<'
+            || a_name[i] == L'>' || a_name[i] == L'[' || a_name[i] == L'(' || a_name[i] == L','
+            || a_name[i] == L'"' || a_name[i] == L'?')
+        {
+            return false;
+        }
+
+        // Identifier-starting operators: allocation and coroutine keywords.
+        static const wchar_t* kNonConversionKeywords[]
+            = {L"new", L"delete", L"co_await", L"co_return", L"co_yield"};
+        for (const wchar_t* keyWord : kNonConversionKeywords)
+        {
+            const size_t length = wcslen(keyWord);
+            if (a_name.compare(i, length, keyWord) != 0)
+            {
+                continue;
+            }
+
+            const size_t after = i + length;
+            if (after >= a_name.size())
+            {
+                return false; // plain "new" / "delete"
+            }
+
+            // "new[]" / "delete[]" or the parameter list — but not "newtype".
+            if (a_name[after] == L'[' || a_name[after] == L'(' || iswspace(a_name[after]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     static const wchar_t* getVirtualName(IDiaSymbol* a_symbol)

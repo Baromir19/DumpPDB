@@ -59,7 +59,7 @@ public:
             ConsoleManager::printError(L"Failed to copy result to clipboard.\n\n");
         }
 
-        ConsoleManager::print(text.c_str());
+        ConsoleManager::print(L"%s", text.c_str());
         return true;
     }
 };

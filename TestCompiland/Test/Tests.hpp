@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 // ============================================================================
 // TestCompiland — comprehensive C++ type coverage for DIA/PDB testing
 //
@@ -706,7 +708,70 @@ void freeVariadicFunction(const char* a_format, ...);
 void freePlainFunction(int a_value);
 
 // ========================================================================
-// 22. COMPILE TEST TRIGGER
+// 22. FINAL MODIFIERS AND OPERATOR FUNCTIONS
+// ========================================================================
+
+/// Base of the `final` test hierarchy (definitions in Tests.cpp).
+class FinalBase
+{
+public:
+    virtual ~FinalBase();
+    virtual void virtualMethod();
+};
+
+/// Non-final class whose virtual override is sealed with `final`.
+class FinalMethodClass : public FinalBase
+{
+public:
+    void virtualMethod() final override;
+};
+
+/// Class sealed with `final` itself (its method is a plain override).
+class FinalSealedClass final : public FinalBase
+{
+public:
+    void virtualMethod() override;
+};
+
+/// Control class: no `final` anywhere.
+class OpenClass : public FinalBase
+{
+public:
+    void virtualMethod() override;
+};
+
+/// Exercises every operator rendering path: symbolic operators (`+`, `%`,
+/// `==`, `<`, `[]`, `()`, `++`), compound assignment, conversion functions
+/// and the (static) allocation operators.
+struct OperatorSuite
+{
+    OperatorSuite();
+    OperatorSuite(const OperatorSuite& a_other);
+    ~OperatorSuite();
+
+    OperatorSuite& operator=(const OperatorSuite& a_other);
+
+    OperatorSuite operator+(const OperatorSuite& a_other) const;
+    OperatorSuite operator%(const OperatorSuite& a_other) const;
+    OperatorSuite& operator+=(const OperatorSuite& a_other);
+    bool operator==(const OperatorSuite& a_other) const;
+    bool operator<(const OperatorSuite& a_other) const;
+    int& operator[](int a_index);
+    const int& operator[](int a_index) const;
+    int operator()(int a_value) const;
+    OperatorSuite operator++(int);
+
+    explicit operator bool() const;
+    operator const char*() const;
+
+    static void* operator new(std::size_t a_size);
+    static void operator delete(void* a_ptr);
+
+    int value;
+};
+
+// ========================================================================
+// 23. COMPILE TEST TRIGGER
 // ========================================================================
 
 class CompileTested

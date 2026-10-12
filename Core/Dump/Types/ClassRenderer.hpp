@@ -76,6 +76,7 @@ public:
         ret += m_fmt.modPrefix(a_symbol);
         ret += m_fmt.udtKeyword(a_symbol);
         ret += className;
+        ret += finalKeyword(a_symbol);
 
         ret += classInheritance(a_symbol);
         ret += m_fmt.scopeBegin(a_nestingLevel);
@@ -109,6 +110,21 @@ public:
         ret += m_fmt.scopeEnd(a_nestingLevel);
 
         return ret;
+    }
+
+    /// DIA exposes the C++ `final` specifier of a class/struct/union through
+    /// IDiaSymbol::get_sealed(). MSVC also flags unnamed/compiler-generated
+    /// types as sealed, so those are skipped (`final` has nowhere to attach).
+    static std::wstring finalKeyword(IDiaSymbol* a_symbol)
+    {
+        if (TypeWalker::isAnonymousUDT(a_symbol))
+            return std::wstring();
+
+        BOOL isSealed = FALSE;
+        if (SUCCEEDED(a_symbol->get_sealed(&isSealed)) && isSealed)
+            return L" final";
+
+        return std::wstring();
     }
 
     std::wstring classInheritance(IDiaSymbol* a_symbol) const

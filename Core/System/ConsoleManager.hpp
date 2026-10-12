@@ -213,7 +213,7 @@ public:
 
     static void printLine()
     {
-        print(s_lineBuffer);
+        print(L"%s", s_lineBuffer); // the buffer holds data, not a format string
         s_lineBuffer[0] = L'\0';
         s_bufferPointer = 0;
     }

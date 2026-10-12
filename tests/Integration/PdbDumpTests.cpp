@@ -413,3 +413,84 @@ TEST_F(PdbDumpTest, RenderVariadicFunctionPointerField)
     // The "..." of a nested function type is rendered as well.
     EXPECT_NE(text.find(L", ...)"), std::wstring::npos);
 }
+
+// ============================================================================
+// FINAL MODIFIERS — class-level and method-level `final`
+// ============================================================================
+
+TEST_F(PdbDumpTest, RenderFinalClassKeyword)
+{
+    std::wstring text = dumpType(L"Test::FinalSealedClass");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"class FinalSealedClass final"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, RenderNonFinalClassWithoutFinalKeyword)
+{
+    std::wstring text = dumpType(L"Test::OpenClass");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"class OpenClass"), std::wstring::npos);
+    EXPECT_EQ(text.find(L"final"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, RenderFinalMethodModifier)
+{
+    std::wstring text = dumpType(L"Test::FinalMethodClass");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"virtualMethod() override final;"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, RenderOverrideMethodWithoutFinalKeyword)
+{
+    std::wstring text = dumpType(L"Test::OpenClass");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"virtualMethod() override;"), std::wstring::npos);
+    EXPECT_EQ(text.find(L"virtualMethod() final"), std::wstring::npos);
+}
+
+// ============================================================================
+// OPERATOR FUNCTIONS — symbolic, assignment, conversion and allocation ops
+// ============================================================================
+
+TEST_F(PdbDumpTest, RenderOperatorSuiteFamily)
+{
+    std::wstring text = dumpType(L"Test::OperatorSuite");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"operator+("), std::wstring::npos);
+    EXPECT_NE(text.find(L"operator%("), std::wstring::npos); // '%' must not vanish
+    EXPECT_NE(text.find(L"operator+=("), std::wstring::npos);
+    EXPECT_NE(text.find(L"operator==("), std::wstring::npos);
+    EXPECT_NE(text.find(L"operator<("), std::wstring::npos);
+    EXPECT_NE(text.find(L"operator[]("), std::wstring::npos);
+    EXPECT_NE(text.find(L"operator()("), std::wstring::npos);
+    EXPECT_NE(text.find(L"operator++("), std::wstring::npos);
+    EXPECT_NE(text.find(L"operator=("), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, RenderConversionOperatorsWithoutReturnType)
+{
+    std::wstring text = dumpType(L"Test::OperatorSuite");
+    ASSERT_FALSE(text.empty());
+
+    // A conversion function's target type is part of its name — rendering a
+    // return type in front of it (`bool operator bool()`) would be ill-formed.
+    EXPECT_NE(text.find(L"operator bool() const;"), std::wstring::npos);
+    EXPECT_EQ(text.find(L"bool operator bool"), std::wstring::npos);
+
+    EXPECT_NE(text.find(L"operator const char *() const;"), std::wstring::npos);
+    EXPECT_EQ(text.find(L"const char* operator"), std::wstring::npos);
+}
+
+TEST_F(PdbDumpTest, RenderAllocationOperatorsAsStatic)
+{
+    std::wstring text = dumpType(L"Test::OperatorSuite");
+    ASSERT_FALSE(text.empty());
+
+    EXPECT_NE(text.find(L"static void* operator new("), std::wstring::npos);
+    EXPECT_NE(text.find(L"static void operator delete("), std::wstring::npos);
+}

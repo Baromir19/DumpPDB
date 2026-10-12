@@ -1296,3 +1296,90 @@ TEST_F(PropertyTest, VariadicFunctionTest_CallbackFieldIsVariadic)
 
     EXPECT_TRUE(TypeWalker::isVariadicFunction(type.get()));
 }
+
+// ============================================================================
+// FINAL MODIFIERS — IDiaSymbol::get_sealed on UDTs and functions
+// ============================================================================
+
+namespace
+{
+/// DIA reports the C++ `final` specifier through get_sealed().
+bool isSealed(IDiaSymbol* a_symbol)
+{
+    BOOL sealed = FALSE;
+    if (!a_symbol || FAILED(a_symbol->get_sealed(&sealed)))
+        return false;
+
+    return sealed != FALSE;
+}
+} // namespace
+
+TEST_F(PropertyTest, FinalSealedClass_UdtIsSealed)
+{
+    auto sym = findUdt(L"Test::FinalSealedClass");
+    ASSERT_NE(sym, nullptr);
+
+    EXPECT_TRUE(isSealed(sym.get()));
+}
+
+TEST_F(PropertyTest, OpenClass_UdtIsNotSealed)
+{
+    auto sym = findUdt(L"Test::OpenClass");
+    ASSERT_NE(sym, nullptr);
+
+    EXPECT_FALSE(isSealed(sym.get()));
+}
+
+TEST_F(PropertyTest, FinalMethodClass_MethodIsSealed)
+{
+    auto sym = findUdt(L"Test::FinalMethodClass");
+    ASSERT_NE(sym, nullptr);
+
+    auto func = method(sym.get(), L"virtualMethod");
+    ASSERT_NE(func, nullptr);
+
+    BOOL isVirtual = FALSE;
+    func->get_virtual(&isVirtual);
+    EXPECT_TRUE(isVirtual);
+    EXPECT_TRUE(isSealed(func.get()));
+}
+
+TEST_F(PropertyTest, OpenClass_MethodIsNotSealed)
+{
+    auto sym = findUdt(L"Test::OpenClass");
+    ASSERT_NE(sym, nullptr);
+
+    auto func = method(sym.get(), L"virtualMethod");
+    ASSERT_NE(func, nullptr);
+
+    EXPECT_FALSE(isSealed(func.get()));
+}
+
+TEST_F(PropertyTest, OperatorSuite_HasConversionOperators)
+{
+    auto sym = findUdt(L"Test::OperatorSuite");
+    ASSERT_NE(sym, nullptr);
+
+    bool foundBoolConversion = false;
+    bool foundCharPtrConversion = false;
+    for (auto& func : functions(sym.get()))
+    {
+        const auto name = getName(func.get());
+        if (name == L"operator bool")
+            foundBoolConversion = true;
+        if (name == L"operator const char *")
+            foundCharPtrConversion = true;
+    }
+
+    EXPECT_TRUE(foundBoolConversion);
+    EXPECT_TRUE(foundCharPtrConversion);
+}
+
+TEST_F(PropertyTest, OperatorSuite_HasPercentOperator)
+{
+    auto sym = findUdt(L"Test::OperatorSuite");
+    ASSERT_NE(sym, nullptr);
+
+    auto func = method(sym.get(), L"operator%");
+    EXPECT_NE(func, nullptr);
+}

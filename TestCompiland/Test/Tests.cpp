@@ -109,4 +109,105 @@ void freePlainFunction(int a_value)
 {
     (void)a_value;
 }
+
+// ------------------------------------------------------------------------
+// 22. Final modifiers and operator functions
+// ------------------------------------------------------------------------
+
+FinalBase::~FinalBase() = default;
+void FinalBase::virtualMethod() {}
+
+void FinalMethodClass::virtualMethod() {}
+
+void FinalSealedClass::virtualMethod() {}
+
+void OpenClass::virtualMethod() {}
+
+OperatorSuite::OperatorSuite()
+    : value(0)
+{
+}
+
+OperatorSuite::OperatorSuite(const OperatorSuite& a_other)
+    : value(a_other.value)
+{
+}
+
+OperatorSuite::~OperatorSuite() = default;
+
+OperatorSuite& OperatorSuite::operator=(const OperatorSuite& a_other)
+{
+    value = a_other.value;
+    return *this;
+}
+
+OperatorSuite OperatorSuite::operator+(const OperatorSuite&) const
+{
+    return *this;
+}
+
+OperatorSuite OperatorSuite::operator%(const OperatorSuite&) const
+{
+    return *this;
+}
+
+OperatorSuite& OperatorSuite::operator+=(const OperatorSuite& a_other)
+{
+    value += a_other.value;
+    return *this;
+}
+
+bool OperatorSuite::operator==(const OperatorSuite& a_other) const
+{
+    return value == a_other.value;
+}
+
+bool OperatorSuite::operator<(const OperatorSuite& a_other) const
+{
+    return value < a_other.value;
+}
+
+int& OperatorSuite::operator[](int a_index)
+{
+    (void)a_index;
+    return value;
+}
+
+const int& OperatorSuite::operator[](int a_index) const
+{
+    (void)a_index;
+    return value;
+}
+
+int OperatorSuite::operator()(int a_value) const
+{
+    return a_value + value;
+}
+
+OperatorSuite OperatorSuite::operator++(int)
+{
+    OperatorSuite previous = *this;
+    ++value;
+    return previous;
+}
+
+OperatorSuite::operator bool() const
+{
+    return value != 0;
+}
+
+OperatorSuite::operator const char*() const
+{
+    return "";
+}
+
+void* OperatorSuite::operator new(std::size_t a_size)
+{
+    return ::operator new(a_size);
+}
+
+void OperatorSuite::operator delete(void* a_ptr)
+{
+    ::operator delete(a_ptr);
+}
 } // namespace Test

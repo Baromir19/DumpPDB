@@ -19,6 +19,7 @@ add_executable(DumpPDB_UnitTests
     Unit/ScopeContextTests.cpp
     Unit/TypeBuilderTests.cpp
     Unit/TypeWalkerTests.cpp
+    Unit/FunctionRendererTests.cpp
 )
 
 target_link_libraries(DumpPDB_UnitTests
