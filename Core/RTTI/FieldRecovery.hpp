@@ -1476,7 +1476,9 @@ private:
                 if (pInsn.mnemonic == ZYDIS_MNEMONIC_MOV && pInsn.operand_count >= 2
                     && pOps[0].type == ZYDIS_OPERAND_TYPE_MEMORY
                     && pOps[0].mem.index == ZYDIS_REGISTER_NONE
-                    && pOps[0].size == m_layout.ptrSize * 8)
+                    && pOps[0].size == m_layout.ptrSize * 8
+                    && (!pOps[0].mem.disp.has_displacement
+                        || pOps[0].mem.disp.value == 0)) // primary vfptr at [reg+0]
                 {
                     uint64_t va = 0;
                     if (pOps[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
@@ -1495,7 +1497,11 @@ private:
                             if (known == rva)
                             {
                                 const int bi = slot(pOps[0].mem.base);
-                                if (bi >= 0)
+                                const bool stackBased = pOps[0].mem.base == ZYDIS_REGISTER_ESP
+                                                        || pOps[0].mem.base == ZYDIS_REGISTER_RSP
+                                                        || pOps[0].mem.base == ZYDIS_REGISTER_EBP
+                                                        || pOps[0].mem.base == ZYDIS_REGISTER_RBP;
+                                if (bi >= 0 && !stackBased)
                                     vfWriterSlot[bi] = true;
                                 break;
                             }
@@ -1506,6 +1512,20 @@ private:
             }
         }
 
+        // Seed `this` from the pre-scan: some optimised ctors receive the
+        // object pointer in an unusual register (kept from the caller — e.g.
+        // `mov [esi+4], ax ... mov [esi], vft` with ESI already loaded at
+        // entry) or keep it in a callee-saved register the whole time. Any
+        // non-stack register that receives the PRIMARY (disp-0) vftable write
+        // IS the object pointer from the start of the function.
+        for (int i = 0; i < kRegCount; ++i)
+        {
+            if (vfWriterSlot[i])
+            {
+                isThis[i] = true;
+                lastThisOffset[i] = 0;
+            }
+        }
         size_t pos = startOff;
         size_t endPos = startOff + maxBytes;
 
@@ -1924,17 +1944,13 @@ private:
                                     rec.foreignVftableName = foreignName;
                                     rec.foreignVftableRva = writtenRva;
                                 }
-                                pos += insn.length;
-                                continue;
+                                continue; // oi-loop; pos advances once below
                             }
                         }
 
                         // Regular vfptr skip
                         if (isVfptrWrite)
-                        {
-                            pos += insn.length;
-                            continue;
-                        }
+                            continue; // oi-loop; pos advances once below
                     }
                 }
 

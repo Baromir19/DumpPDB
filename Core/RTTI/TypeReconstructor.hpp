@@ -571,8 +571,17 @@ private:
         // For each direct base at offset B, find its estimated size via its
         // own maxObservedOffset (reconstruct the base lightly). Then
         // ownFieldsStart = max(B + baseSize) over all direct bases.
+        //
+        // The chain hint is passed WITHOUT its root: the most-derived ctor
+        // (chain[0]) itself writes the ICF-folded vftables of its bases, so
+        // with the root included the filter would always pick it and poison
+        // every base extent with the complete object's size (e.g. 0x1F20 for
+        // ExposedObject). Genuine base ctors are among the CALLEES.
+        std::vector<uint64_t> baseChain = ctorChain;
+        if (!baseChain.empty())
+            baseChain.erase(baseChain.begin());
         rt.ownFieldsStart = computeOwnFieldsStart(
-            rt.directBases, rt.vftables, a_reader, a_pe, a_bitness, &ctorChain);
+            rt.directBases, rt.vftables, a_reader, a_pe, a_bitness, &baseChain);
 
         // Strip fields that fall entirely within base class region
         if (rt.ownFieldsStart > 0)
