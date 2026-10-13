@@ -3,6 +3,7 @@
 #include <Core/RTTI/FieldRecovery.hpp>
 #include <Core/RTTI/RttiReader.hpp>
 #include <Core/RTTI/RttiTypes.hpp>
+#include <Core/RTTI/SignatureAnalyzer.hpp>
 
 #include <algorithm>
 #include <cstdio>
@@ -49,8 +50,8 @@ public:
     TypeReconstructor() = default;
 
     /// Reconstruct a single type by name using the reader's bitness.
-    [[nodiscard]] ReconstructedType reconstruct(const std::string& a_name,
-                                                 const RttiReader& a_reader)
+    [[nodiscard]] ReconstructedType reconstruct(
+        const std::string& a_name, const RttiReader& a_reader)
     {
         auto found = a_reader.findExact(a_name);
         if (found.empty())
@@ -72,7 +73,7 @@ public:
             return out;
         }
 
-        const wchar_t* bits  = (a_type.bitness == PEBitness::Bits32) ? L"x86" : L"x64";
+        const wchar_t* bits = (a_type.bitness == PEBitness::Bits32) ? L"x86" : L"x64";
         const uint32_t ptrSz = (a_type.bitness == PEBitness::Bits32) ? 4u : 8u;
 
         // ── Header ────────────────────────────────────────────────────────────
@@ -100,10 +101,18 @@ public:
 
         switch (a_type.inheritance)
         {
-        case InheritanceKind::None:     out += L"no bases\n";             break;
-        case InheritanceKind::Single:   out += L"single inheritance\n";   break;
-        case InheritanceKind::Multiple: out += L"multiple inheritance\n"; break;
-        case InheritanceKind::Virtual:  out += L"virtual inheritance\n";  break;
+        case InheritanceKind::None:
+            out += L"no bases\n";
+            break;
+        case InheritanceKind::Single:
+            out += L"single inheritance\n";
+            break;
+        case InheritanceKind::Multiple:
+            out += L"multiple inheritance\n";
+            break;
+        case InheritanceKind::Virtual:
+            out += L"virtual inheritance\n";
+            break;
         }
 
         // ── Class declaration ─────────────────────────────────────────────────
@@ -113,7 +122,8 @@ public:
         bool firstBase = true;
         for (const auto& b : a_type.directBases)
         {
-            if (b.demangledName == a_type.fullName) continue;
+            if (b.demangledName == a_type.fullName)
+                continue;
             out += firstBase ? L" : public " : L", public ";
             out += toWide(b.demangledName);
             firstBase = false;
@@ -126,7 +136,8 @@ public:
             wchar_t buf[256];
             if (vft.objectOffset == 0)
             {
-                swprintf_s(buf, L"    /* vftable @ RVA 0x%llX (%zu slots) */\n",
+                swprintf_s(buf,
+                    L"    /* vftable @ RVA 0x%llX (%zu slots) */\n",
                     static_cast<unsigned long long>(vft.vftableRva),
                     vft.vfuncs.size());
             }
@@ -138,12 +149,15 @@ public:
                     swprintf_s(buf,
                         L"    /* vftable @ RVA 0x%llX, offset +0x%X (%zu slots) */\n",
                         static_cast<unsigned long long>(vft.vftableRva),
-                        vft.objectOffset, vft.vfuncs.size());
+                        vft.objectOffset,
+                        vft.vfuncs.size());
                 else
                     swprintf_s(buf,
                         L"    /* vftable @ RVA 0x%llX, offset +0x%X (%zu slots) [%s] */\n",
                         static_cast<unsigned long long>(vft.vftableRva),
-                        vft.objectOffset, vft.vfuncs.size(), baseName.c_str());
+                        vft.objectOffset,
+                        vft.vfuncs.size(),
+                        baseName.c_str());
             }
             out += buf;
         }
@@ -158,7 +172,11 @@ public:
         {
             bool anySlots = false;
             for (const auto& vft : a_type.vftables)
-                if (!vft.vfuncs.empty()) { anySlots = true; break; }
+                if (!vft.vfuncs.empty())
+                {
+                    anySlots = true;
+                    break;
+                }
 
             if (anySlots)
             {
@@ -168,7 +186,8 @@ public:
 
                 for (const auto& vft : a_type.vftables)
                 {
-                    if (vft.vfuncs.empty()) continue;
+                    if (vft.vfuncs.empty())
+                        continue;
 
                     const bool primary = (vft.objectOffset == 0);
 
@@ -180,18 +199,20 @@ public:
                         if (primary)
                             swprintf_s(hbuf, L"    // --- primary vftable (+0x00) ---\n");
                         else if (!baseName.empty())
-                            swprintf_s(hbuf, L"    // --- vftable (+0x%X, %s) ---\n",
-                                vft.objectOffset, baseName.c_str());
+                            swprintf_s(hbuf,
+                                L"    // --- vftable (+0x%X, %s) ---\n",
+                                vft.objectOffset,
+                                baseName.c_str());
                         else
-                            swprintf_s(hbuf, L"    // --- vftable (+0x%X) ---\n",
-                                vft.objectOffset);
+                            swprintf_s(hbuf, L"    // --- vftable (+0x%X) ---\n", vft.objectOffset);
                         out += hbuf;
                     }
 
                     for (const auto& slot : vft.vfuncs)
                     {
                         // Skip pure-inherited slots (not overridden, not new)
-                        if (slot.isDestructor && !primary) continue;
+                        if (slot.isDestructor && !primary)
+                            continue;
                         if (!slot.isDestructor && !slot.isNew && !slot.isOverride
                             && !slot.isPureVirtual)
                             continue;
@@ -200,8 +221,10 @@ public:
 
                         if (slot.isPureVirtual)
                         {
-                            swprintf_s(buf, L"    virtual void func_%u() = 0;  // [%u]\n",
-                                slot.slotIndex, slot.slotIndex);
+                            swprintf_s(buf,
+                                L"    virtual void func_%u() = 0;  // [%u]\n",
+                                slot.slotIndex,
+                                slot.slotIndex);
                             out += buf;
                             continue;
                         }
@@ -209,26 +232,37 @@ public:
                         out += L"    virtual ";
 
                         const std::wstring ownerId = sanitizeIdentifier(
-                            slot.isOverride && !slot.ownerName.empty()
-                                ? slot.ownerName : a_type.fullName);
+                            slot.isOverride && !slot.ownerName.empty() ? slot.ownerName
+                                                                       : a_type.fullName);
+
+                        const std::wstring sig = toWide(slot.signature.render());
 
                         if (slot.isDestructor)
                         {
-                            swprintf_s(buf, L"~%s();  // [%u] 0x%llX\n",
+                            swprintf_s(buf,
+                                L"~%s();  // [%u] 0x%llX\n",
                                 toWide(a_type.className).c_str(),
                                 slot.slotIndex,
                                 static_cast<unsigned long long>(slot.funcRva));
                         }
                         else if (slot.isOverride)
                         {
-                            swprintf_s(buf, L"void func_%u_%s() override;  // [%u] 0x%llX\n",
-                                slot.slotIndex, ownerId.c_str(), slot.slotIndex,
+                            swprintf_s(buf,
+                                L"%s func_%u_%s override;  // [%u] 0x%llX\n",
+                                sig.c_str(),
+                                slot.slotIndex,
+                                ownerId.c_str(),
+                                slot.slotIndex,
                                 static_cast<unsigned long long>(slot.funcRva));
                         }
                         else // isNew
                         {
-                            swprintf_s(buf, L"void func_%u_%s();  // [%u] 0x%llX\n",
-                                slot.slotIndex, ownerId.c_str(), slot.slotIndex,
+                            swprintf_s(buf,
+                                L"%s func_%u_%s;  // [%u] 0x%llX\n",
+                                sig.c_str(),
+                                slot.slotIndex,
+                                ownerId.c_str(),
+                                slot.slotIndex,
                                 static_cast<unsigned long long>(slot.funcRva));
                         }
                         out += buf;
@@ -246,7 +280,8 @@ public:
             if (a_type.ownFieldsStart > 0)
             {
                 wchar_t buf[128];
-                swprintf_s(buf, L"    // ... base class data [0x00 - 0x%02X] ...\n",
+                swprintf_s(buf,
+                    L"    // ... base class data [0x00 - 0x%02X] ...\n",
                     a_type.ownFieldsStart - 1);
                 out += buf;
             }
@@ -261,8 +296,8 @@ public:
                     if (hint.empty())
                         swprintf_s(buf, L"    void*    vfptr_0x%02X;\n", f.offset);
                     else
-                        swprintf_s(buf, L"    void*    vfptr_0x%02X;  // %s\n",
-                            f.offset, hint.c_str());
+                        swprintf_s(
+                            buf, L"    void*    vfptr_0x%02X;  // %s\n", f.offset, hint.c_str());
                     out += buf;
                     continue;
                 }
@@ -272,15 +307,23 @@ public:
                     // Padding — choose Array or Expanded based on paddingStyle
                     const wchar_t* padType = L"int8_t ";
                     uint32_t elemSize = 1;
-                    if      (f.size % 4 == 0) { padType = L"int32_t"; elemSize = 4; }
-                    else if (f.size % 2 == 0) { padType = L"int16_t"; elemSize = 2; }
+                    if (f.size % 4 == 0)
+                    {
+                        padType = L"int32_t";
+                        elemSize = 4;
+                    }
+                    else if (f.size % 2 == 0)
+                    {
+                        padType = L"int16_t";
+                        elemSize = 2;
+                    }
 
                     const uint32_t count = f.size / elemSize;
 
                     if (a_type.paddingStyle == PaddingStyle::Array)
                     {
                         if (count == 1)
-                            swprintf_s(buf, L"    %s  pad_0x%02X;\n",   padType, f.offset);
+                            swprintf_s(buf, L"    %s  pad_0x%02X;\n", padType, f.offset);
                         else
                             swprintf_s(buf, L"    %s  pad_0x%02X[%u];\n", padType, f.offset, count);
                         out += buf;
@@ -321,13 +364,20 @@ public:
 
                 if (f.isBitfield)
                 {
-                    swprintf_s(buf, L"    %-8s fld_0x%02X : %u;%s\n",
-                        typeName.c_str(), f.offset, f.bitSize, comment.c_str());
+                    swprintf_s(buf,
+                        L"    %-8s fld_0x%02X : %u;%s\n",
+                        typeName.c_str(),
+                        f.offset,
+                        f.bitSize,
+                        comment.c_str());
                 }
                 else
                 {
-                    swprintf_s(buf, L"    %-8s fld_0x%02X;%s\n",
-                        typeName.c_str(), f.offset, comment.c_str());
+                    swprintf_s(buf,
+                        L"    %-8s fld_0x%02X;%s\n",
+                        typeName.c_str(),
+                        f.offset,
+                        comment.c_str());
                 }
                 out += buf;
             }
@@ -337,6 +387,31 @@ public:
             out += L"\n    // No fields recovered\n";
         }
 
+        // ── Static members: image-global writes found in the constructor ────
+        //     static int32_t static_0x00123456;  // RVA 0x123456, init = 1
+        if (!a_type.staticMembers.empty())
+        {
+            out += L"\n    /// STATIC MEMBERS:\n";
+            for (const auto& sm : a_type.staticMembers)
+            {
+                const std::wstring tn = toWide(sm.typeName());
+                const std::wstring nm = toWide(sm.name);
+                wchar_t comment[64];
+                if (sm.hasInitValue)
+                    swprintf_s(comment,
+                        L"  // RVA 0x%llX, init = %lld",
+                        static_cast<unsigned long long>(sm.rva),
+                        static_cast<long long>(sm.initValue));
+                else
+                    swprintf_s(
+                        comment, L"  // RVA 0x%llX", static_cast<unsigned long long>(sm.rva));
+
+                wchar_t line[160];
+                swprintf_s(line, L"    static %s %s;%s\n", tn.c_str(), nm.c_str(), comment);
+                out += line;
+            }
+        }
+
         out += L"};\n";
         return out;
     }
@@ -344,45 +419,73 @@ public:
 private:
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Recover approximate signatures for every virtual function slot by
+    // disassembling each function body. Slots of secondary MI subobjects share
+    // the same code, but we analyze all tables so each slot is self-contained.
+    // ─────────────────────────────────────────────────────────────────────────
+    static void analyzeSignatures(ReconstructedType& a_rt, const PEImage& a_pe, PEBitness a_bitness)
+    {
+        SignatureAnalyzer sa;
+        for (auto& vft : a_rt.vftables)
+        {
+            for (auto& slot : vft.vfuncs)
+            {
+                if (slot.isPureVirtual || slot.funcRva == 0)
+                    continue; // no body to analyze
+                slot.signature
+                    = sa.analyze(slot.funcRva, a_pe, a_bitness, /*isVirtualMember=*/true);
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Build
     // ─────────────────────────────────────────────────────────────────────────
 
-    [[nodiscard]] ReconstructedType buildFromVftables(
-        const std::vector<const VftableInfo*>& a_vfts,
+    [[nodiscard]] ReconstructedType buildFromVftables(const std::vector<const VftableInfo*>& a_vfts,
         const RttiReader& a_reader,
         const PEImage& a_pe,
         PEBitness a_bitness)
     {
         ReconstructedType rt;
-        if (a_vfts.empty()) return rt;
+        if (a_vfts.empty())
+            return rt;
 
         // Primary vftable = objectOffset == 0
         const VftableInfo* primary = nullptr;
         for (const auto* v : a_vfts)
-            if (v->objectOffset == 0) { primary = v; break; }
-        if (!primary) primary = a_vfts[0];
+            if (v->objectOffset == 0)
+            {
+                primary = v;
+                break;
+            }
+        if (!primary)
+            primary = a_vfts[0];
 
-        rt.hasRtti     = true;
-        rt.fullName    = primary->fullName;
-        rt.className   = primary->className;
+        rt.hasRtti = true;
+        rt.fullName = primary->fullName;
+        rt.className = primary->className;
         rt.mangledName = primary->mangledName;
         rt.inheritance = primary->inheritance;
-        rt.bitness     = a_bitness;
-        rt.isStruct    = detectIsStruct(primary->mangledName);
+        rt.bitness = a_bitness;
+        rt.isStruct = detectIsStruct(primary->mangledName);
 
         // Direct bases
         for (size_t i = 1; i < primary->bases.size(); ++i)
         {
             const auto& b = primary->bases[i];
-            if (b.isDirect) rt.directBases.push_back(b);
+            if (b.isDirect)
+                rt.directBases.push_back(b);
         }
         if (rt.directBases.empty() && primary->bases.size() >= 2)
             rt.directBases.push_back(primary->bases[1]);
 
         // All vftables sorted by objectOffset
         rt.vftables.reserve(a_vfts.size());
-        for (const auto* v : a_vfts) rt.vftables.push_back(*v);
-        std::sort(rt.vftables.begin(), rt.vftables.end(),
+        for (const auto* v : a_vfts)
+            rt.vftables.push_back(*v);
+        std::sort(rt.vftables.begin(),
+            rt.vftables.end(),
             [](const VftableInfo& a, const VftableInfo& b)
             { return a.objectOffset < b.objectOffset; });
 
@@ -391,6 +494,9 @@ private:
         {
             annotateOverrides(vft, a_reader);
         }
+
+        // ── Recover approximate signatures for every virtual function slot ────
+        analyzeSignatures(rt, a_pe, a_bitness);
 
         // ── Collect all MI base vftable RVAs for FieldRecovery ────────────────
         std::vector<uint64_t> baseVftableRvas;
@@ -416,17 +522,34 @@ private:
         }
 
         // ── Field recovery ────────────────────────────────────────────────────
+        uint64_t primaryCtorRva = 0;
         {
             FieldRecovery fr;
-            uint32_t objectSize      = 0;
-            uint32_t maxObservedOff  = 0;
-            rt.fields = fr.recover(primary->vftableRva, a_pe, a_bitness,
-                                   baseVftableRvas, baseVftableOffsets,
-                                   allVftRvas, allVftNames,
-                                   objectSize, maxObservedOff);
-            rt.objectSize        = objectSize;
+            uint32_t objectSize = 0;
+            uint32_t maxObservedOff = 0;
+            std::vector<StaticMemberInfo> statics;
+            rt.fields = fr.recover(primary->vftableRva,
+                a_pe,
+                a_bitness,
+                baseVftableRvas,
+                baseVftableOffsets,
+                allVftRvas,
+                allVftNames,
+                objectSize,
+                maxObservedOff,
+                &primaryCtorRva,
+                nullptr,
+                &statics);
+            rt.objectSize = objectSize;
             rt.maxObservedOffset = maxObservedOff;
+            rt.staticMembers = std::move(statics);
         }
+
+        // Ctor call chain: this ctor plus everything it initialises (two call
+        // levels — base ctors, member ctors). Used below to disambiguate
+        // ICF-folded base vftables shared by hundreds of unrelated classes.
+        const std::vector<uint64_t> ctorChain
+            = FieldRecovery::collectCtorChain(primaryCtorRva, a_bitness, a_pe);
 
         // ── Annotate embedded class hints in fields ───────────────────────────
         annotateEmbeddedHints(rt.fields, rt.vftables, a_reader, a_bitness);
@@ -436,8 +559,8 @@ private:
         // For each direct base at offset B, find its estimated size via its
         // own maxObservedOffset (reconstruct the base lightly). Then
         // ownFieldsStart = max(B + baseSize) over all direct bases.
-        rt.ownFieldsStart = computeOwnFieldsStart(rt.directBases, rt.vftables,
-                                                   a_reader, a_pe, a_bitness);
+        rt.ownFieldsStart = computeOwnFieldsStart(
+            rt.directBases, rt.vftables, a_reader, a_pe, a_bitness, &ctorChain);
 
         // Strip fields that fall entirely within base class region
         if (rt.ownFieldsStart > 0)
@@ -453,9 +576,8 @@ private:
 
         // ── Gap filling ───────────────────────────────────────────────────────
         const uint32_t ptrSz = (a_bitness == PEBitness::Bits32) ? 4u : 8u;
-        const uint32_t observedEnd = rt.maxObservedOffset > 0
-            ? align(rt.maxObservedOffset, ptrSz)
-            : 0;
+        const uint32_t observedEnd
+            = rt.maxObservedOffset > 0 ? align(rt.maxObservedOffset, ptrSz) : 0;
 
         // An allocation size that does not even cover the last observed field
         // write cannot be the real object size (e.g. a stray
@@ -507,12 +629,17 @@ private:
 
         for (const auto& b : a_vft.bases)
         {
-            if (b.demangledName.empty()) continue;
-            if (b.demangledName == a_vft.fullName) continue; // the class itself
-            if (b.offset != static_cast<int32_t>(a_vft.objectOffset)) continue;
+            if (b.demangledName.empty())
+                continue;
+            if (b.demangledName == a_vft.fullName)
+                continue; // the class itself
+            if (b.offset != static_cast<int32_t>(a_vft.objectOffset))
+                continue;
 
-            if (b.isDirect) return &b;
-            if (!fallback) fallback = &b; // depth-first => most derived first
+            if (b.isDirect)
+                return &b;
+            if (!fallback)
+                fallback = &b; // depth-first => most derived first
         }
 
         // Primary subobject: any direct base (its offset is 0 by construction).
@@ -541,7 +668,8 @@ private:
             auto baseFound = a_reader.findExact(match->demangledName);
             for (const auto* bv : baseFound)
             {
-                if (bv->objectOffset != 0) continue; // the base's own primary vftable
+                if (bv->objectOffset != 0)
+                    continue; // the base's own primary vftable
                 for (const auto& s : bv->vfuncs)
                     baseSlotRvas.push_back(s.funcRva);
                 break;
@@ -552,9 +680,9 @@ private:
 
         for (auto& slot : a_vft.vfuncs)
         {
-            slot.isNew      = false;
+            slot.isNew = false;
             slot.isOverride = false;
-            slot.ownerName  = a_vft.fullName; // default owner: the derived class
+            slot.ownerName = a_vft.fullName; // default owner: the derived class
 
             if (slot.isDestructor || slot.isPureVirtual)
                 continue;
@@ -585,11 +713,10 @@ private:
     // for a vftable at that RVA. Also mark MI base vfptr fields explicitly.
     // ─────────────────────────────────────────────────────────────────────────
 
-    static void annotateEmbeddedHints(
-        std::vector<FieldInfo>&        a_fields,
+    static void annotateEmbeddedHints(std::vector<FieldInfo>& a_fields,
         const std::vector<VftableInfo>& a_vftables,
-        const RttiReader&               a_reader,
-        PEBitness                       a_bitness)
+        const RttiReader& a_reader,
+        PEBitness a_bitness)
     {
         // Build a map: objectOffset -> vftable name for MI bases
         std::unordered_map<uint32_t, std::string> miBaseNames;
@@ -605,8 +732,8 @@ private:
             auto it = miBaseNames.find(f.offset);
             if (it != miBaseNames.end() && f.kind == FieldKind::Pointer)
             {
-                f.isMIBaseVfptr      = true;
-                f.embeddedClassName  = it->second;
+                f.isMIBaseVfptr = true;
+                f.embeddedClassName = it->second;
                 continue;
             }
 
@@ -614,8 +741,10 @@ private:
             // (a field might be an embedded object whose ctor writes its vfptr there)
             // We look for any vftable in the reader whose objectOffset == 0
             // and whose class was also seen as a base. This is a best-effort hint.
-            if (f.kind != FieldKind::Pointer) continue;
-            if (f.isMIBaseVfptr) continue;
+            if (f.kind != FieldKind::Pointer)
+                continue;
+            if (f.isMIBaseVfptr)
+                continue;
 
             // Check if this offset matches any base's mdisp
             for (const auto& vft : a_vftables)
@@ -623,8 +752,7 @@ private:
                 for (const auto& base : vft.bases)
                 {
                     if (static_cast<uint32_t>(base.offset) == f.offset
-                        && !base.demangledName.empty()
-                        && base.demangledName != vft.fullName)
+                        && !base.demangledName.empty() && base.demangledName != vft.fullName)
                     {
                         // Find the base's primary vftable RVA
                         auto baseVfts = a_reader.findExact(base.demangledName);
@@ -632,15 +760,17 @@ private:
                         {
                             if (bv->objectOffset == 0)
                             {
-                                f.embeddedClassName  = base.demangledName;
+                                f.embeddedClassName = base.demangledName;
                                 f.embeddedVftableRva = bv->vftableRva;
                                 break;
                             }
                         }
-                        if (!f.embeddedClassName.empty()) break;
+                        if (!f.embeddedClassName.empty())
+                            break;
                     }
                 }
-                if (!f.embeddedClassName.empty()) break;
+                if (!f.embeddedClassName.empty())
+                    break;
             }
         }
     }
@@ -655,26 +785,29 @@ private:
     //   3. Fallback: ptrSize (just skip the primary vfptr).
     // ─────────────────────────────────────────────────────────────────────────
 
-    static uint32_t computeOwnFieldsStart(
-        const std::vector<BaseClassInfo>& a_bases,
-        const std::vector<VftableInfo>&   a_vftables,
+    static uint32_t computeOwnFieldsStart(const std::vector<BaseClassInfo>& a_bases,
+        const std::vector<VftableInfo>& a_vftables,
         const RttiReader& a_reader,
         const PEImage& a_pe,
-        PEBitness a_bitness)
+        PEBitness a_bitness,
+        const std::vector<uint64_t>* a_ctorChain = nullptr)
     {
-        if (a_bases.empty()) return 0;
+        if (a_bases.empty())
+            return 0;
 
         const uint32_t ptrSz = (a_bitness == PEBitness::Bits32) ? 4u : 8u;
 
         // Diagnostics (DUMPPDB_DEBUG=1): dump the ownFieldsStart decision.
         if (FieldRecoveryDbgOn())
         {
-            std::fprintf(stderr, "[TR] computeOwnFieldsStart for %zu base(s):\n",
-                a_bases.size());
+            std::fprintf(stderr, "[TR] computeOwnFieldsStart for %zu base(s):\n", a_bases.size());
             for (const auto& b : a_bases)
-                std::fprintf(stderr, "[TR]   base '%s' off=0x%X direct=%d virt=%d\n",
-                    b.demangledName.c_str(), static_cast<unsigned>(b.offset),
-                    b.isDirect ? 1 : 0, b.isVirtual ? 1 : 0);
+                std::fprintf(stderr,
+                    "[TR]   base '%s' off=0x%X direct=%d virt=%d\n",
+                    b.demangledName.c_str(),
+                    static_cast<unsigned>(b.offset),
+                    b.isDirect ? 1 : 0,
+                    b.isVirtual ? 1 : 0);
         }
 
         // ── Multiple inheritance ──────────────────────────────────────────────
@@ -690,8 +823,8 @@ private:
         // as explicit vfptr fields rather than hidden base data.
         // e.g. ActorInstance: ICharacterProxyHitOverrider @ 0xB8 -> 0xBC.
         std::unordered_set<std::string> visited;
-        const uint32_t primaryEnd = baseDataSize(a_bases, a_reader, a_pe,
-            a_bitness, visited, 0);
+        const uint32_t primaryEnd
+            = baseDataSize(a_bases, a_reader, a_pe, a_bitness, visited, 0, a_ctorChain);
         if (FieldRecoveryDbgOn())
             std::fprintf(stderr, "[TR]   baseDataSize -> 0x%X\n", primaryEnd);
         if (primaryEnd > 0)
@@ -711,13 +844,18 @@ private:
         // Recover the primary base's extent from its own vftable/constructor.
         for (const auto& base : a_bases)
         {
-            if (base.demangledName.empty() || base.offset < 0) continue;
+            if (base.demangledName.empty() || base.offset < 0)
+                continue;
             const uint32_t baseOffset = static_cast<uint32_t>(base.offset);
 
             auto baseVfts = a_reader.findExact(base.demangledName);
             const VftableInfo* bPrimary = nullptr;
             for (const auto* bv : baseVfts)
-                if (bv->objectOffset == 0) { bPrimary = bv; break; }
+                if (bv->objectOffset == 0)
+                {
+                    bPrimary = bv;
+                    break;
+                }
 
             if (!bPrimary)
             {
@@ -727,13 +865,21 @@ private:
 
             FieldRecovery fr;
             uint32_t baseObjSize = 0;
-            uint32_t baseMaxOff  = 0;
+            uint32_t baseMaxOff = 0;
             std::vector<uint64_t> emptyRvas;
             std::vector<uint32_t> emptyOffs;
             std::vector<std::string> emptyNames;
-            (void)fr.recover(bPrimary->vftableRva, a_pe, a_bitness,
-                             emptyRvas, emptyOffs, emptyRvas, emptyNames,
-                             baseObjSize, baseMaxOff);
+            (void)fr.recover(bPrimary->vftableRva,
+                a_pe,
+                a_bitness,
+                emptyRvas,
+                emptyOffs,
+                emptyRvas,
+                emptyNames,
+                baseObjSize,
+                baseMaxOff,
+                nullptr,
+                a_ctorChain);
 
             uint32_t baseEnd = 0;
             if (baseObjSize > 0)
@@ -763,9 +909,11 @@ private:
         const PEImage& a_pe,
         PEBitness a_bitness,
         std::unordered_set<std::string>& a_visited,
-        int a_depth)
+        int a_depth,
+        const std::vector<uint64_t>* a_ctorChain = nullptr)
     {
-        if (a_depth > 8) return 0;
+        if (a_depth > 8)
+            return 0;
 
         const uint32_t ptrSz = (a_bitness == PEBitness::Bits32) ? 4u : 8u;
         uint32_t maxEnd = 0;
@@ -790,20 +938,31 @@ private:
                 // Primary base: its own extent determines the boundary.
                 // Recurse through ITS direct bases + ctor data so that a long
                 // primary chain accumulates correctly.
-                if (a_visited.count(base.demangledName)) continue;
+                if (a_visited.count(base.demangledName))
+                    continue;
                 a_visited.insert(base.demangledName);
 
                 uint32_t inner = 0;
                 auto baseVfts = a_reader.findExact(base.demangledName);
                 const VftableInfo* bPrimary = nullptr;
                 for (const auto* bv : baseVfts)
-                    if (bv->objectOffset == 0) { bPrimary = bv; break; }
+                    if (bv->objectOffset == 0)
+                    {
+                        bPrimary = bv;
+                        break;
+                    }
 
                 if (bPrimary)
                 {
                     // 1) Recursive extent from the base's own hierarchy.
-                    inner = std::max(inner, baseDataSize(bPrimary->bases,
-                        a_reader, a_pe, a_bitness, a_visited, a_depth + 1));
+                    inner = std::max(inner,
+                        baseDataSize(bPrimary->bases,
+                            a_reader,
+                            a_pe,
+                            a_bitness,
+                            a_visited,
+                            a_depth + 1,
+                            a_ctorChain));
 
                     // 2) Collect secondary vftable RVAs/offsets for this base
                     //    so FieldRecovery can correctly identify its most-derived
@@ -833,10 +992,18 @@ private:
                     // 4) Lower bound from the base's own recovered fields.
                     FieldRecovery fr;
                     uint32_t baseObjSize = 0;
-                    uint32_t baseMaxOff  = 0;
-                    auto bFields = fr.recover(bPrimary->vftableRva, a_pe, a_bitness,
-                        baseSecRvas, baseSecOffs, allVftRvas, allVftNames,
-                        baseObjSize, baseMaxOff);
+                    uint32_t baseMaxOff = 0;
+                    auto bFields = fr.recover(bPrimary->vftableRva,
+                        a_pe,
+                        a_bitness,
+                        baseSecRvas,
+                        baseSecOffs,
+                        allVftRvas,
+                        allVftNames,
+                        baseObjSize,
+                        baseMaxOff,
+                        nullptr,
+                        a_ctorChain);
                     uint32_t ownMax = 0;
                     for (const auto& f : bFields)
                         ownMax = std::max(ownMax, f.offset + f.size);
@@ -848,8 +1015,13 @@ private:
                         std::fprintf(stderr,
                             "[TR]   depth=%d base='%s' off=0x%X inner=0x%X "
                             "baseFields=%zu ownMax=0x%X baseObjSize=0x%X\n",
-                            a_depth, base.demangledName.c_str(), baseOffset,
-                            inner, bFields.size(), ownMax, baseObjSize);
+                            a_depth,
+                            base.demangledName.c_str(),
+                            baseOffset,
+                            inner,
+                            bFields.size(),
+                            ownMax,
+                            baseObjSize);
                 }
 
                 a_visited.erase(base.demangledName);
@@ -871,11 +1043,12 @@ private:
     // ─────────────────────────────────────────────────────────────────────────
 
     static void fillGaps(std::vector<FieldInfo>& a_fields,
-                         uint32_t a_startOffset,
-                         uint32_t a_totalSize,
-                         uint32_t /*ptrSz*/)
+        uint32_t a_startOffset,
+        uint32_t a_totalSize,
+        uint32_t /*ptrSz*/)
     {
-        if (a_totalSize <= a_startOffset) return;
+        if (a_totalSize <= a_startOffset)
+            return;
 
         std::vector<FieldInfo> result;
         result.reserve(a_fields.size() * 2);
@@ -884,14 +1057,15 @@ private:
 
         for (const auto& f : a_fields)
         {
-            if (f.offset < a_startOffset) continue; // skip base region
+            if (f.offset < a_startOffset)
+                continue; // skip base region
 
             if (f.offset > cursor)
             {
                 FieldInfo pad;
-                pad.offset    = cursor;
-                pad.size      = f.offset - cursor;
-                pad.kind      = FieldKind::Padding;
+                pad.offset = cursor;
+                pad.size = f.offset - cursor;
+                pad.kind = FieldKind::Padding;
                 pad.isBitfield = false;
                 result.push_back(pad);
             }
@@ -907,9 +1081,9 @@ private:
         if (cursor < a_totalSize)
         {
             FieldInfo pad;
-            pad.offset    = cursor;
-            pad.size      = a_totalSize - cursor;
-            pad.kind      = FieldKind::Padding;
+            pad.offset = cursor;
+            pad.size = a_totalSize - cursor;
+            pad.kind = FieldKind::Padding;
             pad.isBitfield = false;
             result.push_back(pad);
         }
@@ -935,9 +1109,8 @@ private:
 
     static bool detectIsStruct(const std::string& a_mangled)
     {
-        return a_mangled.size() >= 4
-            && a_mangled[0] == '.' && a_mangled[1] == '?'
-            && a_mangled[2] == 'A' && a_mangled[3] == 'U';
+        return a_mangled.size() >= 4 && a_mangled[0] == '.' && a_mangled[1] == '?'
+               && a_mangled[2] == 'A' && a_mangled[3] == 'U';
     }
 
     static std::wstring toWide(const std::string& s)
@@ -955,10 +1128,11 @@ private:
         for (char c : s)
         {
             const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
-                || (c >= '0' && c <= '9') || c == '_';
+                            || (c >= '0' && c <= '9') || c == '_';
             out.push_back(ok ? static_cast<wchar_t>(c) : L'_');
         }
-        if (out.empty()) out = L"Unknown";
+        if (out.empty())
+            out = L"Unknown";
         return out;
     }
 };

@@ -36,6 +36,31 @@ enum class PEBitness : uint8_t
     Bits64, ///< x64 PE (PE32+)
 };
 
+/// ============================================================================
+/// FieldKind — recovered scalar type of a field / static / parameter slot.
+/// Declared early because both FieldInfo and StaticMemberInfo reference it.
+/// ============================================================================
+
+enum class FieldKind : uint8_t
+{
+    Unknown,
+    Pointer, ///< 4-byte ptr (x86) or 8-byte ptr (x64)
+    Int8,
+    UInt8,
+    Bool,
+    Int16,
+    UInt16,
+    Int32,
+    UInt32,
+    Int64,
+    UInt64,
+    Float,
+    Double,
+    M128,
+    Bitfield,
+    Padding,
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Layout constants — centralised per-bitness values
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,8 +71,8 @@ struct RttiLayout
     uint32_t colSize;            ///< sizeof(COL on disk).
     uint32_t ptrSize;            ///< Native pointer size in bytes.
     uint32_t typeDescNameOffset; ///< Byte offset of the name[] in TypeDescriptor.
-    bool     colHasSelfRva;      ///< x64 COL has an extra selfRva field.
-    bool     rdataPointersAreRva;///< x64 stores RVAs; x86 stores absolute VAs.
+    bool colHasSelfRva;          ///< x64 COL has an extra selfRva field.
+    bool rdataPointersAreRva;    ///< x64 stores RVAs; x86 stores absolute VAs.
 
     static constexpr RttiLayout x86() noexcept
     {
@@ -84,20 +109,20 @@ struct PmdOnDisk
 ///   x64 — 32-bit RVAs relative to imageBase
 struct ColOnDisk
 {
-    uint32_t signature;          ///< 0 = x86, 1 = x64
-    uint32_t offset;             ///< Offset of this vftable in the complete object.
-    uint32_t cdOffset;           ///< Constructor displacement offset.
-    uint32_t typeDescriptorAddr; ///< x86: absolute VA; x64: RVA
-    uint32_t classDescriptorAddr;///< x86: absolute VA; x64: RVA
+    uint32_t signature;           ///< 0 = x86, 1 = x64
+    uint32_t offset;              ///< Offset of this vftable in the complete object.
+    uint32_t cdOffset;            ///< Constructor displacement offset.
+    uint32_t typeDescriptorAddr;  ///< x86: absolute VA; x64: RVA
+    uint32_t classDescriptorAddr; ///< x86: absolute VA; x64: RVA
     // x64 only:
-    uint32_t selfAddr;           ///< x64: RVA of this COL itself (for validation)
+    uint32_t selfAddr; ///< x64: RVA of this COL itself (for validation)
 };
 
 /// RTTIClassHierarchyDescriptor.
 struct ChdOnDisk
 {
-    uint32_t signature;        ///< Always 0.
-    uint32_t attributes;       ///< Bit 0: multiple, Bit 1: virtual inheritance.
+    uint32_t signature;  ///< Always 0.
+    uint32_t attributes; ///< Bit 0: multiple, Bit 1: virtual inheritance.
     uint32_t numBaseClasses;
     uint32_t baseClassArrayAddr; ///< x86: abs VA of BCD array; x64: RVA
 };
@@ -109,7 +134,7 @@ struct BcdOnDisk
     uint32_t numContainedBases;
     PmdOnDisk pmd;
     uint32_t attributes;
-    uint32_t classDescriptorAddr;///< x64 only (ignored on x86)
+    uint32_t classDescriptorAddr; ///< x64 only (ignored on x86)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -120,9 +145,9 @@ struct BaseClassInfo
 {
     std::string mangledName;
     std::string demangledName;
-    int32_t     offset;    ///< Byte offset in the derived object.
-    bool        isVirtual;
-    bool        isDirect;  ///< Immediate (not transitive) base.
+    int32_t offset; ///< Byte offset in the derived object.
+    bool isVirtual;
+    bool isDirect; ///< Immediate (not transitive) base.
 };
 
 enum class InheritanceKind : uint8_t
@@ -133,40 +158,140 @@ enum class InheritanceKind : uint8_t
     Virtual,
 };
 
+/// A single recovered function parameter.
+struct VFuncParam
+{
+    /// Best-effort type name, e.g. "int32_t", "float", "void*", "const char*".
+    std::string typeName;
+};
+
+/// Recovered signature of a virtual function (or any traced member function).
+///
+/// Produced by disassembling a function body and observing how each parameter
+/// slot (stack slot on x86/stdcall, register on x64 Microsoft ABI) and the
+/// return register are used. This is deliberately approximate: the task allows
+/// base types (int8/16/32/64, float, double, unsigned, bool, pointer).
+struct VFuncSignature
+{
+    bool analyzed = false;           ///< True once analysis ran on a real body.
+    std::string returnType = "void"; ///< Best-effort return type name.
+    std::vector<VFuncParam> params;
+
+    /// Render as e.g. "int32_t(float, void*)".
+    [[nodiscard]] std::string render() const
+    {
+        std::string out = returnType;
+        out += '(';
+        for (size_t i = 0; i < params.size(); ++i)
+        {
+            if (i)
+                out += ", ";
+            out += params[i].typeName.empty() ? std::string("int32_t") : params[i].typeName;
+        }
+        out += ')';
+        return out;
+    }
+};
+
 struct VfuncSlot
 {
     uint32_t slotIndex;
-    uint64_t funcRva;       ///< RVA of the function (0 = pure virtual).
-    bool     isPureVirtual;
-    bool     isDestructor;  ///< Heuristic: slot 0 or 1.
-    bool     isOverride;    ///< Same RVA exists in a direct base class at the same slot.
-    bool     isNew;         ///< Not present in any direct base (slot index >= base vftable size).
+    uint64_t funcRva; ///< RVA of the function (0 = pure virtual).
+    bool isPureVirtual;
+    bool isDestructor; ///< Heuristic: slot 0 or 1.
+    bool isOverride;   ///< Same RVA exists in a direct base class at the same slot.
+    bool isNew;        ///< Not present in any direct base (slot index >= base vftable size).
     /// Demangled name of the class whose vftable this slot belongs to
     /// (own class for new slots, base class name for overrides).
     std::string ownerName;
+
+    /// Recovered signature for this virtual function (filled by
+    /// SignatureAnalyzer on demand). Empty when analysis failed or the slot
+    /// is pure virtual.
+    VFuncSignature signature;
+};
+
+/// A recovered static data member of a class.
+///
+/// Detected by tracing a constructor for writes that target an image address
+/// (absolute VA on x86, RIP-relative on x64) which does NOT alias a known
+/// vftable. That is precisely a "static member assigned in the constructor"
+/// (see the task: often a plain value assignment).
+struct StaticMemberInfo
+{
+    uint64_t rva;                        ///< RVA of the static storage within the image.
+    uint32_t size;                       ///< Access width in bytes (1/2/4/8...).
+    FieldKind kind = FieldKind::Unknown; ///< Recovered type of the storage.
+    std::string name;                    ///< Rendered placeholder, e.g. `static_0x1234`.
+    /// True when the constructor wrote an immediate constant to the member
+    /// (so we can also render a default-value hint).
+    bool hasInitValue = false;
+    int64_t initValue = 0;
+
+    /// Rendered C++ type name for this static.
+    [[nodiscard]] std::string typeName() const
+    {
+        switch (kind)
+        {
+        case FieldKind::Bool:
+            return "bool";
+        case FieldKind::Int8:
+            return "int8_t";
+        case FieldKind::UInt8:
+            return "uint8_t";
+        case FieldKind::Int16:
+            return "int16_t";
+        case FieldKind::UInt16:
+            return "uint16_t";
+        case FieldKind::Int32:
+            return "int32_t";
+        case FieldKind::UInt32:
+            return "uint32_t";
+        case FieldKind::Int64:
+            return "int64_t";
+        case FieldKind::UInt64:
+            return "uint64_t";
+        case FieldKind::Float:
+            return "float";
+        case FieldKind::Double:
+            return "double";
+        case FieldKind::M128:
+            return "__m128";
+        case FieldKind::Pointer:
+            return "void*";
+        default:
+            if (size == 8)
+                return "uint64_t";
+            if (size == 4)
+                return "uint32_t";
+            if (size == 2)
+                return "uint16_t";
+            return "uint8_t";
+        }
+    }
 };
 
 /// Hint that a field at some offset may be an embedded object (detected via
 /// a foreign vftable pointer at that offset).
 struct EmbeddedClassHint
 {
-    uint32_t    fieldOffset;  ///< Byte offset within the object where the vfptr was found.
-    uint64_t    vftableRva;   ///< RVA of the vftable the pointer points to.
-    std::string className;    ///< Demangled name of the class owning that vftable (may be empty).
-    bool        isMIBase;     ///< True if this matches a known MI base at this offset.
+    uint32_t fieldOffset;  ///< Byte offset within the object where the vfptr was found.
+    uint64_t vftableRva;   ///< RVA of the vftable the pointer points to.
+    std::string className; ///< Demangled name of the class owning that vftable (may be empty).
+    bool isMIBase;         ///< True if this matches a known MI base at this offset.
 };
 
 struct VftableInfo
 {
-    uint64_t             vftableRva;
-    uint64_t             colRva;
-    uint32_t             objectOffset;
-    std::string          mangledName;
-    std::string          className;
-    std::string          fullName;
-    InheritanceKind      inheritance;
-    std::vector<BaseClassInfo>     bases;
-    std::vector<VfuncSlot>         vfuncs;
+    uint64_t vftableRva;
+    uint64_t colRva;
+    uint32_t objectOffset;
+    std::string mangledName;
+    std::string className;
+    std::string fullName;
+    InheritanceKind inheritance;
+    std::vector<BaseClassInfo> bases;
+    std::vector<VfuncSlot> vfuncs;
     std::vector<EmbeddedClassHint> embeddedHints; ///< Foreign vftable pointers found in fields.
 
     /// Demangled name of the base class that owns this subobject vftable,
@@ -174,7 +299,7 @@ struct VftableInfo
     /// the subobject offset, otherwise the most-derived transitive base at that
     /// offset). Empty for the primary vftable. This is what makes an interface
     /// inherited through an intermediate class still attributed correctly.
-    std::string          subobjectBaseName;
+    std::string subobjectBaseName;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -193,41 +318,21 @@ enum class PaddingStyle : uint8_t
 // Field recovery results
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum class FieldKind : uint8_t
-{
-    Unknown,
-    Pointer,  ///< 4-byte ptr (x86) or 8-byte ptr (x64)
-    Int8,
-    UInt8,
-    Bool,
-    Int16,
-    UInt16,
-    Int32,
-    UInt32,
-    Int64,
-    UInt64,
-    Float,
-    Double,
-    M128,
-    Bitfield,
-    Padding,
-};
-
 struct FieldInfo
 {
-    uint32_t  offset;
-    uint32_t  size;
+    uint32_t offset;
+    uint32_t size;
     FieldKind kind;
-    bool      isBitfield  = false;
-    uint8_t   bitOffset   = 0;
-    uint8_t   bitSize     = 0;
+    bool isBitfield = false;
+    uint8_t bitOffset = 0;
+    uint8_t bitSize = 0;
 
     /// If non-empty, this field is probably an embedded object of this class.
     std::string embeddedClassName;
     /// RVA of the foreign vftable if embeddedClassName is set (from annotateEmbeddedHints).
-    uint64_t    embeddedVftableRva = 0;
+    uint64_t embeddedVftableRva = 0;
     /// True if this offset is a known MI base vfptr (not a "field" per se).
-    bool        isMIBaseVfptr     = false;
+    bool isMIBaseVfptr = false;
 
     /// Detected from constructor: a non-trivial constructor was called with
     /// ecx/rcx = this+offset. May contain a demangled class name if resolved.
@@ -236,31 +341,49 @@ struct FieldInfo
     /// Detected from constructor: a foreign vftable was written to this+offset
     /// (embedded object with its own vftable, not an MI base).
     std::string foreignVftableName;
-    uint64_t    foreignVftableRva = 0;
+    uint64_t foreignVftableRva = 0;
 
     [[nodiscard]] std::string typeName() const
     {
         switch (kind)
         {
-        case FieldKind::Pointer: return "void*";
-        case FieldKind::Int8:    return "int8_t";
-        case FieldKind::UInt8:   return "uint8_t";
-        case FieldKind::Bool:    return "bool";
-        case FieldKind::Int16:   return "int16_t";
-        case FieldKind::UInt16:  return "uint16_t";
-        case FieldKind::Int32:   return "int32_t";
-        case FieldKind::UInt32:  return "uint32_t";
-        case FieldKind::Int64:   return "int64_t";
-        case FieldKind::UInt64:  return "uint64_t";
-        case FieldKind::Float:   return "float";
-        case FieldKind::Double:  return "double";
-        case FieldKind::M128:    return "__m128";
-        case FieldKind::Bitfield:return "unsigned int";
-        case FieldKind::Padding: return "uint8_t";
+        case FieldKind::Pointer:
+            return "void*";
+        case FieldKind::Int8:
+            return "int8_t";
+        case FieldKind::UInt8:
+            return "uint8_t";
+        case FieldKind::Bool:
+            return "bool";
+        case FieldKind::Int16:
+            return "int16_t";
+        case FieldKind::UInt16:
+            return "uint16_t";
+        case FieldKind::Int32:
+            return "int32_t";
+        case FieldKind::UInt32:
+            return "uint32_t";
+        case FieldKind::Int64:
+            return "int64_t";
+        case FieldKind::UInt64:
+            return "uint64_t";
+        case FieldKind::Float:
+            return "float";
+        case FieldKind::Double:
+            return "double";
+        case FieldKind::M128:
+            return "__m128";
+        case FieldKind::Bitfield:
+            return "unsigned int";
+        case FieldKind::Padding:
+            return "uint8_t";
         default:
-            if (size == 8) return "uint64_t";
-            if (size == 4) return "uint32_t";
-            if (size == 2) return "uint16_t";
+            if (size == 8)
+                return "uint64_t";
+            if (size == 4)
+                return "uint32_t";
+            if (size == 2)
+                return "uint16_t";
             return "uint8_t";
         }
     }
@@ -272,20 +395,21 @@ struct FieldInfo
 
 struct ReconstructedType
 {
-    std::string              className;
-    std::string              fullName;
-    std::string              mangledName;
-    uint32_t                 objectSize         = 0;  ///< From operator new, or estimated.
-    uint32_t                 maxObservedOffset  = 0;  ///< Highest field offset seen.
-    uint32_t                 ownFieldsStart     = 0;  ///< Offset where own fields begin (after base data).
-    bool                     isStruct           = false;
-    PEBitness                bitness            = PEBitness::Bits64;
-    PaddingStyle             paddingStyle       = PaddingStyle::Array; ///< How to render padding gaps.
-    InheritanceKind          inheritance        = InheritanceKind::None;
-    std::vector<BaseClassInfo>  directBases;
-    std::vector<VftableInfo>    vftables;
-    std::vector<FieldInfo>      fields;
-    bool                        hasRtti          = false;
+    std::string className;
+    std::string fullName;
+    std::string mangledName;
+    uint32_t objectSize = 0;        ///< From operator new, or estimated.
+    uint32_t maxObservedOffset = 0; ///< Highest field offset seen.
+    uint32_t ownFieldsStart = 0;    ///< Offset where own fields begin (after base data).
+    bool isStruct = false;
+    PEBitness bitness = PEBitness::Bits64;
+    PaddingStyle paddingStyle = PaddingStyle::Array; ///< How to render padding gaps.
+    InheritanceKind inheritance = InheritanceKind::None;
+    std::vector<BaseClassInfo> directBases;
+    std::vector<VftableInfo> vftables;
+    std::vector<FieldInfo> fields;
+    std::vector<StaticMemberInfo> staticMembers;
+    bool hasRtti = false;
 };
 
 } // namespace DumpPDB
