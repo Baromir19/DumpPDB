@@ -177,11 +177,10 @@ struct VFuncSignature
     std::string returnType = "void"; ///< Best-effort return type name.
     std::vector<VFuncParam> params;
 
-    /// Render as e.g. "int32_t(float, void*)".
-    [[nodiscard]] std::string render() const
+    /// Render the parameter list only, e.g. "(float, void*)".
+    [[nodiscard]] std::string renderArgs() const
     {
-        std::string out = returnType;
-        out += '(';
+        std::string out = "(";
         for (size_t i = 0; i < params.size(); ++i)
         {
             if (i)
@@ -190,6 +189,14 @@ struct VFuncSignature
         }
         out += ')';
         return out;
+    }
+
+    /// Render as e.g. "int32_t(float, void*)" (types only — for plain text
+    /// display; to build a C++ declaration insert the name between the
+    /// return type and renderArgs()).
+    [[nodiscard]] std::string render() const
+    {
+        return returnType + renderArgs();
     }
 };
 

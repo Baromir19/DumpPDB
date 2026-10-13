@@ -235,7 +235,9 @@ public:
                             slot.isOverride && !slot.ownerName.empty() ? slot.ownerName
                                                                        : a_type.fullName);
 
-                        const std::wstring sig = toWide(slot.signature.render());
+                        const std::wstring ret = toWide(
+                            slot.signature.returnType.empty() ? "void" : slot.signature.returnType);
+                        const std::wstring args = toWide(slot.signature.renderArgs());
 
                         if (slot.isDestructor)
                         {
@@ -247,21 +249,24 @@ public:
                         }
                         else if (slot.isOverride)
                         {
+                            // C++ order: virtual RET name(args) override;
                             swprintf_s(buf,
-                                L"%s func_%u_%s override;  // [%u] 0x%llX\n",
-                                sig.c_str(),
+                                L"%s func_%u_%s%s override;  // [%u] 0x%llX\n",
+                                ret.c_str(),
                                 slot.slotIndex,
                                 ownerId.c_str(),
+                                args.c_str(),
                                 slot.slotIndex,
                                 static_cast<unsigned long long>(slot.funcRva));
                         }
                         else // isNew
                         {
                             swprintf_s(buf,
-                                L"%s func_%u_%s;  // [%u] 0x%llX\n",
-                                sig.c_str(),
+                                L"%s func_%u_%s%s;  // [%u] 0x%llX\n",
+                                ret.c_str(),
                                 slot.slotIndex,
                                 ownerId.c_str(),
+                                args.c_str(),
                                 slot.slotIndex,
                                 static_cast<unsigned long long>(slot.funcRva));
                         }
