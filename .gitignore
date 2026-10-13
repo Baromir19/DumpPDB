@@ -373,3 +373,4 @@ FodyWeavers.xsd
 
 # Local toolset 
 build_rtti.bat
+tools/disasm/disasm.exe

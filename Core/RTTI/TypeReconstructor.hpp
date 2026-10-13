@@ -555,6 +555,13 @@ private:
         // ICF-folded base vftables shared by hundreds of unrelated classes.
         const std::vector<uint64_t> ctorChain
             = FieldRecovery::collectCtorChain(primaryCtorRva, a_bitness, a_pe);
+        if (FieldRecoveryDbgOn())
+        {
+            std::fprintf(stderr, "[TR] ctorChain(%zu):", ctorChain.size());
+            for (uint64_t cv : ctorChain)
+                std::fprintf(stderr, " 0x%llX", static_cast<unsigned long long>(cv));
+            std::fprintf(stderr, "\n");
+        }
 
         // ── Annotate embedded class hints in fields ───────────────────────────
         annotateEmbeddedHints(rt.fields, rt.vftables, a_reader, a_bitness);
@@ -959,16 +966,6 @@ private:
 
                 if (bPrimary)
                 {
-                    // 1) Recursive extent from the base's own hierarchy.
-                    inner = std::max(inner,
-                        baseDataSize(bPrimary->bases,
-                            a_reader,
-                            a_pe,
-                            a_bitness,
-                            a_visited,
-                            a_depth + 1,
-                            a_ctorChain));
-
                     // 2) Collect secondary vftable RVAs/offsets for this base
                     //    so FieldRecovery can correctly identify its most-derived
                     //    constructor (the one that installs secondary vfptrs).
@@ -994,7 +991,14 @@ private:
                         allVftNames.push_back(vft.fullName);
                     }
 
-                    // 4) Lower bound from the base's own recovered fields.
+                    // 4) Recover the base's own fields — FIRST, so the ctor
+                    //    chain hint for the recursive extent below can be
+                    //    deepened per hierarchy level. ICF collapses the
+                    //    vftables of classes with identical slot tables, so
+                    //    the chain hint is what disambiguates the genuine
+                    //    base ctor from most-derived ctors writing the same
+                    //    (folded) vftable.
+                    uint64_t bCtorRva = 0;
                     FieldRecovery fr;
                     uint32_t baseObjSize = 0;
                     uint32_t baseMaxOff = 0;
@@ -1007,13 +1011,52 @@ private:
                         allVftNames,
                         baseObjSize,
                         baseMaxOff,
-                        nullptr,
+                        &bCtorRva,
                         a_ctorChain);
+
+                    // 1) Recursive extent from the base's own hierarchy,
+                    //    using a chain deepened by the ctor found above.
+                    std::vector<uint64_t> childChain;
+                    if (bCtorRva != 0)
+                        childChain = FieldRecovery::collectCtorChain(bCtorRva, a_bitness, a_pe);
+                    const std::vector<uint64_t>* childChainPtr
+                        = childChain.empty() ? a_ctorChain : &childChain;
+                    inner = std::max(inner,
+                        baseDataSize(bPrimary->bases,
+                            a_reader,
+                            a_pe,
+                            a_bitness,
+                            a_visited,
+                            a_depth + 1,
+                            childChainPtr));
+
                     uint32_t ownMax = 0;
                     for (const auto& f : bFields)
                         ownMax = std::max(ownMax, f.offset + f.size);
                     if (baseObjSize > 0 && baseObjSize < 0x1000000)
                         ownMax = std::max(ownMax, baseObjSize);
+
+                    // Chain validation: when a ctor chain hint was available
+                    // but the chosen ctor is NOT part of it, the ctor was
+                    // selected by the ICF fallback ranking — most-derived
+                    // ctors of unrelated classes share the folded vftable and
+                    // produce a wildly oversized extent (e.g. 0x1F20 for
+                    // ExposedObject). Such an extent must not extend the base
+                    // region beyond what its own sub-bases contribute.
+                    bool chainValidated = false;
+                    if (a_ctorChain && !a_ctorChain->empty() && bCtorRva != 0)
+                    {
+                        for (uint64_t cv : *a_ctorChain)
+                        {
+                            if (cv == bCtorRva)
+                            {
+                                chainValidated = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!chainValidated && ownMax > inner)
+                        ownMax = static_cast<uint32_t>(inner);
                     inner = std::max(inner, ownMax);
 
                     if (FieldRecoveryDbgOn())

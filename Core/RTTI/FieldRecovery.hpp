@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <cstring>
 #include <map>
 #include <vector>
@@ -107,7 +108,15 @@ public:
         a_objectSize = extractAllocationSize(ctorRva);
 
         std::map<uint32_t, AccessRecord> accesses;
-        traceThisAccesses(ctorRva, accesses, a_statics);
+        {
+            const std::clock_t tTrace = std::clock();
+            traceThisAccesses(ctorRva, accesses, a_statics);
+            if (dbgOn())
+                std::fprintf(stderr,
+                    "[FR-T] trace(vft=0x%llX) %d ms\n",
+                    static_cast<unsigned long long>(a_vftableRva),
+                    static_cast<int>((std::clock() - tTrace) * 1000 / CLOCKS_PER_SEC));
+        }
 
         if (dbgOn())
         {
@@ -209,6 +218,20 @@ private:
         }
     }
 
+    /// Canonical slot index for a GPR (short alias of regSlot for call sites).
+    static int slot(ZydisRegister r)
+    {
+        return regSlot(r);
+    }
+
+    /// True for callee-saved canonical register slots (rbx, rbp, rsi, rdi,
+    /// r12-r15). CALLs do not clobber them — O2 code keeps the object pointer
+    /// in such registers across helper calls.
+    static bool isCalleeSaved(int s)
+    {
+        return s == 3 || s == 5 || s == 6 || s == 7 || (s >= 12 && s <= 15);
+    }
+
     /// Diagnostics switch: set DUMPPDB_DEBUG=1 in the environment to dump
     /// constructor-search / tracing internals to stderr.
     [[nodiscard]] static bool dbgOn()
@@ -285,8 +308,26 @@ private:
         size_t pos = 0;
         const size_t sz = tv.size();
 
-        // ── Pass 1: collect every function that references this vftable ──
+        // ── Pass 1: collect every function that WRITES this vftable ──
+        //
+        // A vftable VA merely being LOADED (comparison, runtime registration,
+        // RTTI bookkeeping) is not enough — optimised (O2) binaries reference
+        // vftable VAs for many non-write purposes. Register-mediated patterns
+        // therefore only count when the loaded register is STORED to memory
+        // within a short window (the actual vfptr write).
         std::vector<uint64_t> candidates;
+
+        const std::clock_t tPass1 = std::clock();
+
+        int pendingSlot[kRegCount]; // reg slot -> VA load awaiting a store
+        uint64_t pendingRva[kRegCount];
+        size_t pendingPos[kRegCount];
+        for (int i = 0; i < kRegCount; ++i)
+        {
+            pendingSlot[i] = -1;
+            pendingRva[i] = 0;
+            pendingPos[i] = 0;
+        }
 
         while (pos + 2 < sz)
         {
@@ -301,34 +342,69 @@ private:
 
             const uint64_t curRva = textVa + static_cast<uint64_t>(pos);
             bool hit = false;
+            uint64_t hitRva = curRva;
+
+            if (insn.mnemonic == ZYDIS_MNEMONIC_RET)
+            {
+                for (int i = 0; i < kRegCount; ++i)
+                    pendingSlot[i] = -1;
+            }
+
+            const int dstS = (insn.operand_count >= 1 && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER)
+                                 ? slot(ops[0].reg.value)
+                                 : -1;
+
+            // Pending bookkeeping on register definitions.
+            if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
+                && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER
+                && ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER)
+            {
+                const int sSrc = slot(ops[1].reg.value); // copy propagates pending
+                if (dstS >= 0)
+                {
+                    pendingSlot[dstS] = (sSrc >= 0) ? pendingSlot[sSrc] : -1;
+                    pendingRva[dstS] = (sSrc >= 0) ? pendingRva[sSrc] : 0;
+                    pendingPos[dstS] = (sSrc >= 0) ? pendingPos[sSrc] : 0;
+                }
+            }
+            else if (dstS >= 0)
+            {
+                pendingSlot[dstS] = -1; // any other def clobbers
+            }
 
             if (m_bitness == PEBitness::Bits64)
             {
-                // Pattern A: MOV reg, imm64 where imm == vftAbsVa
+                // Pattern A: MOV reg, imm64 where imm == vftAbsVa — pending a store.
                 if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
                     && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER
                     && ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE
-                    && static_cast<uint64_t>(ops[1].imm.value.u) == vftAbsVa)
+                    && static_cast<uint64_t>(ops[1].imm.value.u) == vftAbsVa && dstS >= 0)
                 {
-                    hit = true;
+                    pendingSlot[dstS] = dstS;
+                    pendingRva[dstS] = curRva;
+                    pendingPos[dstS] = pos;
                 }
 
-                // Pattern B: LEA reg, [RIP+disp] where RIP+disp == vftableRva
-                if (!hit && insn.mnemonic == ZYDIS_MNEMONIC_LEA && insn.operand_count >= 2
+                // Pattern B: LEA reg, [RIP+disp] where RIP+disp == vftableRva.
+                if (insn.mnemonic == ZYDIS_MNEMONIC_LEA && insn.operand_count >= 2
                     && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER
                     && ops[1].type == ZYDIS_OPERAND_TYPE_MEMORY
-                    && ops[1].mem.base == ZYDIS_REGISTER_RIP)
+                    && ops[1].mem.base == ZYDIS_REGISTER_RIP && dstS >= 0)
                 {
-                    uint64_t target
+                    const uint64_t target
                         = curRva + insn.length
                           + static_cast<uint64_t>(static_cast<int64_t>(ops[1].mem.disp.value));
                     if (target == m_vftableRva)
-                        hit = true;
+                    {
+                        pendingSlot[dstS] = dstS;
+                        pendingRva[dstS] = curRva;
+                        pendingPos[dstS] = pos;
+                    }
                 }
             }
             else // x86
             {
-                // Pattern A: MOV dword ptr [ECX+disp], imm32 where imm == vftAbsVa
+                // Pattern A: MOV dword ptr [GPR+disp], imm32 where imm == vftAbsVa
                 if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
                     && ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY
                     && ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE
@@ -338,19 +414,41 @@ private:
                     hit = true;
                 }
 
-                // Pattern B: MOV EAX/reg, imm32 == vftAbsVa
-                if (!hit && insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
+                // Pattern B: MOV reg, imm32 == vftAbsVa — pending a store.
+                if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
                     && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER
                     && ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE
-                    && static_cast<uint64_t>(ops[1].imm.value.u) == vftAbsVa)
+                    && static_cast<uint64_t>(ops[1].imm.value.u) == vftAbsVa && dstS >= 0)
+                {
+                    pendingSlot[dstS] = dstS;
+                    pendingRva[dstS] = curRva;
+                    pendingPos[dstS] = pos;
+                }
+            }
+
+            // A pending register STORED to memory completes the vfptr write.
+            // The store must go through a real object register — a stack-slot
+            // spill of the VA (`mov [rbp-N], rax`) is not a vfptr write.
+            if (!hit && insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
+                && ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY
+                && ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER)
+            {
+                const int sSrc = slot(ops[1].reg.value);
+                const ZydisRegister sb = ops[0].mem.base;
+                const bool stackBased = sb == ZYDIS_REGISTER_NONE || sb == ZYDIS_REGISTER_ESP
+                                        || sb == ZYDIS_REGISTER_RSP || sb == ZYDIS_REGISTER_EBP
+                                        || sb == ZYDIS_REGISTER_RBP;
+                if (sSrc >= 0 && pendingSlot[sSrc] >= 0 && pos - pendingPos[sSrc] <= 64
+                    && !stackBased)
                 {
                     hit = true;
+                    hitRva = pendingRva[sSrc];
                 }
             }
 
             if (hit)
             {
-                uint64_t ctorRva = findFunctionStart(curRva, textVa, tv);
+                uint64_t ctorRva = findFunctionStart(hitRva, textVa, tv);
                 if (ctorRva != 0
                     && std::find(candidates.begin(), candidates.end(), ctorRva) == candidates.end())
                     candidates.push_back(ctorRva);
@@ -358,6 +456,12 @@ private:
 
             pos += insn.length;
         }
+
+        if (dbgOn())
+            std::fprintf(stderr,
+                "[FR-T] pass1(vft=0x%llX) %d ms\n",
+                static_cast<unsigned long long>(m_vftableRva),
+                static_cast<int>((std::clock() - tPass1) * 1000 / CLOCKS_PER_SEC));
 
         if (candidates.empty())
         {
@@ -374,7 +478,6 @@ private:
                 static_cast<unsigned long long>(m_vftableRva));
         if (candidates.size() == 1)
             return candidates[0];
-
         // ── Ctor call-graph chain filter (ICF disambiguation) ─────────────────
         // Identical COMDAT folding can make MANY unrelated class ctors share
         // ONE base vftable (e.g. 227 candidates for a common interface).
@@ -413,6 +516,8 @@ private:
         // base-class ctors do not call operator new themselves; any immediate found
         // at the start of the function may belong to an internal sub-allocation and
         // would produce a false/misleading size.
+
+        const std::clock_t tRank = std::clock();
 
         // Check if ANY candidate writes a secondary vftable.
         bool anySecondary = false;
@@ -478,6 +583,12 @@ private:
             bestAlloc = alloc;
             bestWrites = writes;
         }
+        if (dbgOn())
+            std::fprintf(stderr,
+                "[FR-T] rank(vft=0x%llX, %zu cands) %d ms\n",
+                static_cast<unsigned long long>(m_vftableRva),
+                candidates.size(),
+                static_cast<int>((std::clock() - tRank) * 1000 / CLOCKS_PER_SEC));
 
         return bestCtor;
     }
@@ -508,6 +619,26 @@ private:
             }
             if (candidateOff >= hitOff)
                 continue;
+
+            // A run of >=2 INT3 bytes directly before the candidate is the
+            // linker's inter-function padding — accept the boundary even
+            // without a recognised prologue (leaf/cold fragments in optimised
+            // builds often start with XOR/MOV instead of PUSH/SUB).
+            // The run scan is capped (max alignment padding is 16 bytes) to
+            // keep the backward scan linear.
+            {
+                uint64_t runStart = candidateOff;
+                size_t runLen = 0;
+                while (runStart > scanFrom && runLen < 16)
+                {
+                    if (a_tv[runStart - 1] != 0xCC)
+                        break;
+                    --runStart;
+                    ++runLen;
+                }
+                if (runLen >= 2)
+                    return a_textVa + candidateOff;
+            }
 
             const uint8_t* ptr = a_tv.data() + candidateOff;
             const size_t rem = static_cast<size_t>(a_tv.size() - candidateOff);
@@ -644,6 +775,12 @@ private:
 
     /// Count this-relative memory stores in a function (rough "does real
     /// field init" metric used to rank constructor candidates).
+    ///
+    /// Keeps a light `this`-provenance model so optimised (O2) builds rank
+    /// correctly too: besides the entry ecx/rcx thiscall register it follows
+    /// MOV copies, this-slot stack spill/reloads AND the x86 O2/SEH pattern
+    /// where the object arrives as the first stack argument ([entry_esp+4],
+    /// gated by a later vftable write through that register).
     [[nodiscard]] uint32_t countFieldWrites(
         uint64_t a_ctorRva, uint64_t a_textVa, const BinaryView& a_tv) const
     {
@@ -653,13 +790,80 @@ private:
         if (startOff >= a_tv.size())
             return 0;
         const size_t rawSpanW = std::min(kSearchRange, a_tv.size() - startOff);
-        const size_t spanW = std::min(rawSpanW, kMaxFuncBytes);
+        // Ranking only needs the ctor's head (field initialisation is near
+        // the entry); a 4 KB window keeps ICF candidate sets (hundreds of
+        // shared-vftable candidates) cheap to score.
+        const size_t spanW = std::min<size_t>(0x1000, std::min(rawSpanW, kMaxFuncBytes));
         ZydisDecodedInstruction insn;
         ZydisDecodedOperand ops[ZYDIS_MAX_OPERAND_COUNT];
         uint32_t count = 0;
         size_t pos = startOff, endPos = startOff + spanW;
-        const ZydisRegister thisReg
-            = (m_bitness == PEBitness::Bits32) ? ZYDIS_REGISTER_ECX : ZYDIS_REGISTER_RCX;
+
+        const int thisS
+            = slot((m_bitness == PEBitness::Bits64) ? ZYDIS_REGISTER_RCX : ZYDIS_REGISTER_ECX);
+        const ZydisRegister spReg
+            = (m_bitness == PEBitness::Bits32) ? ZYDIS_REGISTER_ESP : ZYDIS_REGISTER_RSP;
+        const int32_t ptrSz = (m_bitness == PEBitness::Bits32) ? 4 : 8;
+
+        bool isObj[kRegCount] = {};
+        if (thisS >= 0)
+            isObj[thisS] = true;
+        int32_t espDelta = 0;
+        std::map<int32_t, bool> slots; // stack slot holds an object pointer
+
+        auto slotKeyOf = [&](const ZydisDecodedOperand& op) -> int32_t
+        {
+            if (op.type != ZYDIS_OPERAND_TYPE_MEMORY || op.mem.index != ZYDIS_REGISTER_NONE)
+                return 0x7FFFFFFF;
+            const int32_t disp
+                = op.mem.disp.has_displacement ? static_cast<int32_t>(op.mem.disp.value) : 0;
+            if (op.mem.base == spReg)
+                return espDelta + disp;
+            if (m_bitness == PEBitness::Bits32 && op.mem.base == ZYDIS_REGISTER_EBP)
+                return disp - 4;
+            if (m_bitness == PEBitness::Bits64 && op.mem.base == ZYDIS_REGISTER_RBP)
+                return disp - 8;
+            return 0x7FFFFFFF;
+        };
+
+        // Entry-arg gate: registers that receive a known vftable write (see
+        // the matching pre-scan in traceThisAccesses).
+        bool vfWriterSlot[kRegCount] = {};
+        {
+            ZydisDecodedInstruction pInsn;
+            ZydisDecodedOperand pOps[ZYDIS_MAX_OPERAND_COUNT];
+            size_t p = startOff;
+            while (p < endPos)
+            {
+                if (!decode(a_tv.data() + p, endPos - p, pInsn, pOps))
+                {
+                    p++;
+                    continue;
+                }
+                if (pInsn.mnemonic == ZYDIS_MNEMONIC_RET)
+                    break;
+                if (pInsn.mnemonic == ZYDIS_MNEMONIC_MOV && pInsn.operand_count >= 2
+                    && pOps[0].type == ZYDIS_OPERAND_TYPE_MEMORY
+                    && pOps[0].mem.index == ZYDIS_REGISTER_NONE
+                    && pOps[0].size == m_layout.ptrSize * 8
+                    && pOps[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE
+                    && static_cast<uint64_t>(pOps[1].imm.value.u) >= m_imageBase)
+                {
+                    const uint64_t rva = static_cast<uint64_t>(pOps[1].imm.value.u) - m_imageBase;
+                    for (uint64_t known : m_knownVftRvas)
+                    {
+                        if (known == rva)
+                        {
+                            const int bi = slot(pOps[0].mem.base);
+                            if (bi >= 0)
+                                vfWriterSlot[bi] = true;
+                            break;
+                        }
+                    }
+                }
+                p += pInsn.length;
+            }
+        }
         while (pos < endPos)
         {
             const uint8_t* ptr = a_tv.data() + pos;
@@ -670,9 +874,132 @@ private:
             }
             if (insn.mnemonic == ZYDIS_MNEMONIC_RET)
                 break; // function end
-            if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
-                && ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY && ops[0].mem.base == thisReg)
-                count++;
+
+            // ── Register provenance & stack bookkeeping ──
+            if (insn.mnemonic == ZYDIS_MNEMONIC_PUSH && insn.operand_count >= 1
+                && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER)
+            {
+                const int s = slot(ops[0].reg.value);
+                espDelta -= ptrSz;
+                if (s >= 0 && isObj[s])
+                    slots[espDelta] = true;
+            }
+            else if (insn.mnemonic == ZYDIS_MNEMONIC_POP && insn.operand_count >= 1
+                     && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER)
+            {
+                const int di = slot(ops[0].reg.value);
+                espDelta += ptrSz;
+                if (di >= 0 && slots.find(espDelta) != slots.end())
+                    isObj[di] = true;
+            }
+            else if (insn.mnemonic == ZYDIS_MNEMONIC_SUB && insn.operand_count >= 2
+                     && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER && ops[0].reg.value == spReg
+                     && ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+            {
+                espDelta -= static_cast<int32_t>(ops[1].imm.value.u);
+            }
+            else if (insn.mnemonic == ZYDIS_MNEMONIC_ADD && insn.operand_count >= 2
+                     && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER && ops[0].reg.value == spReg
+                     && ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+            {
+                espDelta += static_cast<int32_t>(ops[1].imm.value.u);
+            }
+            else if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
+                     && ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER
+                     && ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY)
+            {
+                const int s = slot(ops[1].reg.value); // spill
+                const int32_t key = slotKeyOf(ops[0]);
+                if (s >= 0 && isObj[s] && key != 0x7FFFFFFF)
+                    slots[key] = true;
+            }
+            else if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
+                     && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER
+                     && ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER)
+            {
+                const int di = slot(ops[0].reg.value);
+                const int si = slot(ops[1].reg.value);
+                if (di >= 0)
+                    isObj[di] = (si >= 0) ? isObj[si] : false;
+            }
+            else if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
+                     && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER)
+            {
+                const int di = slot(ops[0].reg.value);
+                if (di >= 0)
+                {
+                    const int32_t key = slotKeyOf(ops[1]);
+                    if (m_bitness == PEBitness::Bits32 && key == 4 && vfWriterSlot[di])
+                        isObj[di] = true; // x86 O2/SEH entry-arg object pointer
+                    else if (key != 0x7FFFFFFF && slots.find(key) != slots.end())
+                        isObj[di] = true; // reload of spilled object pointer
+                    else
+                        isObj[di] = false; // value load
+                }
+            }
+            else if (insn.operand_count >= 1 && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER)
+            {
+                // Value-producing opcodes clobber the destination.
+                switch (insn.mnemonic)
+                {
+                case ZYDIS_MNEMONIC_MOVZX:
+                case ZYDIS_MNEMONIC_MOVSX:
+                case ZYDIS_MNEMONIC_MOVSXD:
+                case ZYDIS_MNEMONIC_MOVD:
+                case ZYDIS_MNEMONIC_MOVQ:
+                case ZYDIS_MNEMONIC_IMUL:
+                case ZYDIS_MNEMONIC_AND:
+                case ZYDIS_MNEMONIC_OR:
+                case ZYDIS_MNEMONIC_XOR:
+                case ZYDIS_MNEMONIC_SHL:
+                case ZYDIS_MNEMONIC_SHR:
+                case ZYDIS_MNEMONIC_SAR:
+                case ZYDIS_MNEMONIC_ROL:
+                case ZYDIS_MNEMONIC_ROR:
+                case ZYDIS_MNEMONIC_NEG:
+                case ZYDIS_MNEMONIC_NOT:
+                case ZYDIS_MNEMONIC_INC:
+                case ZYDIS_MNEMONIC_DEC:
+                {
+                    const int di = slot(ops[0].reg.value);
+                    if (di >= 0)
+                        isObj[di] = false;
+                    break;
+                }
+                case ZYDIS_MNEMONIC_ADD:
+                case ZYDIS_MNEMONIC_SUB:
+                    if (ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER)
+                    {
+                        const int di = slot(ops[0].reg.value);
+                        if (di >= 0)
+                            isObj[di] = false;
+                    }
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            if (insn.mnemonic == ZYDIS_MNEMONIC_CALL && thisS >= 0)
+            {
+                for (int r = 0; r < kRegCount; ++r)
+                    if (r != thisS && !isCalleeSaved(r))
+                        isObj[r] = false;
+            }
+
+            // Count this-relative stores.
+            if (isWriteMnemonic(insn.mnemonic) && insn.operand_count >= 1
+                && ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY)
+            {
+                const int bi = slot(ops[0].mem.base);
+                if (bi >= 0 && isObj[bi])
+                {
+                    const int64_t disp
+                        = ops[0].mem.disp.has_displacement ? ops[0].mem.disp.value : 0;
+                    if (disp >= 0 && disp <= 65535)
+                        count++;
+                }
+            }
             pos += insn.length;
         }
         return count;
@@ -691,7 +1018,7 @@ private:
         if (startOff >= a_tv.size())
             return false;
         const size_t rawSpanS = std::min(kSearchRange, a_tv.size() - startOff);
-        const size_t spanS = std::min(rawSpanS, kMaxFuncBytes);
+        const size_t spanS = std::min<size_t>(0x1000, std::min(rawSpanS, kMaxFuncBytes));
         ZydisDecodedInstruction insn;
         ZydisDecodedOperand ops[ZYDIS_MAX_OPERAND_COUNT];
         uint64_t immInReg[kRegCount] = {};
@@ -710,16 +1037,16 @@ private:
                 break; // function end
             if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
                 && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER
-                && ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE && ops[0].reg.value < kRegCount)
-                immInReg[ops[0].reg.value] = static_cast<uint64_t>(ops[1].imm.value.u);
+                && ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE && slot(ops[0].reg.value) >= 0)
+                immInReg[slot(ops[0].reg.value)] = static_cast<uint64_t>(ops[1].imm.value.u);
             if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 2
                 && ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY
                 && ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER && ops[0].mem.base == thisReg)
             {
                 const int64_t disp = ops[0].mem.disp.has_displacement ? ops[0].mem.disp.value : 0;
-                if (disp > 0 && disp <= 65535 && ops[1].reg.value < kRegCount)
+                if (disp > 0 && disp <= 65535 && slot(ops[1].reg.value) >= 0)
                 {
-                    const uint64_t val = immInReg[ops[1].reg.value];
+                    const uint64_t val = immInReg[slot(ops[1].reg.value)];
                     const uint64_t vftRva = (val >= m_imageBase) ? val - m_imageBase : 0;
                     if (vftRva != 0 && vftRva != m_vftableRva)
                         for (uint32_t off : m_baseVftOffsets)
@@ -1064,7 +1391,6 @@ private:
         ZydisDecodedOperand ops[ZYDIS_MAX_OPERAND_COUNT];
 
         bool isThis[kRegCount] = {};
-        auto slot = [](ZydisRegister r) -> int { return regSlot(r); };
 
         const int thisReg = (m_bitness == PEBitness::Bits64) ? slot(ZYDIS_REGISTER_RCX)
                                                              : slot(ZYDIS_REGISTER_ECX);
@@ -1113,6 +1439,73 @@ private:
             return 0x7FFFFFFF;
         };
 
+        // ── Pre-scan: which registers receive a known vftable pointer? ──
+        // Optimised x86 builds (O2 + SEH) may pass the object pointer as the
+        // FIRST STACK ARGUMENT ([entry_esp+4]) instead of ecx — e.g.
+        //     mov esi, [esp+0x1C]     ; esp+0x1C == entry_esp+4
+        //     mov dword ptr [esi], <vftVa>
+        // Remember the register that ends up holding the vfptr write so the
+        // entry-arg load can bootstrap `this` tracking (see the reload branch
+        // below). Without this gate, loading the first *value* argument of a
+        // classic ecx-thiscall ctor would be mistaken for `this`.
+        bool vfWriterSlot[kRegCount] = {};
+        {
+            uint64_t pImm[kRegCount] = {};
+            ZydisDecodedInstruction pInsn;
+            ZydisDecodedOperand pOps[ZYDIS_MAX_OPERAND_COUNT];
+            size_t p = startOff;
+            const size_t pEnd = startOff + maxBytes;
+            while (p < pEnd)
+            {
+                const uint8_t* pPtr = tv.data() + p;
+                if (!decode(pPtr, pEnd - p, pInsn, pOps))
+                {
+                    p++;
+                    continue;
+                }
+                if (pInsn.mnemonic == ZYDIS_MNEMONIC_RET)
+                    break;
+                if (pInsn.mnemonic == ZYDIS_MNEMONIC_MOV && pInsn.operand_count >= 2
+                    && pOps[0].type == ZYDIS_OPERAND_TYPE_REGISTER
+                    && pOps[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+                {
+                    const int si = slot(pOps[0].reg.value);
+                    if (si >= 0)
+                        pImm[si] = static_cast<uint64_t>(pOps[1].imm.value.u);
+                }
+                if (pInsn.mnemonic == ZYDIS_MNEMONIC_MOV && pInsn.operand_count >= 2
+                    && pOps[0].type == ZYDIS_OPERAND_TYPE_MEMORY
+                    && pOps[0].mem.index == ZYDIS_REGISTER_NONE
+                    && pOps[0].size == m_layout.ptrSize * 8)
+                {
+                    uint64_t va = 0;
+                    if (pOps[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+                        va = static_cast<uint64_t>(pOps[1].imm.value.u);
+                    else if (pOps[1].type == ZYDIS_OPERAND_TYPE_REGISTER)
+                    {
+                        const int si = slot(pOps[1].reg.value);
+                        if (si >= 0)
+                            va = pImm[si];
+                    }
+                    if (va >= m_imageBase)
+                    {
+                        const uint64_t rva = va - m_imageBase;
+                        for (uint64_t known : m_knownVftRvas)
+                        {
+                            if (known == rva)
+                            {
+                                const int bi = slot(pOps[0].mem.base);
+                                if (bi >= 0)
+                                    vfWriterSlot[bi] = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                p += pInsn.length;
+            }
+        }
+
         size_t pos = startOff;
         size_t endPos = startOff + maxBytes;
 
@@ -1128,6 +1521,55 @@ private:
             }
 
             const uint64_t curRva = textVa + static_cast<uint64_t>(pos);
+
+            // ── Value-producing opcodes clobber their register destination ──
+            // O2 code reuses registers for scalars constantly; stale
+            // `this`-provenance would misattribute e.g. global-struct reads
+            // (`mov ecx, [g_list]; mov eax, [ecx+8]`) as object fields.
+            if (insn.operand_count >= 1 && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER)
+            {
+                int clobDst = -1;
+                switch (insn.mnemonic)
+                {
+                case ZYDIS_MNEMONIC_MOVZX:
+                case ZYDIS_MNEMONIC_MOVSX:
+                case ZYDIS_MNEMONIC_MOVSXD:
+                case ZYDIS_MNEMONIC_MOVD:
+                case ZYDIS_MNEMONIC_MOVQ:
+                case ZYDIS_MNEMONIC_IMUL:
+                case ZYDIS_MNEMONIC_AND:
+                case ZYDIS_MNEMONIC_OR:
+                case ZYDIS_MNEMONIC_XOR:
+                case ZYDIS_MNEMONIC_SHL:
+                case ZYDIS_MNEMONIC_SHR:
+                case ZYDIS_MNEMONIC_SAR:
+                case ZYDIS_MNEMONIC_ROL:
+                case ZYDIS_MNEMONIC_ROR:
+                case ZYDIS_MNEMONIC_RCL:
+                case ZYDIS_MNEMONIC_RCR:
+                case ZYDIS_MNEMONIC_NEG:
+                case ZYDIS_MNEMONIC_NOT:
+                case ZYDIS_MNEMONIC_BSWAP:
+                case ZYDIS_MNEMONIC_INC:
+                case ZYDIS_MNEMONIC_DEC:
+                    clobDst = slot(ops[0].reg.value);
+                    break;
+                case ZYDIS_MNEMONIC_ADD:
+                case ZYDIS_MNEMONIC_SUB:
+                    // reg,reg only — the immediate forms keep the tracked
+                    // this-pointer arithmetic (`add reg, imm`).
+                    if (ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER)
+                        clobDst = slot(ops[0].reg.value);
+                    break;
+                default:
+                    break;
+                }
+                if (clobDst >= 0)
+                {
+                    isThis[clobDst] = false;
+                    lastThisOffset[clobDst] = -1;
+                }
+            }
 
             // ── Stack-slot bookkeeping for spilled `this` ──
             if (insn.mnemonic == ZYDIS_MNEMONIC_PUSH)
@@ -1183,17 +1625,44 @@ private:
             {
                 // `mov reg, [slot]` — reload through a pointer.
                 const int32_t key = slotKeyOf(ops[1]);
+                const int di = slot(ops[0].reg.value);
                 auto sIt = thisSlots.find(key);
-                if (sIt != thisSlots.end() && slot(ops[0].reg.value) >= 0)
+                if (sIt != thisSlots.end() && di >= 0)
                 {
-                    isThis[slot(ops[0].reg.value)] = true;
-                    lastThisOffset[slot(ops[0].reg.value)] = sIt->second;
+                    isThis[di] = true;
+                    lastThisOffset[di] = sIt->second;
                     if (dbgOn())
                         std::fprintf(stderr,
                             "[FR]   reload key=%d reg=%u at %llX\n",
                             key,
                             static_cast<unsigned>(ops[0].reg.value),
                             static_cast<unsigned long long>(curRva));
+                }
+                else if (di >= 0)
+                {
+                    // ── x86 O2/SEH entry-arg this bootstrap ──
+                    // The object may arrive as the first stack argument
+                    // ([entry_esp+4], e.g. `mov esi, [esp+0x1C]`). Only do
+                    // this when the register is later used for a known
+                    // vftable write (pre-scan) and we are still in the
+                    // function's entry region — otherwise this is just a
+                    // value load.
+                    if (m_bitness == PEBitness::Bits32 && key == 4 && vfWriterSlot[di]
+                        && (curRva - a_ctorRva) < 0x100)
+                    {
+                        isThis[di] = true;
+                        lastThisOffset[di] = 0;
+                        if (dbgOn())
+                            std::fprintf(stderr,
+                                "[FR]   entry-arg this reg=%u at %llX\n",
+                                static_cast<unsigned>(ops[0].reg.value),
+                                static_cast<unsigned long long>(curRva));
+                    }
+                    else
+                    {
+                        isThis[di] = false; // plain value load
+                        lastThisOffset[di] = -1;
+                    }
                 }
             }
 
@@ -1315,9 +1784,10 @@ private:
                     }
                 }
 
-                // Reset per-call
+                // Reset per-call (volatile registers only — callee-saved
+                // rbx/rbp/rsi/rdi/r12-15 keep the object pointer).
                 for (int r = 0; r < kRegCount; ++r)
-                    if (r != thisReg)
+                    if (r != thisReg && !isCalleeSaved(r))
                     {
                         isThis[r] = false;
                         lastThisOffset[r] = -1;
