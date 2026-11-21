@@ -195,6 +195,55 @@ Returns the most recent error message. The buffer convention applies. The messag
 
 ---
 
+## Global symbols
+
+Functions, variables, statics and public symbols (see [globals.md](../user/globals.md)). They use the
+buffer convention above; an **empty result is not an error** (the call succeeds).
+
+```c
+struct PdbApiGlobalsConfig {          // separate struct: PdbApiDumpConfig keeps its layout
+    int32_t showAddress, showCallingConv, showFuncAttrs, showSourceLine,
+            showMemberAddress, includeMembers, includeLocalStatics, sortByAddress;
+};
+PdbApiResult PdbApi_SetGlobalsConfig(const PdbApiGlobalsConfig*);   // only these options change
+PdbApiResult PdbApi_GetGlobalsConfig(PdbApiGlobalsConfig*);
+
+PdbApiResult PdbApi_DumpGlobalFunctions(filter, caseSensitive, buf, size, required);
+PdbApiResult PdbApi_DumpGlobalVariables(filter, caseSensitive, buf, size, required);
+PdbApiResult PdbApi_DumpPublicSymbols  (filter, caseSensitive, buf, size, required);
+PdbApiResult PdbApi_DumpSymbolTable(filter, caseSensitive, withSource, buf, size, required);
+PdbApiResult PdbApi_GetPdbInfo(buf, size, required);   // "guid=...\nage=N\nsignature=0x...\nplatform=0x...\n"
+
+// Large outputs: write straight to a UTF-8 file instead of the two-call buffer protocol.
+PdbApiResult PdbApi_ExportToFile(kind, filter, caseSensitive, outPath);
+// kind: 0 everything, 1 functions, 2 variables, 3 publics, 4 symbol table, 5 symbol table + source lines
+```
+
+**ABI.** `PdbApiDumpConfig` is unchanged. `PdbApi_SetConfig` now starts from the *current*
+configuration, so it no longer resets the globals options (it used to rebuild the whole config
+from defaults).
+
+---
+
+## Executable analysis
+
+Require `ExeApi_LoadExe`. Buffer convention.
+
+```c
+PdbApiResult ExeApi_GetInfo(buf, size, required);                       // PE / PDB identity / RTTI summary
+PdbApiResult ExeApi_GetClassInfo(typeName, buf, size, required);        // hierarchy, named slots, ctors, sources
+PdbApiResult ExeApi_DescribeAddress(rvaOrVa, buf, size, required);      // auto-detects RVA vs VA
+PdbApiResult ExeApi_DescribeAddressEx(address, kind, buf, size, required); // kind 0 auto, 1 RVA, 2 VA
+PdbApiResult ExeApi_ExportAnalysis(outDir, buf, size, required);        // reports + IDA/Ghidra/x64dbg scripts; buf = log
+PdbApiResult ExeApi_ExportResources(outDir, buf, size, required);       // .rc, resource.h, .res, icons, manifest ...; buf = log
+```
+
+`ExeApi_ExportAnalysis` is heavy and has side effects, so the log of the size-query call is cached
+and returned by the copy call for the same directory instead of exporting twice. See
+[exe-analysis.md](../user/exe-analysis.md).
+
+---
+
 ## Python wrapper
 
 `scripts/dumppdb_tools/api/pdb_api.py` wraps the entire C API via `ctypes`. Use `PdbClient` from `dumppdb_tools` for a higher-level interface.

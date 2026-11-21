@@ -15,6 +15,10 @@
 #include <Core/Search/Signature.hpp>
 #include <Core/Search/StringScanner.hpp>
 #include <Core/Util/Container/Singleton.hpp>
+#include <Core/Util/String/Utf8.hpp>
+
+#include <filesystem>
+#include <fstream>
 
 /// Facade that owns the DIA session and provides the core dumping/searching API.
 /// Wraps DiaSession + SymbolDumper + SymbolFinder into a long-lived singleton.
@@ -39,6 +43,7 @@ public:
         {
             m_session.initialize(a_pdbPath);
             m_dumper.setSession(m_session.session());
+            m_dumper.setPlatform(detectPlatform());
             return true;
         }
         catch (const DumpError& e)
@@ -87,6 +92,14 @@ public:
         {
             matches = SymbolFinder::findByNamespacePrefix(
                 m_session.globalScope(), a_name, a_caseSensitive);
+        }
+
+        if (matches.empty())
+        {
+            // Not a type: look for a function / variable / public symbol of that
+            // name. This also searches the per-object-file symbols, where `static`
+            // functions and file statics live.
+            return m_dumper.globals().dumpByName(m_session.globalScope(), a_name, a_caseSensitive);
         }
 
         bool haveTemplate = false;
@@ -344,6 +357,195 @@ public:
         return out;
     }
 
+    // ============================================================================
+    // Global functions / variables / statics / public symbols
+    // ============================================================================
+
+    /// Free functions (with GlobalsIncludeMembers also member definitions), grouped
+    /// by namespace. a_filter is a substring of the qualified name (nullptr/empty = all).
+    std::wstring dumpGlobalFunctions(const wchar_t* a_filter, bool a_caseSensitive)
+    {
+        return m_dumper.globals().dumpFunctions(m_session.globalScope(), makeQuery(a_filter, a_caseSensitive));
+    }
+
+    /// Global variables, file statics and constants (optionally static members and
+    /// function-local statics, see DumpConfig).
+    std::wstring dumpGlobalVariables(const wchar_t* a_filter, bool a_caseSensitive)
+    {
+        return m_dumper.globals().dumpVariables(m_session.globalScope(), makeQuery(a_filter, a_caseSensitive));
+    }
+
+    /// Public symbols: decorated name + address, no type information.
+    std::wstring dumpPublicSymbols(const wchar_t* a_filter, bool a_caseSensitive)
+    {
+        return m_dumper.globals().dumpPublics(m_session.globalScope(), makeQuery(a_filter, a_caseSensitive));
+    }
+
+    /// Tab-separated table of every function, variable, thunk and public symbol
+    /// (kind, name, undecorated, rva, section, offset, length, class, compiland,
+    /// source, line, flags, type). Header line included.
+    std::wstring dumpSymbolTable(const wchar_t* a_filter, bool a_caseSensitive, bool a_withSource)
+    {
+        return m_dumper.globals().dumpSymbolTable(
+            m_session.globalScope(), makeQuery(a_filter, a_caseSensitive), a_withSource);
+    }
+
+    /// Everything in the PDB as C++-like text: all top-level types followed by
+    /// functions, variables and public symbols. Can be very large.
+    std::wstring dumpEverything()
+    {
+        std::wstring out;
+
+        std::vector<ComPtr<IDiaSymbol>> types;
+        const enum SymTagEnum typeTags[] = {SymTagUDT, SymTagEnum, SymTagTypedef};
+        for (enum SymTagEnum tag : typeTags)
+        {
+            ComPtr<IDiaEnumSymbols> e;
+            if (FAILED(m_session.globalScope()->findChildren(tag, nullptr, nsNone, &e)) || !e)
+                continue;
+
+            ComPtr<IDiaSymbol> sym;
+            ULONG celt = 0;
+            while (SUCCEEDED(e->Next(1, &sym, &celt)) && celt == 1)
+            {
+                BSTR raw = nullptr;
+                std::wstring name;
+                if (SUCCEEDED(sym->get_name(&raw)) && raw)
+                {
+                    name = raw;
+                    SysFreeString(raw);
+                }
+                if (!name.empty() && !TypeWalker::isSyntheticName(name) && isTopLevelType(sym.get()))
+                    types.push_back(sym);
+                sym = nullptr;
+            }
+        }
+
+        out += L"// ============ TYPES ============\n";
+        dumpSymbolsGrouped(types, out);
+
+        out += L"\n// ============ FUNCTIONS ============\n";
+        out += dumpGlobalFunctions(nullptr, false);
+        out += L"\n// ============ VARIABLES ============\n";
+        out += dumpGlobalVariables(nullptr, false);
+        out += L"\n// ============ PUBLIC SYMBOLS ============\n";
+        out += dumpPublicSymbols(nullptr, false);
+        return out;
+    }
+
+    /// Identity of the loaded PDB: "guid=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX\nage=N\nsignature=0x...\n".
+    /// Compare it with the CodeView GUID/age of an executable (-exeinfo) before
+    /// transferring RVAs from the PDB to that executable.
+    std::wstring pdbInfo()
+    {
+        std::wstring out;
+        IDiaSymbol* scope = m_session.globalScope();
+        if (!scope)
+            return out;
+
+        GUID guid = {};
+        wchar_t buf[96];
+        if (SUCCEEDED(scope->get_guid(&guid)))
+        {
+            swprintf_s(buf,
+                L"guid=%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X\n",
+                static_cast<unsigned>(guid.Data1),
+                static_cast<unsigned>(guid.Data2),
+                static_cast<unsigned>(guid.Data3),
+                guid.Data4[0], guid.Data4[1], guid.Data4[2], guid.Data4[3],
+                guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7]);
+            out += buf;
+        }
+
+        DWORD age = 0;
+        if (SUCCEEDED(scope->get_age(&age)))
+        {
+            swprintf_s(buf, L"age=%u\n", static_cast<unsigned>(age));
+            out += buf;
+        }
+
+        DWORD signature = 0;
+        if (SUCCEEDED(scope->get_signature(&signature)))
+        {
+            swprintf_s(buf, L"signature=0x%08X\n", static_cast<unsigned>(signature));
+            out += buf;
+        }
+
+        DWORD platform = m_dumper.platform();
+        swprintf_s(buf, L"platform=0x%X\n", static_cast<unsigned>(platform));
+        out += buf;
+        return out;
+    }
+
+    /// What PdbToolset::exportToFile can write.
+    enum ExportKind : int
+    {
+        EXPORT_EVERYTHING = 0,          ///< Types + functions + variables + publics.
+        EXPORT_FUNCTIONS = 1,
+        EXPORT_VARIABLES = 2,
+        EXPORT_PUBLICS = 3,
+        EXPORT_SYMBOL_TABLE = 4,        ///< TSV, no source lines (fast).
+        EXPORT_SYMBOL_TABLE_SOURCE = 5, ///< TSV with source file:line per function.
+    };
+
+    /// Writes a (possibly huge) dump straight to a UTF-8 file. This avoids building
+    /// the text twice for the size-query/copy buffer convention of the C API.
+    /// Returns false and fills a_error on failure.
+    bool exportToFile(int a_kind,
+        const wchar_t* a_filter,
+        bool a_caseSensitive,
+        const wchar_t* a_path,
+        std::wstring& a_error)
+    {
+        if (!a_path || !*a_path)
+        {
+            a_error = L"output path is empty";
+            return false;
+        }
+
+        std::wstring text;
+        switch (a_kind)
+        {
+        case EXPORT_EVERYTHING:
+            text = dumpEverything();
+            break;
+        case EXPORT_FUNCTIONS:
+            text = dumpGlobalFunctions(a_filter, a_caseSensitive);
+            break;
+        case EXPORT_VARIABLES:
+            text = dumpGlobalVariables(a_filter, a_caseSensitive);
+            break;
+        case EXPORT_PUBLICS:
+            text = dumpPublicSymbols(a_filter, a_caseSensitive);
+            break;
+        case EXPORT_SYMBOL_TABLE:
+            text = dumpSymbolTable(a_filter, a_caseSensitive, false);
+            break;
+        case EXPORT_SYMBOL_TABLE_SOURCE:
+            text = dumpSymbolTable(a_filter, a_caseSensitive, true);
+            break;
+        default:
+            a_error = L"unknown export kind";
+            return false;
+        }
+
+        std::ofstream file(std::filesystem::path(a_path), std::ios::binary);
+        if (!file)
+        {
+            a_error = L"cannot open output file";
+            return false;
+        }
+
+        const std::string utf8 = wideToUtf8(text);
+        file.write(utf8.data(), static_cast<std::streamsize>(utf8.size()));
+        if (!file)
+        {
+            a_error = L"write failed";
+            return false;
+        }
+        return true;
+    }
+
     // Dump all compilands
     std::wstring dumpCompilands()
     {
@@ -434,14 +636,13 @@ public:
 
                     VARIANT val;
                     VariantInit(&val);
-                    if (SUCCEEDED(envSym->get_value(&val)) && val.bstrVal && val.vt == VT_BSTR)
+                    if (SUCCEEDED(envSym->get_value(&val)) && val.vt == VT_BSTR && val.bstrVal)
                     {
                         out += L"[ENV] ";
                         out += envName;
                         out += L" = ";
                         out += val.bstrVal;
                         out += L"\n";
-                        VariantClear(&val);
                     }
                     else
                     {
@@ -449,6 +650,7 @@ public:
                         out += envName;
                         out += L"\n";
                     }
+                    VariantClear(&val);
                 }
             }
         }
@@ -668,6 +870,48 @@ public:
 
 private:
 
+    static GlobalQuery makeQuery(const wchar_t* a_filter, bool a_caseSensitive)
+    {
+        GlobalQuery q;
+        if (a_filter)
+            q.filter = a_filter;
+        q.caseSensitive = a_caseSensitive;
+        return q;
+    }
+
+    /// CPU the PDB was built for: the platform of the first compiland that has
+    /// compiland details (0 when none does).
+    DWORD detectPlatform()
+    {
+        ComPtr<IDiaEnumSymbols> compilands;
+        if (FAILED(m_session.globalScope()->findChildren(
+                SymTagCompiland, nullptr, nsNone, &compilands))
+            || !compilands)
+            return 0;
+
+        ComPtr<IDiaSymbol> compiland;
+        ULONG celt = 0;
+        for (int i = 0; i < 64 && SUCCEEDED(compilands->Next(1, &compiland, &celt)) && celt == 1;
+             ++i)
+        {
+            ComPtr<IDiaEnumSymbols> details;
+            if (SUCCEEDED(compiland->findChildren(SymTagCompilandDetails, nullptr, nsNone, &details))
+                && details)
+            {
+                ComPtr<IDiaSymbol> detail;
+                ULONG n = 0;
+                if (SUCCEEDED(details->Next(1, &detail, &n)) && n == 1)
+                {
+                    DWORD platform = 0;
+                    if (SUCCEEDED(detail->get_platform(&platform)) && platform != 0)
+                        return platform;
+                }
+            }
+            compiland = nullptr;
+        }
+        return 0;
+    }
+
     /// Dump a set of symbols, grouping those in the same namespace into one block.
     void dumpSymbolsGrouped(const std::vector<ComPtr<IDiaSymbol>>& a_symbols, std::wstring& aoutput)
     {
@@ -713,6 +957,13 @@ private:
                         break;
                     case SymTagTypedef:
                         aoutput += m_dumper.dumpTypedef(sym.get(), 1);
+                        break;
+                    case SymTagFunction:
+                    case SymTagData:
+                    case SymTagPublicSymbol:
+                    case SymTagThunk:
+                        aoutput += m_dumper.dumpGlobalSymbol(sym.get(), 1);
+                        aoutput += L"\n";
                         break;
                     default:
                         break;

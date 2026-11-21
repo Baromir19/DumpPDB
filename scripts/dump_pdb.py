@@ -6,12 +6,18 @@ Run from the repository root or from scripts/:
 
     python scripts/dump_pdb.py --pdb Dev.pdb --type Actor
     python scripts/dump_pdb.py --pdb Dev.pdb --symbols
+    python scripts/dump_pdb.py --pdb Dev.pdb --functions Update --include-members
+    python scripts/dump_pdb.py --pdb Dev.pdb --globals g_
+    python scripts/dump_pdb.py --pdb Dev.pdb --symbol-table symbols.tsv
+    python scripts/dump_pdb.py --exe Game.exe --exe-info
+    python scripts/dump_pdb.py --exe Game.exe --exe-analyze out_dir
 """
 
 import argparse
 import sys
 
 from dumppdb_tools import PdbClient
+from dumppdb_tools.api.pdb_api import EXPORT_EVERYTHING, EXPORT_SYMBOL_TABLE_SOURCE
 
 def parse_encodings(value):
     result = 0
@@ -167,6 +173,53 @@ def main():
              "'expanded' (one field per 4/2/1 bytes)",
     )
 
+    # -- global functions / variables / statics / publics --------------------------
+    parser.add_argument(
+        "--functions", nargs="?", const="", metavar="FILTER",
+        help="List global functions (optional name substring) with RVA and source line",
+    )
+    parser.add_argument(
+        "--globals", nargs="?", const="", metavar="FILTER", dest="globals_",
+        help="List global variables / file statics / constants (optional name substring)",
+    )
+    parser.add_argument(
+        "--publics", nargs="?", const="", metavar="FILTER",
+        help="List public symbols (works on stripped PDBs)",
+    )
+    parser.add_argument(
+        "--symbol-table", metavar="OUT.tsv",
+        help="Write every function/variable/public symbol as a TSV table",
+    )
+    parser.add_argument(
+        "--dump-all", metavar="OUT.txt",
+        help="Write all types, functions, variables and publics to a file",
+    )
+    parser.add_argument(
+        "--pdb-info", action="store_true",
+        help="Print the GUID/age of the PDB (compare with --exe-info)",
+    )
+    parser.add_argument("--include-members", action="store_true",
+                        help="With --functions/--globals: also list member definitions / static members")
+    parser.add_argument("--local-statics", action="store_true",
+                        help="With --globals: also list function-local statics")
+    parser.add_argument("--sort-by-address", action="store_true",
+                        help="Sort listings by RVA instead of by name")
+    parser.add_argument("--member-addresses", action="store_true",
+                        help="Annotate members with their RVA in class dumps")
+    parser.add_argument("--no-address", action="store_true",
+                        help="Do not print RVA/source comments for functions and variables")
+    # -- whole-image exe analysis -----------------------------------------------------
+    parser.add_argument("--exe-info", action="store_true",
+                        help="PE/RTTI/PDB-identity summary (requires --exe)")
+    parser.add_argument("--exe-class", metavar="TYPENAME",
+                        help="Class details from RTTI + analysis (requires --exe)")
+    parser.add_argument("--exe-addr", metavar="HEX",
+                        help="Describe an address, e.g. 915020, rva:915020 or va:915020 (requires --exe)")
+    parser.add_argument("--exe-resources", metavar="OUTDIR",
+                        help="Extract resources: .rc + .ico + manifest + .res (requires --exe)")
+    parser.add_argument("--exe-analyze", metavar="OUTDIR",
+                        help="Export all reports + IDA/Ghidra/x64dbg scripts (requires --exe)")
+
     args = parser.parse_args()
 
     pdb = PdbClient(args.dll)
@@ -177,7 +230,9 @@ def main():
             (args.strings or args.signatures)
         )
 
-        exe_mode = bool(args.exe and (args.exe_type or args.exe_types))
+        exe_mode = bool(args.exe and (args.exe_type or args.exe_types or args.exe_info
+                                      or args.exe_class or args.exe_addr or args.exe_analyze
+                                      or args.exe_resources))
 
         pdb_mode = (
             args.pdb and
@@ -190,7 +245,13 @@ def main():
                 args.source_name,
                 args.enumerate_files,
                 #args.symbols_file,
-                args.symbols
+                args.symbols,
+                args.functions is not None,
+                args.globals_ is not None,
+                args.publics is not None,
+                args.symbol_table,
+                args.dump_all,
+                args.pdb_info,
             ])
         )
 
@@ -202,6 +263,15 @@ def main():
 
             if args.template_params:
                 pdb.set_config(templateParams=True)
+
+            pdb.set_globals_config(
+                includeMembers=args.include_members,
+                includeLocalStatics=args.local_statics,
+                sortByAddress=args.sort_by_address,
+                showMemberAddress=args.member_addresses,
+                showAddress=not args.no_address,
+                showSourceLine=not args.no_address,
+            )
 
         if binary_mode:
             if not args.file:
@@ -262,6 +332,46 @@ def main():
         if args.symbols:
             print(pdb.enumerate_symbols(top_level_only=not args.all_types))
 
+        if args.functions is not None:
+            print(pdb.dump_functions(args.functions, args.case_sensitive))
+
+        if args.globals_ is not None:
+            print(pdb.dump_variables(args.globals_, args.case_sensitive))
+
+        if args.publics is not None:
+            print(pdb.dump_publics(args.publics, args.case_sensitive))
+
+        if args.pdb_info:
+            for key, value in pdb.pdb_info().items():
+                print(f"{key}: {value}")
+
+        if args.symbol_table:
+            pdb.export_to_file(EXPORT_SYMBOL_TABLE_SOURCE, args.symbol_table)
+            print(f"// Symbol table written to {args.symbol_table}")
+
+        if args.dump_all:
+            pdb.export_to_file(EXPORT_EVERYTHING, args.dump_all)
+            print(f"// Dump written to {args.dump_all}")
+
+        if args.exe_info:
+            print(pdb.exe_info())
+
+        if args.exe_class:
+            print(pdb.exe_class_info(args.exe_class))
+
+        if args.exe_addr:
+            text, kind = args.exe_addr.strip(), "auto"
+            for prefix in ("rva:", "va:"):
+                if text.lower().startswith(prefix):
+                    text, kind = text[len(prefix):], prefix[:-1]
+            print(pdb.exe_describe_address(int(text, 16), kind))
+
+        if args.exe_resources:
+            print(pdb.exe_export_resources(args.exe_resources))
+
+        if args.exe_analyze:
+            print(pdb.exe_export_analysis(args.exe_analyze))
+
         if args.exe_type:
             expanded = (args.padding_style == "expanded")
             print(pdb.exe_reconstruct_type(args.exe_type, expanded=expanded))
@@ -270,9 +380,13 @@ def main():
             print(pdb.exe_enumerate_types())
 
     except Exception as e:
-        last_error = pdb.last_error()
-        print(f"Error: {last_error}")
+        # last_error() can itself fail (e.g. the DLL never loaded), so guard it.
+        try:
+            print(f"Error: {pdb.last_error()}")
+        except Exception:
+            pass
         print(f"Exception: {e}")
+        sys.exit(1)
 
     finally:
         pdb.close()

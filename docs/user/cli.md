@@ -57,6 +57,47 @@ DumpPDB.exe -sources Dev.pdb
 
 ---
 
+### `-functions [filter]`, `-globals [filter]`, `-publics [filter]`
+
+List global functions, global variables / file statics / constants, and public symbols, with
+RVA, source file and line. `filter` is a case-insensitive substring of the qualified name.
+
+```
+DumpPDB.exe -functions Update Dev.pdb
+DumpPDB.exe -globals g_ Dev.pdb
+DumpPDB.exe -publics Direct3D Dev.pdb
+```
+
+`-type <name>` also falls back to these when the name is not a type. Details, output format and
+the related settings: [globals.md](globals.md).
+
+---
+
+### `-symbols <out.tsv>` and `-dumpall <out.txt>`
+
+Write a (possibly very large) result straight to a UTF-8 file.
+
+```
+DumpPDB.exe -symbols symbols.tsv Dev.pdb     # every function/variable/public as a TSV table
+DumpPDB.exe -dumpall everything.txt Dev.pdb  # all types + functions + variables + publics
+```
+
+---
+
+### `-exeinfo`, `-execlass`, `-exeaddr`, `-exeresources`, `-exeanalyze`
+
+Executable analysis without a PDB or a disassembler. See [exe-analysis.md](exe-analysis.md).
+
+```
+DumpPDB.exe -exeinfo Game.exe
+DumpPDB.exe -execlass "Ns::Derived" Game.exe
+DumpPDB.exe -exeaddr va:00915020 Game.exe
+DumpPDB.exe -exeresources res_dir Game.exe   # resources.rc + icons + manifest + .res
+DumpPDB.exe -exeanalyze analysis_dir Game.exe
+```
+
+---
+
 ### `-settings [-h] <setting> <value>`
 
 Read or write a persistent setting in `config.ini`.

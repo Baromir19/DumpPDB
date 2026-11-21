@@ -49,6 +49,26 @@ public:
         return m_session;
     }
 
+    /// CPU the PDB was built for (CV_CPU_TYPE_e value of the compiland details,
+    /// 0 = unknown). Used to decide whether calling conventions are meaningful.
+    void setPlatform(DWORD a_platform)
+    {
+        m_platform = a_platform;
+    }
+
+    DWORD platform() const
+    {
+        return m_platform;
+    }
+
+    /// x64 / ARM64 have a single calling convention, so printing one per
+    /// function would only add noise.
+    bool hasSingleCallingConvention() const
+    {
+        return m_platform == 0xD0 /* CV_CFL_AMD64 */ || m_platform == 0xF6 /* ARM64 */
+               || m_platform == 0xF0 /* ARM64EC-ish */;
+    }
+
     void setTemplateInstantiation(TypeWalker::TemplateInstantiation a_ti)
     {
         m_template = std::move(a_ti);
@@ -86,6 +106,7 @@ private:
     ScopeContext m_scope;
     std::vector<std::wstring> m_typeSources;
     IDiaSession* m_session = nullptr;
+    DWORD m_platform = 0;
     TypeWalker::TemplateInstantiation m_template;
     bool m_templateHeaderDone = false;
 };

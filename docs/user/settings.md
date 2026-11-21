@@ -29,6 +29,14 @@ Controls how types are formatted in the output.
 | `DumpConfig.TemplateParams` | bool | `false` | When dumping a template instantiation (e.g. `-type "TList<int>"`), emit a `template<typename T>` header and substitute the concrete arguments with generated parameter names. |
 | `DumpConfig.BaseAccessType` | uint | `0` | Override the access specifier for all members (`0` = use the symbol's own access, `1` = private, `2` = protected, `3` = public). |
 | `DumpConfig.IntStyle` | int | `1` | Integer type style: `0` = MSVC native (`__int32`, `__int64`), `1` = C stdint (`int32_t`, `int64_t`). |
+| `DumpConfig.ShowAddress` | bool | `true` | `// RVA 0x… [section:offset] len …` after global functions and variables. |
+| `DumpConfig.ShowSourceLine` | bool | `true` | `@ file:line` on global functions (needs line information in the PDB). |
+| `DumpConfig.ShowCallingConv` | bool | `true` | Calling convention of global functions (x86 PDBs only; x64 has one convention). |
+| `DumpConfig.ShowFuncAttrs` | bool | `true` | `__declspec(naked/noinline/noreturn)`, `inline` and body flags (`seh`, `eh`, `inline-asm`). |
+| `DumpConfig.ShowMemberAddress` | bool | `false` | Annotate member functions and static members **inside class dumps** with their RVA. |
+| `DumpConfig.GlobalsIncludeMembers` | bool | `false` | `-functions` / `-globals` also list out-of-line member definitions and static data members. |
+| `DumpConfig.GlobalsIncludeLocalStatics` | bool | `false` | `-globals` also lists function-local statics. |
+| `DumpConfig.GlobalsSortByAddress` | bool | `false` | Sort global listings by RVA instead of by name. |
 
 ---
 

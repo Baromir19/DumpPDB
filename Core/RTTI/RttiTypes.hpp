@@ -145,9 +145,25 @@ struct BaseClassInfo
 {
     std::string mangledName;
     std::string demangledName;
-    int32_t offset; ///< Byte offset in the derived object.
+    int32_t offset; ///< Byte offset in the derived object (PMD.mdisp).
     bool isVirtual;
     bool isDirect; ///< Immediate (not transitive) base.
+
+    // ── Extra RTTI data (BaseClassDescriptor) ─────────────────────────────
+    int32_t pdisp = -1;            ///< vbtable pointer offset (-1 = not a virtual base).
+    int32_t vdisp = 0;             ///< Displacement inside the vbtable.
+    uint32_t attributes = 0;       ///< BCD attribute bits (see below).
+    uint32_t numContainedBases = 0;
+    uint64_t typeDescriptorRva = 0;
+
+    /// BCD attribute bits (BCD_* in the MSVC ABI).
+    static constexpr uint32_t kNotVisible = 0x01;            ///< BCD_NOTVISIBLE
+    static constexpr uint32_t kAmbiguous = 0x02;             ///< BCD_AMBIGUOUS
+    static constexpr uint32_t kPrivOrProtInCompObj = 0x04;   ///< BCD_PRIVORPROTINCOMPOBJ
+    static constexpr uint32_t kPrivOrProtBase = 0x08;        ///< BCD_PRIVORPROTBASE
+    static constexpr uint32_t kVirtualBaseOfContObj = 0x10;  ///< BCD_VBOFCONTOBJ
+    static constexpr uint32_t kNonPolymorphic = 0x20;        ///< BCD_NONPOLYMORPHIC
+    static constexpr uint32_t kHasContainingHierarchy = 0x40; ///< BCD_HASPCHD
 };
 
 enum class InheritanceKind : uint8_t
@@ -307,6 +323,39 @@ struct VftableInfo
     /// offset). Empty for the primary vftable. This is what makes an interface
     /// inherited through an intermediate class still attributed correctly.
     std::string subobjectBaseName;
+
+    // ── Extra RTTI data ───────────────────────────────────────────────────
+    uint64_t typeDescriptorRva = 0; ///< Identity of the class (shared by all its vftables).
+    uint64_t chdRva = 0;            ///< RTTIClassHierarchyDescriptor.
+    uint32_t chdAttributes = 0;     ///< bit0 = multiple inheritance, bit1 = virtual inheritance.
+    uint32_t constructorDisplacement = 0; ///< COL.cdOffset.
+    bool isStructTag = false;       ///< Mangled as 'U' (struct) rather than 'V' (class).
+    bool isUnionTag = false;
+    bool isTemplateInstance = false;
+    bool isInAnonymousNamespace = false;
+    bool isLocalToFunction = false;
+    bool demangleFailed = false;    ///< fullName is the raw mangled text.
+    std::string scopeName;          ///< Enclosing namespace/class ("" at global scope).
+    std::string leafName;           ///< Name without scope (may include <args>).
+    /// vftable length in bytes (slots * pointer size), 0 when unknown.
+    uint32_t vftableSizeBytes = 0;
+};
+
+/// A TypeDescriptor found in the image, whether or not a vftable exists for it.
+/// Classes without a vftable (base-only interfaces, never-instantiated
+/// abstract classes) appear here but not in RttiReader::vftables().
+struct TypeDescriptorInfo
+{
+    uint64_t rva = 0;
+    std::string mangledName;
+    std::string fullName;
+    bool isStruct = false;
+    bool isUnion = false;
+    bool isEnum = false;
+    bool hasVftable = false;
+    bool demangleFailed = false;
+    /// Number of times other classes list it as a base (BCD references).
+    uint32_t usedAsBaseCount = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -62,6 +62,21 @@ public:
         case SymTagTypedef:
             ret += m_host.dumpTypedef(a_symbol, nesting);
             break;
+        case SymTagFunction:
+        case SymTagData:
+        case SymTagPublicSymbol:
+        case SymTagThunk:
+        {
+            // Global functions, variables, statics and publics. These used to hit
+            // the empty default branch and silently produce no output.
+            const std::wstring text = m_host.dumpGlobalSymbol(a_symbol, nesting);
+            if (!text.empty())
+            {
+                ret += text;
+                ret += L"\n";
+            }
+            break;
+        }
         default:
             break;
         }
@@ -87,6 +102,8 @@ public:
         case SymTagTypedef:
         case SymTagUDT:
         case SymTagEnum:
+        case SymTagPublicSymbol:
+        case SymTagThunk:
             a_output += dumpTopLevelAny(a_symbol);
             break;
         case SymTagData:

@@ -41,6 +41,12 @@ public:
         const auto& cmdString = ConsoleManager::instance().getCommand().c_str();
         const auto& cmd = CommandManager::instance().getCommand(cmdString, a_argc);
 
+        if (!cmd)
+        {
+            // Unknown command or too few arguments: the reason was already printed.
+            CommandManager::instance().displayCommandsInfo();
+        }
+
         const bool isExeCmd = (static_cast<unsigned int>(cmd->getType()) & ICommand::s_exeExecutableMask) != 0;
         const bool isPdbCmd = !isExeCmd
                            && (static_cast<unsigned int>(cmd->getType()) & ICommand::s_executableMask) != 0;

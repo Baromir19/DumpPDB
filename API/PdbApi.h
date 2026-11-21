@@ -38,6 +38,21 @@ struct PdbApiDumpConfig
     int32_t intStyle; ///< 0 = MsvcNative (__int32), 1 = Cstdint (int32_t).
 };
 
+/// Options for global functions / variables / statics. Kept as a SEPARATE struct
+/// (see PdbApi_SetGlobalsConfig) so that the layout of PdbApiDumpConfig, and with
+/// it every existing client, stays binary compatible.
+struct PdbApiGlobalsConfig
+{
+    int32_t showAddress;          ///< "// RVA 0x... [sec:off] len ..." after functions/variables.
+    int32_t showCallingConv;      ///< __cdecl/__stdcall/__fastcall (not printed for x64 PDBs).
+    int32_t showFuncAttrs;        ///< __declspec(naked/noinline/noreturn), inline.
+    int32_t showSourceLine;       ///< "@ file:line" for functions.
+    int32_t showMemberAddress;    ///< Annotate class members with their RVA in class dumps.
+    int32_t includeMembers;       ///< List member functions / static members in global listings.
+    int32_t includeLocalStatics;  ///< List function-local statics too.
+    int32_t sortByAddress;        ///< Sort listings by RVA instead of by name.
+};
+
 // --- Lifecycle ---
 
 PDBAPI_API PdbApiResult PdbApi_Initialize(const wchar_t* a_pdbPath);
@@ -48,6 +63,10 @@ PDBAPI_API int32_t PdbApi_IsInitialized(); ///< Returns 0 or 1 (not bool, for AB
 
 PDBAPI_API PdbApiResult PdbApi_SetConfig(const PdbApiDumpConfig* a_config);
 PDBAPI_API PdbApiResult PdbApi_GetConfig(PdbApiDumpConfig* a_outConfig);
+
+/// Options of the global-symbol listings (all other options are untouched).
+PDBAPI_API PdbApiResult PdbApi_SetGlobalsConfig(const PdbApiGlobalsConfig* a_config);
+PDBAPI_API PdbApiResult PdbApi_GetGlobalsConfig(PdbApiGlobalsConfig* a_outConfig);
 
 // --- Dump API ---
 /// Buffer convention (applies to all Dump* / GetLastError functions):
@@ -91,6 +110,67 @@ PDBAPI_API PdbApiResult PdbApi_EnumerateNestedTypeNames(const wchar_t* a_name,
     wchar_t* a_outBuffer,
     uint32_t a_bufferSize,
     uint32_t* a_outRequiredSize);
+
+// --- Global functions / variables / statics / public symbols ---
+/// All of these use the buffer convention described above. a_filter is a substring
+/// of the qualified name (nullptr or "" = everything). An empty result is NOT an
+/// error: the call succeeds and the text is just the header comment.
+
+/// Free functions grouped by namespace (member definitions with includeMembers).
+PDBAPI_API PdbApiResult PdbApi_DumpGlobalFunctions(const wchar_t* a_filter,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
+/// Global variables, file statics and constants.
+PDBAPI_API PdbApiResult PdbApi_DumpGlobalVariables(const wchar_t* a_filter,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
+/// Public symbols (decorated name + address, no type information).
+PDBAPI_API PdbApiResult PdbApi_DumpPublicSymbols(const wchar_t* a_filter,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
+/// Tab-separated table of every function / variable / thunk / public symbol:
+/// kind, name, undecorated, rva, section, offset, length, class, compiland,
+/// source, line, flags, type. The first line is a header.
+/// a_withSource = 1 also resolves the source file:line of each function (slower).
+PDBAPI_API PdbApiResult PdbApi_DumpSymbolTable(const wchar_t* a_filter,
+    int32_t a_caseSensitive,
+    int32_t a_withSource,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
+/// Export kinds for PdbApi_ExportToFile.
+enum PdbApiExportKind : int32_t
+{
+    PDBAPI_EXPORT_EVERYTHING = 0,
+    PDBAPI_EXPORT_FUNCTIONS = 1,
+    PDBAPI_EXPORT_VARIABLES = 2,
+    PDBAPI_EXPORT_PUBLICS = 3,
+    PDBAPI_EXPORT_SYMBOL_TABLE = 4,
+    PDBAPI_EXPORT_SYMBOL_TABLE_SOURCE = 5,
+};
+
+/// Writes a dump directly to a UTF-8 file. Prefer this over the buffer functions
+/// for large outputs (the buffer convention builds the text twice).
+PDBAPI_API PdbApiResult PdbApi_ExportToFile(int32_t a_kind,
+    const wchar_t* a_filter,
+    int32_t a_caseSensitive,
+    const wchar_t* a_outPath);
+
+/// Identity of the loaded PDB as "guid=...\nage=N\nsignature=0x...\nplatform=0x...\n".
+/// Compare guid+age with the CodeView data of an executable before transferring
+/// addresses from the PDB to it.
+PDBAPI_API PdbApiResult PdbApi_GetPdbInfo(
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
 
 // --- Symbol enumeration ---
 
@@ -204,3 +284,50 @@ PDBAPI_API uint32_t ExeApi_GetVftableCount();
 
 /// Returns the number of unique type names found.
 PDBAPI_API uint32_t ExeApi_GetTypeCount();
+
+// ============================================================================
+// Whole-image analysis (no disassembler, no PDB). Requires ExeApi_LoadExe.
+// ============================================================================
+
+/// PE/RTTI/PDB-identity summary (timestamp, PDB path+GUID+age, toolchain, sections,
+/// imports, RTTI and analysis statistics).
+PDBAPI_API PdbApiResult ExeApi_GetInfo(
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize);
+
+/// Hierarchy, vftables with named slots, constructors, static instances, source
+/// files and referenced strings of the class(es) matching a_typeName.
+PDBAPI_API PdbApiResult ExeApi_GetClassInfo(const wchar_t* a_typeName,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
+/// Describes an address (auto-detects RVA vs VA): containing function, vftable slot,
+/// string, global, import slot and who references it. A value that is valid as both
+/// is read as a VA and the text says so; use ExeApi_DescribeAddressEx to be explicit.
+PDBAPI_API PdbApiResult ExeApi_DescribeAddress(uint64_t a_rvaOrVa,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
+/// Like ExeApi_DescribeAddress with an explicit interpretation:
+/// a_kind 0 = auto, 1 = RVA, 2 = VA.
+PDBAPI_API PdbApiResult ExeApi_DescribeAddressEx(uint64_t a_address,
+    int32_t a_kind,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
+/// Writes all reports and disassembler scripts into a_outDir (see docs/user/exe-analysis.md).
+/// The buffer receives a log of the written files.
+PDBAPI_API PdbApiResult ExeApi_ExportAnalysis(const wchar_t* a_outDir,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);
+
+/// Extracts every resource of the loaded EXE into a_outDir: resources.rc, resource.h,
+/// a byte-exact resources.res, icons/*.ico, cursors/*.cur, bitmaps/*.bmp,
+/// manifest/*.manifest, binary/*, resources.csv. The buffer receives a log.
+PDBAPI_API PdbApiResult ExeApi_ExportResources(const wchar_t* a_outDir,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize);

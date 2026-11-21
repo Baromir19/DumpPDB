@@ -15,6 +15,12 @@
 #include <CLI/Application/Command/Commands/CommandHelp.hpp>
 #include <CLI/Application/Command/Commands/CommandExeType.hpp>
 #include <CLI/Application/Command/Commands/CommandExeTypes.hpp>
+#include <CLI/Application/Command/Commands/CommandGlobals.hpp>
+#include <CLI/Application/Command/Commands/CommandExeInfo.hpp>
+#include <CLI/Application/Command/Commands/CommandExeAnalyze.hpp>
+#include <CLI/Application/Command/Commands/CommandExeClass.hpp>
+#include <CLI/Application/Command/Commands/CommandExeAddr.hpp>
+#include <CLI/Application/Command/Commands/CommandExeResources.hpp>
 
 class CommandManager : public Singleton<CommandManager>
 {
@@ -36,11 +42,24 @@ public:
 
         m_commands.push_back(std::make_unique<CommandType>(a_config.m_useClipboard, a_dumpConfig));
         m_commands.push_back(std::make_unique<CommandHelp>());
+        m_commands.push_back(
+            std::make_unique<CommandFunctions>(a_dumpConfig, a_config.m_useClipboard));
+        m_commands.push_back(
+            std::make_unique<CommandGlobals>(a_dumpConfig, a_config.m_useClipboard));
+        m_commands.push_back(
+            std::make_unique<CommandPublics>(a_dumpConfig, a_config.m_useClipboard));
+        m_commands.push_back(std::make_unique<CommandSymbols>(a_dumpConfig));
+        m_commands.push_back(std::make_unique<CommandDumpAll>(a_dumpConfig));
         m_commands.push_back(std::make_unique<CommandCompiland>());
         m_commands.push_back(std::make_unique<CommandSource>());
         m_commands.push_back(std::make_unique<CommandSettings>());
         m_commands.push_back(std::make_unique<CommandExeType>());
         m_commands.push_back(std::make_unique<CommandExeTypes>());
+        m_commands.push_back(std::make_unique<CommandExeInfo>());
+        m_commands.push_back(std::make_unique<CommandExeAnalyze>());
+        m_commands.push_back(std::make_unique<CommandExeClass>());
+        m_commands.push_back(std::make_unique<CommandExeAddr>());
+        m_commands.push_back(std::make_unique<CommandExeResources>());
 
         initState = true;
         return true;
@@ -101,6 +120,10 @@ public:
     ICommand* getCommand(const wchar_t* a_commandString, int a_userMessageSize) const
     {
         auto* ret = getCommand(a_commandString);
+        if (!ret)
+        {
+            return nullptr; // unknown command — already reported by getCommand()
+        }
 
         auto count = ret->getArgCount();
         auto type = ret->getType();
@@ -127,6 +150,11 @@ public:
 
     void executeCommand(ICommand* a_command) const
     {
+        if (!a_command)
+        {
+            displayCommandsInfo();
+        }
+
         a_command->execute(ConsoleManager::instance().getCommandArguments());
 
         if (a_command->getType() == ICommand::Type::COMMAND_HELP) /// ATTENTION

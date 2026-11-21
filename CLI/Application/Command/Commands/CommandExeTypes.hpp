@@ -56,7 +56,7 @@ public:
             toolset.vftableCount(), toolset.typeCount());
 
         auto names = toolset.enumerateVftableTypes();
-        ConsoleManager::print(names.c_str());
+        ConsoleManager::printText(names);
         return true;
     }
 };

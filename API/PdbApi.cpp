@@ -4,6 +4,7 @@
 #include <Core/RTTI/ExeToolset.hpp>
 #include <Core/Util/Error/DumpError.hpp>
 
+#include <functional>
 #include <mutex>
 #include <string>
 #include <cwchar>
@@ -150,6 +151,51 @@ PdbApiResult dumpByNameImpl(std::wstring (PdbToolset::*a_method)(const wchar_t*,
 
     return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
 }
+
+PdbApiGlobalsConfig globalsToApi(const DumpConfig& a_cfg)
+{
+    PdbApiGlobalsConfig out{};
+    out.showAddress = static_cast<int32_t>(a_cfg.m_showAddress);
+    out.showCallingConv = static_cast<int32_t>(a_cfg.m_showCallingConv);
+    out.showFuncAttrs = static_cast<int32_t>(a_cfg.m_showFuncAttrs);
+    out.showSourceLine = static_cast<int32_t>(a_cfg.m_showSourceLine);
+    out.showMemberAddress = static_cast<int32_t>(a_cfg.m_showMemberAddress);
+    out.includeMembers = static_cast<int32_t>(a_cfg.m_globalsIncludeMembers);
+    out.includeLocalStatics = static_cast<int32_t>(a_cfg.m_globalsIncludeLocalStatics);
+    out.sortByAddress = static_cast<int32_t>(a_cfg.m_globalsSortByAddress);
+    return out;
+}
+
+void globalsFromApi(const PdbApiGlobalsConfig& a_in, DumpConfig& a_out)
+{
+    a_out.m_showAddress = a_in.showAddress != 0;
+    a_out.m_showCallingConv = a_in.showCallingConv != 0;
+    a_out.m_showFuncAttrs = a_in.showFuncAttrs != 0;
+    a_out.m_showSourceLine = a_in.showSourceLine != 0;
+    a_out.m_showMemberAddress = a_in.showMemberAddress != 0;
+    a_out.m_globalsIncludeMembers = a_in.includeMembers != 0;
+    a_out.m_globalsIncludeLocalStatics = a_in.includeLocalStatics != 0;
+    a_out.m_globalsSortByAddress = a_in.sortByAddress != 0;
+}
+
+/// Shared implementation for the listing entry points (functions / variables /
+/// publics). An empty listing is a valid answer, not "not found".
+PdbApiResult listImpl(std::wstring (PdbToolset::*a_method)(const wchar_t*, bool),
+    const wchar_t* a_filter,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    if (PdbToolset::instance().session() == nullptr)
+    {
+        setLastError(L"DIA session not initialized");
+        return PDBAPI_ERROR_NOT_INITIALIZED;
+    }
+
+    const std::wstring result = (PdbToolset::instance().*a_method)(a_filter, a_caseSensitive != 0);
+    return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+}
 } // namespace
 
 // --- Lifecycle ---
@@ -199,7 +245,9 @@ PdbApiResult PdbApi_SetConfig(const PdbApiDumpConfig* a_config)
                 return PDBAPI_ERROR_INVALID_ARG;
             }
 
-            DumpConfig cfg;
+            // Start from the current configuration: fromApi() only knows the legacy
+            // fields, and the extended (globals) options must not be reset here.
+            DumpConfig cfg = PdbToolset::instance().dumper().config();
             if (!fromApi(*a_config, cfg))
             {
                 setLastError(L"Invalid intStyle value");
@@ -222,6 +270,162 @@ PdbApiResult PdbApi_GetConfig(PdbApiDumpConfig* a_outConfig)
                 return PDBAPI_ERROR_INVALID_ARG;
             }
             *a_outConfig = toApi(PdbToolset::instance().dumper().config());
+            return PDBAPI_OK;
+        });
+}
+
+PdbApiResult PdbApi_SetGlobalsConfig(const PdbApiGlobalsConfig* a_config)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (!a_config)
+            {
+                setLastError(L"a_config is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+
+            DumpConfig cfg = PdbToolset::instance().dumper().config();
+            globalsFromApi(*a_config, cfg);
+            PdbToolset::instance().dumper().setConfig(cfg);
+            return PDBAPI_OK;
+        });
+}
+
+PdbApiResult PdbApi_GetGlobalsConfig(PdbApiGlobalsConfig* a_outConfig)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (!a_outConfig)
+            {
+                setLastError(L"a_outConfig is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            *a_outConfig = globalsToApi(PdbToolset::instance().dumper().config());
+            return PDBAPI_OK;
+        });
+}
+
+// --- Global functions / variables / statics / public symbols ---
+
+PdbApiResult PdbApi_DumpGlobalFunctions(const wchar_t* a_filter,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]()
+        {
+            return listImpl(&PdbToolset::dumpGlobalFunctions,
+                a_filter,
+                a_caseSensitive,
+                a_outBuffer,
+                a_bufferSize,
+                a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_DumpGlobalVariables(const wchar_t* a_filter,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]()
+        {
+            return listImpl(&PdbToolset::dumpGlobalVariables,
+                a_filter,
+                a_caseSensitive,
+                a_outBuffer,
+                a_bufferSize,
+                a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_DumpPublicSymbols(const wchar_t* a_filter,
+    int32_t a_caseSensitive,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]()
+        {
+            return listImpl(&PdbToolset::dumpPublicSymbols,
+                a_filter,
+                a_caseSensitive,
+                a_outBuffer,
+                a_bufferSize,
+                a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_DumpSymbolTable(const wchar_t* a_filter,
+    int32_t a_caseSensitive,
+    int32_t a_withSource,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (PdbToolset::instance().session() == nullptr)
+            {
+                setLastError(L"DIA session not initialized");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            const std::wstring result = PdbToolset::instance().dumpSymbolTable(
+                a_filter, a_caseSensitive != 0, a_withSource != 0);
+            return copyToBuffer(result, a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_GetPdbInfo(
+    wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (PdbToolset::instance().session() == nullptr)
+            {
+                setLastError(L"DIA session not initialized");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+            return copyToBuffer(
+                PdbToolset::instance().pdbInfo(), a_outBuffer, a_bufferSize, a_outRequiredSize);
+        });
+}
+
+PdbApiResult PdbApi_ExportToFile(
+    int32_t a_kind, const wchar_t* a_filter, int32_t a_caseSensitive, const wchar_t* a_outPath)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (!a_outPath)
+            {
+                setLastError(L"a_outPath is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            if (PdbToolset::instance().session() == nullptr)
+            {
+                setLastError(L"DIA session not initialized");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            std::wstring error;
+            if (!PdbToolset::instance().exportToFile(
+                    a_kind, a_filter, a_caseSensitive != 0, a_outPath, error))
+            {
+                setLastError(error);
+                return error == L"unknown export kind" ? PDBAPI_ERROR_INVALID_ARG
+                                                       : PDBAPI_ERROR_EXCEPTION;
+            }
             return PDBAPI_OK;
         });
 }
@@ -677,4 +881,183 @@ uint32_t ExeApi_GetTypeCount()
 {
     std::scoped_lock lock(g_mutex);
     return static_cast<uint32_t>(DumpPDB::ExeToolset::instance().typeCount());
+}
+
+// --- Whole-image analysis ---
+
+namespace
+{
+PdbApiResult exeTextImpl(const std::function<std::wstring(DumpPDB::ExeToolset&)>& a_fn,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    auto& toolset = DumpPDB::ExeToolset::instance();
+    if (!toolset.isLoaded())
+    {
+        setLastError(L"ExeApi not initialized. Call ExeApi_LoadExe first.");
+        return PDBAPI_ERROR_NOT_INITIALIZED;
+    }
+    return copyToBuffer(a_fn(toolset), a_outBuffer, a_bufferSize, a_outRequiredSize);
+}
+} // namespace
+
+PdbApiResult ExeApi_GetInfo(wchar_t* a_outBuffer, uint32_t a_bufferSize, uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]()
+        {
+            return exeTextImpl(
+                [](DumpPDB::ExeToolset& t) { return t.infoText(); },
+                a_outBuffer,
+                a_bufferSize,
+                a_outRequiredSize);
+        });
+}
+
+PdbApiResult ExeApi_GetClassInfo(const wchar_t* a_typeName,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (!a_typeName)
+            {
+                setLastError(L"a_typeName is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            return exeTextImpl(
+                [&](DumpPDB::ExeToolset& t) { return t.classInfo(a_typeName); },
+                a_outBuffer,
+                a_bufferSize,
+                a_outRequiredSize);
+        });
+}
+
+PdbApiResult ExeApi_DescribeAddress(uint64_t a_rvaOrVa,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]()
+        {
+            return exeTextImpl(
+                [&](DumpPDB::ExeToolset& t) { return t.addressInfo(a_rvaOrVa); },
+                a_outBuffer,
+                a_bufferSize,
+                a_outRequiredSize);
+        });
+}
+
+PdbApiResult ExeApi_DescribeAddressEx(uint64_t a_address,
+    int32_t a_kind,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (a_kind < 0 || a_kind > 2)
+            {
+                setLastError(L"a_kind must be 0 (auto), 1 (RVA) or 2 (VA)");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+            return exeTextImpl(
+                [&](DumpPDB::ExeToolset& t)
+                {
+                    return t.addressInfo(
+                        a_address, static_cast<DumpPDB::ExeInspector::AddressKind>(a_kind));
+                },
+                a_outBuffer,
+                a_bufferSize,
+                a_outRequiredSize);
+        });
+}
+
+PdbApiResult ExeApi_ExportAnalysis(const wchar_t* a_outDir,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (!a_outDir)
+            {
+                setLastError(L"a_outDir is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+
+            auto& toolset = DumpPDB::ExeToolset::instance();
+            if (!toolset.isLoaded())
+            {
+                setLastError(L"ExeApi not initialized. Call ExeApi_LoadExe first.");
+                return PDBAPI_ERROR_NOT_INITIALIZED;
+            }
+
+            // The buffer convention calls us twice (size query, then copy). The export
+            // is heavy and has side effects, so the first call's log is remembered and
+            // handed out by the second call instead of exporting again.
+            static std::wstring cachedDir;
+            static std::wstring cachedLog;
+            static bool cachedOk = false;
+            static bool haveCache = false;
+
+            const bool wantsCopy = a_outBuffer != nullptr && a_bufferSize != 0;
+            if (!(wantsCopy && haveCache && cachedDir == a_outDir))
+            {
+                bool ok = false;
+                cachedLog = toolset.exportAnalysis(a_outDir, ok);
+                cachedOk = ok;
+                cachedDir = a_outDir;
+                haveCache = true;
+            }
+
+            const PdbApiResult rc
+                = copyToBuffer(cachedLog, a_outBuffer, a_bufferSize, a_outRequiredSize);
+
+            if (rc == PDBAPI_OK && wantsCopy)
+            {
+                haveCache = false; // consumed
+                if (!cachedOk)
+                {
+                    setLastError(L"Export finished with errors (see the log)");
+                    return PDBAPI_ERROR_EXCEPTION;
+                }
+            }
+            return rc;
+        });
+}
+
+PdbApiResult ExeApi_ExportResources(const wchar_t* a_outDir,
+    wchar_t* a_outBuffer,
+    uint32_t a_bufferSize,
+    uint32_t* a_outRequiredSize)
+{
+    return guarded(
+        [&]() -> PdbApiResult
+        {
+            if (!a_outDir)
+            {
+                setLastError(L"a_outDir is null");
+                return PDBAPI_ERROR_INVALID_ARG;
+            }
+
+            bool ok = false;
+            const PdbApiResult rc = exeTextImpl(
+                [&](DumpPDB::ExeToolset& t) { return t.exportResources(a_outDir, ok); },
+                a_outBuffer,
+                a_bufferSize,
+                a_outRequiredSize);
+            if (rc == PDBAPI_OK && !ok && a_outBuffer != nullptr)
+            {
+                setLastError(L"Resource export finished with errors (see the log)");
+                return PDBAPI_ERROR_EXCEPTION;
+            }
+            return rc;
+        });
 }

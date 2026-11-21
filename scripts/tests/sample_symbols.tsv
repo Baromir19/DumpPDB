@@ -1,0 +1,13 @@
+kind	name	undecorated	rva	section	offset	length	class	compiland	source	line	flags	type	params	qualifiers
+function	Game::Update		0x00001000	1	0x00000000	64		e:\obj\game.obj	e:\src\game.cpp	42	__cdecl	void	int32_t dt	
+function	main		0x00001100	1	0x00000100	32					__stdcall	int32_t		
+function	Foo::Bar		0x00001200	1	0x00000200	16	Foo				static,__cdecl	void	int32_t	
+function	helper		0x00001300	1	0x00000300	8		e:\obj\game.obj			file-local,__cdecl	void	int32_t	
+function	naked_fn		0x00001400	1	0x00000400	8					attrs,__cdecl	void	int32_t	
+global	g_count		0x00002000	2	0x00000000	4						int32_t g_count		
+global	Game::s_instances		0x00002010	2	0x00000000	4						int32_t Game::s_instances		
+file-static	s_cache		0x00002020	2	0x00000000	4		e:\obj\game.obj				int32_t s_cache		
+static-member	Foo::s_count		0x00002030	2	0x00000000	4	Foo					int32_t Foo::s_count		
+static-local	counter		0x00002100	2	0x00000000	4						int32_t counter		
+public-data	?g_hidden@@3HA	int g_hidden	0x00002040	2	0x00000000									
+public-function	?Baz@@YAXXZ	void __cdecl Baz(void)	0x00003000	1	0x00002000									

@@ -42,6 +42,9 @@ class MainObjectDefinition : public ExposedDefinition
 | `-type <name>` | Dump a type by name (class, struct, union, enum, typedef). Copies to clipboard. |
 | `-compilands [true]` | List compilation units. Pass `true` for compiler/env details. |
 | `-sources` | List all source files recorded in the PDB. |
+| `-functions [f]` / `-globals [f]` / `-publics [f]` | List global functions / variables & statics / public symbols with RVA and source line ([docs](docs/user/globals.md)). |
+| `-symbols <out.tsv>` / `-dumpall <out.txt>` | Export the full symbol table / everything to a file. |
+| `-exeinfo` / `-execlass` / `-exeaddr` / `-exeresources` / `-exeanalyze` | Executable analysis without a PDB or disassembler; `-exeresources` writes the full `.rc` + icons + manifest + `.res` ([docs](docs/user/exe-analysis.md)). |
 | `-settings [-h] <key> <value>` | Read or write a persistent setting. `-h` lists all. |
 | `-help` | Print the command table. |
 
@@ -98,6 +101,7 @@ Full reference: [`docs/developer/api.md`](docs/developer/api.md)
 | `reconstruct_sources.py` | Render per-type source snippets from a template. |
 | `recover_file_sources.py` | Recover the original source tree from PDB paths + binary strings. |
 | `verify_sources.py` | GUI for reviewing and correcting type → source mappings. |
+| `restore_project.py` | Restore a whole source tree (types, globals, function skeletons, address maps) from a PDB and/or an exe. |
 
 Full reference: [`docs/user/scripts.md`](docs/user/scripts.md)
 
@@ -130,6 +134,8 @@ Details: [`docs/developer/dependencies.md`](docs/developer/dependencies.md)
 |---|---|
 | [CLI usage](docs/user/cli.md) | Commands, output format, template names |
 | [Settings](docs/user/settings.md) | All `config.ini` keys |
+| [Global symbols](docs/user/globals.md) | Functions, variables, statics, publics |
+| [Executable analysis](docs/user/exe-analysis.md) | RTTI, functions, strings, source files, IDA/Ghidra names |
 | [Python scripts](docs/user/scripts.md) | Script reference |
 | [Architecture](docs/developer/architecture.md) | Code structure, data flow |
 | [C API](docs/developer/api.md) | PdbAPI.dll function reference |
@@ -139,9 +145,8 @@ Details: [`docs/developer/dependencies.md`](docs/developer/dependencies.md)
 
 ## Roadmap
 
-- Expanded function attribute output (`__declspec(__naked)`, `__noinline`, etc.)
 - Compact visibility blocks (group successive same-access members under a single label)
 - Compiler-hint annotations on generated functions (default constructors, copy operators)
 - `void` cleanup for destructors (`void ~Object()` → `~Object()`)
-- Namespace data output
+- Function body recovery (decompilation) is out of scope; signatures and addresses are recovered
 - Code cleanup

@@ -8,6 +8,66 @@ All scripts live in `scripts/` and use the `dumppdb_tools` package bundled along
 
 ---
 
+## restore_project.py
+
+Restores a source tree from a PDB and/or an executable: types, global variables, function
+skeletons with signature / RVA / size / line, and a `_meta/` directory with RVA → file:line →
+name maps. It is independent of the older `resolve_type_sources` / `reconstruct_sources`
+pipeline (which depends on a game-specific template) and needs no database.
+
+```
+# PDB: best result (types, signatures with parameter names, globals, source lines)
+python scripts/restore_project.py --dll PdbAPI.dll --pdb Game.pdb --out restored
+
+# PDB + EXE: also recovers path case from the exe, checks that the PDB belongs to the exe,
+# and writes IDA / Ghidra / x64dbg name scripts
+python scripts/restore_project.py --dll PdbAPI.dll --pdb Game.pdb --exe Game.exe --out restored
+
+# EXE only: RTTI classes, function stubs and the file layout (no PDB needed)
+python scripts/restore_project.py --dll PdbAPI.dll --exe Game.exe --out restored
+
+# From an analysis directory written earlier -- no native library at all
+python scripts/dump_pdb.py --exe Game.exe --exe-analyze analysis      # once
+python scripts/restore_project.py --exe-analysis analysis --out restored
+```
+
+Output:
+
+```
+restored/<original layout>/Foo.h      types
+restored/<original layout>/Foo.cpp    variables + function skeletons (// RVA, size, line; TODO bodies)
+restored/_external/...                code outside the project root (CRT, SDK, third party)
+restored/_unassigned/unassigned.cpp   symbols whose file could not be determined
+restored/Resources/                   resources.rc, resource.h, resources.res, icons/, manifest/ ... (when an exe analysis is given)
+restored/_meta/                       symbols.tsv, function_map.csv, variable_map.csv, publics.txt,
+                                      restore_report.txt, pdb_names_ida.py / _ghidra.py / _x64dbg.dd32.json
+```
+
+How files are chosen:
+
+* **Project root** is where the source tree first forks (several sibling directories each holding
+  ≥ 10 % of the files); small outliers such as the CRT are ignored and filed under `_external`.
+  Override with `--root`. The detected root is printed in `_meta/restore_report.txt`.
+* **Path case** is recovered from every spelling of the path found in the PDB and in the exe's
+  embedded `__FILE__` strings (the most capitalised spelling wins).
+* **Functions** go to the file of their first source line; without line info, to the file most of
+  their object file's functions came from, then to the file of their class, then `_unassigned`.
+* **Types** go to a header they were seen in (or the `.cpp` if only seen there); members without line
+  info are implemented next to their type. EXE-only classes get `<stem>.h` next to their `.cpp`.
+* Template instances are written as comments (their definition lives in a header); functions inside
+  an anonymous namespace are wrapped in `namespace { }`; compiler-generated functions are skipped
+  (`--include-compiler-generated` keeps them).
+
+Bodies are **not** recovered; every function is a signature plus `// TODO`. With `--exe` and no
+PDB, signatures are unknown and functions are listed as comments.
+
+`--check-match strict|warn|off` controls what happens when the PDB's GUID differs from the exe's;
+name scripts are skipped for a mismatching PDB because the RVAs would be wrong.
+
+Tests: `python -m unittest discover -s tests` from `scripts/` (pure Python, no DLL).
+
+---
+
 ## dump_pdb.py
 
 General-purpose PDB query tool.
@@ -47,6 +107,19 @@ python scripts/dump_pdb.py --pdb Dev.pdb --type "TList<int>" --template-params
 python scripts/dump_pdb.py --file Game.exe --strings --min-length 6 --encodings ascii
 python scripts/dump_pdb.py --file Game.exe --signatures "FF ?? 01 BD ?? CA"
 ```
+
+---
+
+### New `dump_pdb.py` options
+
+| Option | Purpose |
+|---|---|
+| `--functions [FILTER]`, `--globals [FILTER]`, `--publics [FILTER]` | List global functions / variables / public symbols |
+| `--include-members`, `--local-statics`, `--sort-by-address`, `--no-address` | Tune those listings |
+| `--member-addresses` | Annotate members with their RVA in class dumps |
+| `--symbol-table OUT.tsv`, `--dump-all OUT.txt` | Write the full symbol table / everything to a file |
+| `--pdb-info` | GUID / age / platform of the PDB (compare with `--exe-info`) |
+| `--exe-info`, `--exe-class NAME`, `--exe-addr [rva:\|va:]HEX`, `--exe-resources DIR`, `--exe-analyze DIR` | Executable analysis (requires `--exe`) |
 
 ---
 

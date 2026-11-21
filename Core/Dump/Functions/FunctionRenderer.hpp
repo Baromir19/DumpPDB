@@ -6,6 +6,7 @@
 
 #include <Core/DIA/TypeWalker.hpp>
 #include <Core/Dump/DumpContext.hpp>
+#include <Core/Dump/Globals/AddressInfo.hpp>
 #include <Core/Dump/Format/DumpFormatter.hpp>
 #include <Core/Dump/IDumpCoordinator.hpp>
 #include <Core/Util/Com/ComPtr.hpp>
@@ -40,16 +41,6 @@ public:
         }
 
         auto functionType = getTypeCom(a_symbol); // SymTagFunctionType
-
-        // DIA reports the "..." marker as an extra argument, but it is not a named
-        // parameter: it is excluded from the count and rendered separately.
-        DWORD argCount = 0;
-        bool isVariadic = false;
-        if (functionType)
-        {
-            argCount = TypeWalker::countFunctionArgs(functionType.get());
-            isVariadic = TypeWalker::isVariadicFunction(functionType.get());
-        }
 
         // Return type
         std::wstring funcName = TypeWalker::getName(a_symbol, m_ctx.scope());
@@ -96,33 +87,7 @@ public:
         ret += funcName;
         ret += L"(";
 
-        // Named parameters (searched on SymTagFunction itself)
-        auto namedArgCount = dumpFunctionArgsToString(a_symbol, ret);
-
-        // If named arg count doesn't match the actual function type arg count,
-        // fall back to the function type's args (which may have unnamed params).
-        // This fixes constructors/copy-constructors where params are on FunctionType
-        // but not directly on the Function symbol.
-        if (functionType && namedArgCount != (int)argCount)
-        {
-            if (namedArgCount > 0)
-            {
-                ret += L", ";
-            }
-            ret += TypeWalker::getFuncArgsString(functionType.get(),
-                m_ctx.scope(),
-                m_ctx.config().m_showNonScoped,
-                m_ctx.config().m_intStyle);
-        }
-        else if (isVariadic)
-        {
-            if (namedArgCount > 0)
-            {
-                ret += L", ";
-            }
-
-            ret += L"...";
-        }
+        ret += renderParameterList(a_symbol, functionType.get());
 
         ret += L")";
 
@@ -186,7 +151,62 @@ public:
 
         ret += L";";
 
+        // Optional "// RVA ..." so a class dump doubles as an address map of its methods.
+        if (m_ctx.config().m_showMemberAddress)
+        {
+            const std::wstring where = AddressInfo::comment(a_symbol);
+            if (!where.empty())
+            {
+                ret += L"  ";
+                ret += where;
+            }
+        }
+
         m_host.registerTypeSource(a_symbol);
+
+        return ret;
+    }
+
+    /// Renders the parameter list WITHOUT the surrounding parentheses.
+    ///
+    /// Named parameters are taken from the function symbol itself; when their
+    /// count does not match the function type (constructors, copy
+    /// constructors, functions without local info) the function type's
+    /// parameters are used instead. DIA reports the "..." marker as an extra
+    /// argument; it is excluded from the count and rendered separately.
+    std::wstring renderParameterList(IDiaSymbol* a_symbol, IDiaSymbol* a_functionType)
+    {
+        std::wstring ret;
+
+        DWORD argCount = 0;
+        bool isVariadic = false;
+        if (a_functionType)
+        {
+            argCount = TypeWalker::countFunctionArgs(a_functionType);
+            isVariadic = TypeWalker::isVariadicFunction(a_functionType);
+        }
+
+        const int namedArgCount = dumpFunctionArgsToString(a_symbol, ret);
+
+        if (a_functionType && namedArgCount != static_cast<int>(argCount))
+        {
+            if (namedArgCount > 0)
+            {
+                ret += L", ";
+            }
+            ret += TypeWalker::getFuncArgsString(a_functionType,
+                m_ctx.scope(),
+                m_ctx.config().m_showNonScoped,
+                m_ctx.config().m_intStyle);
+        }
+        else if (isVariadic)
+        {
+            if (namedArgCount > 0)
+            {
+                ret += L", ";
+            }
+            ret += L"...";
+        }
 
         return ret;
     }

@@ -3,6 +3,7 @@
 #include <Core/Binary/BinaryView.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -24,7 +25,9 @@ public:
     {
         m_data.clear();
 
-        std::ifstream file(a_path, std::ios::binary | std::ios::ate);
+        // std::filesystem::path accepts wide strings on every platform (the plain
+        // wstring overload of ifstream is an MSVC extension).
+        std::ifstream file(std::filesystem::path(a_path), std::ios::binary | std::ios::ate);
         if (!file.is_open())
         {
             return false;

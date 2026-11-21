@@ -35,6 +35,17 @@ class SaveManager : public Singleton<SaveManager>
         reg.registerSetting(L"DumpConfig.TemplateParams", m_dumpConfig.m_templateParams);
         reg.registerSetting(L"DumpConfig.BaseAccessType", m_dumpConfig.m_baseAccessType);
         reg.registerSetting(L"DumpConfig.IntStyle", m_dumpConfig.m_intStyle);
+        reg.registerSetting(L"DumpConfig.ShowAddress", m_dumpConfig.m_showAddress);
+        reg.registerSetting(L"DumpConfig.ShowCallingConv", m_dumpConfig.m_showCallingConv);
+        reg.registerSetting(L"DumpConfig.ShowFuncAttrs", m_dumpConfig.m_showFuncAttrs);
+        reg.registerSetting(L"DumpConfig.ShowSourceLine", m_dumpConfig.m_showSourceLine);
+        reg.registerSetting(L"DumpConfig.ShowMemberAddress", m_dumpConfig.m_showMemberAddress);
+        reg.registerSetting(
+            L"DumpConfig.GlobalsIncludeMembers", m_dumpConfig.m_globalsIncludeMembers);
+        reg.registerSetting(
+            L"DumpConfig.GlobalsIncludeLocalStatics", m_dumpConfig.m_globalsIncludeLocalStatics);
+        reg.registerSetting(
+            L"DumpConfig.GlobalsSortByAddress", m_dumpConfig.m_globalsSortByAddress);
 
         reg.registerSetting(L"CommandConfig.UseClipboard", m_commandConfig.m_useClipboard);
     }

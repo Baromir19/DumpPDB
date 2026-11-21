@@ -210,4 +210,21 @@ void OperatorSuite::operator delete(void* a_ptr)
 {
     ::operator delete(a_ptr);
 }
+
+// ------------------------------------------------------------------------
+// Global variables and statics
+// ------------------------------------------------------------------------
+
+int g_testGlobalCounter = 7;
+
+int StaticMemberHolder::s_count = 3;
+
+static int s_testFileStatic = 5;
+
+int useStatics()
+{
+    static int s_testLocalStatic = 1;
+    ++s_testLocalStatic;
+    return s_testFileStatic + s_testLocalStatic + g_testGlobalCounter + StaticMemberHolder::s_count;
+}
 } // namespace Test

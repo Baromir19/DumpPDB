@@ -11,6 +11,8 @@
 #include <Core/Dump/Constants/ConstantRenderer.hpp>
 #include <Core/Dump/DumpContext.hpp>
 #include <Core/Dump/Format/DumpFormatter.hpp>
+#include <Core/Dump/Globals/GlobalDumper.hpp>
+#include <Core/Dump/Globals/GlobalRenderer.hpp>
 #include <Core/Dump/Functions/FunctionRenderer.hpp>
 #include <Core/Dump/IDumpCoordinator.hpp>
 #include <Core/Dump/Members/MemberLayout.hpp>
@@ -43,6 +45,8 @@ public:
         , m_members(
               m_ctx, m_formatter, m_constants, m_classes, m_enums, m_typedefs, m_functions, *this)
         , m_topLevel(m_ctx, *this)
+        , m_globalRenderer(m_ctx, m_formatter, m_constants, m_functions)
+        , m_globalDumper(m_ctx, m_globalRenderer, *this)
     {
     }
 
@@ -70,6 +74,17 @@ public:
     void setSession(IDiaSession* a_session)
     {
         m_ctx.setSession(a_session);
+    }
+
+    /// CPU of the PDB (CV_CPU_TYPE_e); decides whether calling conventions are printed.
+    void setPlatform(DWORD a_platform)
+    {
+        m_ctx.setPlatform(a_platform);
+    }
+
+    DWORD platform() const
+    {
+        return m_ctx.platform();
     }
 
     void pushScope(const std::wstring& a_name)
@@ -154,6 +169,17 @@ public:
         return m_functions.dumpFriend(a_symbol, a_nestingLevel);
     }
 
+    /// Free function / global variable / static / public symbol / thunk.
+    std::wstring dumpGlobalSymbol(IDiaSymbol* a_symbol, int a_nestingLevel = 0) override
+    {
+        return m_globalRenderer.renderAny(a_symbol, a_nestingLevel);
+    }
+
+    GlobalDumper& globals()
+    {
+        return m_globalDumper;
+    }
+
     /// Get source file names for a symbol, newline-separated.
     std::wstring getTypeSourceFiles(IDiaSymbol* a_symbol)
     {
@@ -197,4 +223,6 @@ private:
     FunctionRenderer m_functions;
     MemberLayout m_members;
     TopLevelDispatcher m_topLevel;
+    GlobalRenderer m_globalRenderer;
+    GlobalDumper m_globalDumper;
 };

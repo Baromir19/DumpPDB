@@ -9,6 +9,7 @@
 #include <Core/DIA/TypeWalker.hpp>
 #include <Core/Dump/Constants/ConstantRenderer.hpp>
 #include <Core/Dump/DumpContext.hpp>
+#include <Core/Dump/Globals/AddressInfo.hpp>
 #include <Core/Dump/Format/DumpFormatter.hpp>
 #include <Core/Dump/Functions/FunctionRenderer.hpp>
 #include <Core/Dump/IDumpCoordinator.hpp>
@@ -526,7 +527,19 @@ public:
             if (m_constants.canHaveValue(field.get()))
                 ret += m_constants.constantValueSuffix(field.get());
 
-            ret += L";\n";
+            ret += L";";
+
+            // Static members live at a fixed address: expose it on request.
+            if (m_ctx.config().m_showMemberAddress && kind == DataIsStaticMember)
+            {
+                const std::wstring where = AddressInfo::comment(field.get());
+                if (!where.empty())
+                {
+                    ret += L"  ";
+                    ret += where;
+                }
+            }
+            ret += L"\n";
         }
 
         return ret;

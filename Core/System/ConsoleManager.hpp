@@ -78,6 +78,14 @@ public:
     }
 
     [[noreturn]]
+    /// Prints text verbatim. Unlike print() the text is NOT a format string, so
+    /// '%' characters (strings, URLs, template names) are safe, and the length
+    /// is unlimited.
+    static void printText(const std::wstring& a_text)
+    {
+        fputws(a_text.c_str(), stdout);
+    }
+
     static void printError(const wchar_t* a_format, ...)
     {
         wchar_t buffer[0x2000];

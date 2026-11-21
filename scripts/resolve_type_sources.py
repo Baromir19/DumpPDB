@@ -73,7 +73,10 @@ def collect_type_sources(pdb: PdbClient) -> dict[str, set[str]]:
         try:
             raw = pdb.get_source_files(type_name, True)
         except Exception:
-            pass # not found
+            # Not found. `raw` must be reset: otherwise the sources of the
+            # PREVIOUS type would be silently assigned to this one (or a
+            # NameError raised for the very first type).
+            raw = ""
 
         sources = [
             normalize_path(s.strip())

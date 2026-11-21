@@ -66,7 +66,7 @@ public:
         }
 
         auto result = toolset.reconstructType(typeName, paddingStyle);
-        ConsoleManager::print(result.c_str());
+        ConsoleManager::printText(result);
         return true;
     }
 };

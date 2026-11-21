@@ -32,6 +32,10 @@ struct IDumpCoordinator
     virtual std::wstring dumpFunction(IDiaSymbol* a_symbol, int a_nestingLevel) = 0;
     virtual std::wstring dumpFriend(IDiaSymbol* a_symbol, int a_nestingLevel) = 0;
 
+    /// Free function / global variable / static / public symbol / thunk
+    /// (everything that is neither a type nor a class member).
+    virtual std::wstring dumpGlobalSymbol(IDiaSymbol* a_symbol, int a_nestingLevel) = 0;
+
     virtual std::wstring getTypeSourceFiles(IDiaSymbol* a_symbol) = 0;
     virtual void registerTypeSource(IDiaSymbol* a_symbol) = 0;
     virtual std::wstring typeSources() = 0;

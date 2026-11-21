@@ -864,4 +864,23 @@ public:
         freePlainFunction(6);
     }
 };
+
+// ========================================================================
+// GLOBAL VARIABLES / STATICS (used by the globals integration tests)
+// ========================================================================
+
+/// Namespace-scope variable with external linkage (DataIsGlobal).
+extern int g_testGlobalCounter;
+
+/// Class with a static data member (DataIsStaticMember).
+struct StaticMemberHolder
+{
+    static int s_count;
+    int value = 0;
+};
+
+/// Uses a file-static variable and a function-local static (DataIsFileStatic /
+/// DataIsStaticLocal). Defined in Tests.cpp.
+int useStatics();
+
 } // namespace Test

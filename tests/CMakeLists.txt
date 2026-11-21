@@ -20,6 +20,9 @@ add_executable(DumpPDB_UnitTests
     Unit/TypeBuilderTests.cpp
     Unit/TypeWalkerTests.cpp
     Unit/FunctionRendererTests.cpp
+    Unit/MsvcDemanglerTests.cpp
+    Unit/RttiImageTests.cpp
+    Unit/RcExporterTests.cpp
 )
 
 target_link_libraries(DumpPDB_UnitTests
@@ -36,6 +39,7 @@ target_link_libraries(DumpPDB_UnitTests
 add_executable(DumpPDB_IntegrationTests
     Integration/PdbDumpTests.cpp
     Integration/PropertyTests.cpp
+    Integration/GlobalsTests.cpp
 )
 
 add_dependencies(

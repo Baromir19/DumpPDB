@@ -109,6 +109,44 @@ Each command is a `ICommand` subclass. The type mask in `ICommand::Type` determi
 
 ---
 
+## Global symbol subsystem
+
+`Core/Dump/Globals/` renders everything that is not a type:
+
+| File | Role |
+|---|---|
+| `AddressInfo.hpp` | Stateless readers for RVA, `section:offset`, size and first source line; the shared `// RVA …` comment |
+| `GlobalRenderer.hpp` | Renders one function / variable / public / thunk declaration, and flattens a symbol into a `SymbolRecord` (TSV) |
+| `GlobalDumper.hpp` | Enumerates the global scope **and every compiland**, removes duplicates, filters, sorts, groups by namespace |
+
+`TopLevelDispatcher` (and `PdbToolset::dumpSymbolsGrouped`) route `SymTagFunction`, `SymTagData`,
+`SymTagPublicSymbol` and `SymTagThunk` to `IDumpCoordinator::dumpGlobalSymbol`; before this they
+fell into an empty `default:` branch.
+
+## Executable analysis subsystem (`Core/PE`, `Core/RTTI`)
+
+No disassembler is involved; everything here builds and is tested on any platform.
+
+| File | Role |
+|---|---|
+| `PE/PEImage.hpp` | Headers, sections, RVA ⇄ offset (respecting raw size), Rich header |
+| `PE/PERelocations.hpp` | Sorted table of every relocated pointer location |
+| `PE/PEDirectories.hpp` | Imports, delay imports, exports, CodeView (PDB GUID/age), TLS, load config, resources, section entropy |
+| `RTTI/MsvcDemangler.hpp` | Complete MSVC RTTI type-name demangler (templates, back-references, anonymous namespaces, local classes) |
+| `RTTI/RttiReader.hpp` | COL → vftable in one linear pass; vftable length from relocations; CHD/BCD hierarchy; all TypeDescriptors |
+| `RTTI/ExeAnalyzer.hpp` | Reference index, function discovery, strings, globals, class/ctor/dtor attribution, source files, names |
+| `RTTI/ExeReport.hpp` | Text / CSV / JSON reports, IDA / Ghidra / x64dbg scripts, `ExeExporter` |
+| `RTTI/ExeInspector.hpp` | Text-level facade used by `ExeToolset`, the CLI and the C API |
+
+`FieldRecovery`, `SignatureAnalyzer` and `TypeReconstructor` (which need Zydis) are unchanged and
+still consume `RttiReader`; its public API is backward compatible (new fields only).
+
+## Python restoration (`scripts/dumppdb_tools/restore`)
+
+`symbols.py` (TSV → `SymbolEntry`), `exe_analysis.py` (loader for the `-exeanalyze` directory),
+`project.py` (root detection, case recovery, file assignment, emission), `names.py` (IDA / Ghidra /
+x64dbg scripts from PDB symbols, PDB ⇄ exe match check). `restore_project.py` is the CLI.
+
 ## Testing
 
 | Suite | Location | What it covers |
@@ -117,3 +155,7 @@ Each command is a `ICommand` subclass. The type mask in `ICommand::Type` determi
 | Integration | `Tests/Integration/` | Full PDB round-trips via `TestCompiland.pdb` |
 
 `TestCompiland/` is a small C++ project compiled specifically to produce a known PDB. Integration tests open that PDB and assert on the dumped output.
+
+Added tests: `tests/Unit/MsvcDemanglerTests.cpp`, `tests/Unit/RttiImageTests.cpp` (a hand-built PE32 with
+real RTTI: no binary is shipped), `tests/Integration/GlobalsTests.cpp` (needs the TestCompiland PDB) and
+`scripts/tests/test_restore.py`.

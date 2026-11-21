@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Backward-compatible entry point for the refactored recover_sources script.
+"""Reconstruct the source-file tree (empty files, original names and case) from a PDB and an exe.
 
-Use ``scripts/recover_sources.py`` for the canonical version.
+For restoring the *contents* (types, globals, function skeletons) as well, use
+``scripts/restore_project.py``.
 """
 
 import argparse
